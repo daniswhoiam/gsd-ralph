@@ -14,8 +14,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [ ] **Phase 1: Project Initialization** - CLI scaffolding, dependency validation, and project type detection
 - [ ] **Phase 2: Prompt Generation** - Template system that produces PROMPT.md, fix_plan.md, and .ralphrc from GSD plans
-- [ ] **Phase 3: Phase Execution** - Worktree creation, peer visibility, Ralph launch instructions, and completion notifications
-- [ ] **Phase 4: Merge Orchestration** - Auto-merge in plan order with review mode, conflict handling, and rollback safety
+- [ ] **Phase 3: Phase Execution** - Dependency-aware worktree creation, wave scheduling, peer visibility, and completion notifications
+- [ ] **Phase 4: Merge Orchestration** - Wave-aware auto-merge with dry-run conflict detection, review mode, and rollback safety
 - [ ] **Phase 5: Cleanup** - Registry-driven worktree and branch removal after phase completion
 
 ## Phase Details
@@ -44,21 +44,28 @@ Plans:
   2. Tool extracts tasks from GSD XML plan format into a correctly structured fix_plan.md with checkable items
   3. Tool generates a .ralphrc per worktree with project-specific configuration (test command, build tool, working directory)
   4. Tool handles both PLAN.md and NN-MM-PLAN.md naming conventions without errors
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 02-01: TBD
-- [ ] 02-02: TBD
+- [ ] 02-01-PLAN.md -- Discovery module, parameterized templates, and test fixtures
+- [ ] 02-02-PLAN.md -- File generation pipeline and generate subcommand
 
 ### Phase 3: Phase Execution
-**Goal**: User can execute a full GSD phase by creating isolated worktrees with generated prompts and peer visibility
+**Goal**: User can execute a full GSD phase by creating isolated worktrees with dependency-aware scheduling that maximizes parallel execution
 **Depends on**: Phase 2
-**Requirements**: EXEC-01, EXEC-05, EXEC-06, PEER-01, PEER-02
+**Requirements**: EXEC-01, EXEC-05, EXEC-06, PEER-01, PEER-02, WAVE-01, WAVE-02, WAVE-03
+
+**Lesson from Phase 1**: Plans 01-01 (wave 1) and 01-02 (wave 2, depends_on 01-01) were executed in parallel worktrees despite the dependency. Plan 01-02 rebuilt Plan 01-01's files independently, producing divergent implementations and 12 merge conflicts. Wave/dependency metadata exists in plan frontmatter but was not enforced at execution time. The execution model must respect `wave` and `depends_on` while maximizing parallelism.
+
 **Success Criteria** (what must be TRUE):
   1. User can run `gsd-ralph execute N` and get one git worktree per plan for that phase, each with generated PROMPT.md, fix_plan.md, and .ralphrc
   2. User receives clear instructions for launching Ralph in each created worktree
   3. Each Ralph instance has full read access to peer worktree contents (source, status, fix_plan) via paths included in its PROMPT.md
   4. User hears a terminal bell when all plans complete or any plan fails
+  5. Execute reads `wave` and `depends_on` from plan frontmatter and builds a dependency graph
+  6. Wave 1 plans launch immediately; later-wave plans launch only after their specific dependencies (not all prior waves) have completed and merged
+  7. Each later-wave worktree is created from the post-merge main (containing dependency outputs), so agents never need to rebuild what a dependency already produced
+  8. A dependency manifest is generated per worktree listing what upstream plans provide (from `files_modified` and `artifacts` in plan frontmatter), so agents understand what's already available vs. what they build
 **Plans**: TBD
 
 Plans:
@@ -66,15 +73,17 @@ Plans:
 - [ ] 03-02: TBD
 
 ### Phase 4: Merge Orchestration
-**Goal**: User can merge all completed branches for a phase with safety guarantees and conflict resolution
+**Goal**: User can merge all completed branches for a phase with safety guarantees, conflict prevention, and wave-aware triggering
 **Depends on**: Phase 3
-**Requirements**: MERG-01, MERG-02, MERG-03, MERG-04, MERG-05
+**Requirements**: MERG-01, MERG-02, MERG-03, MERG-04, MERG-05, MERG-06, MERG-07
 **Success Criteria** (what must be TRUE):
   1. User can run `gsd-ralph merge N` and all completed branches for the phase are merged into main in plan order
   2. User can run `gsd-ralph merge N --review` to see a diff for each branch and approve or skip before merging
   3. When a merge conflict occurs, the user sees clear guidance on which files conflict and how to resolve them
   4. Conflicts in .planning/ files are auto-resolved by preferring main's version
   5. Pre-merge commit hash is saved and user can rollback if a merge goes wrong
+  6. Pre-merge dry-run detects conflicts before attempting the real merge, so the user knows upfront which branches will conflict
+  7. Wave-aware merge: when wave N branches are merged, the tool signals Phase 3's execution pipeline to unblock wave N+1 plans that depended on them
 **Plans**: TBD
 
 Plans:
