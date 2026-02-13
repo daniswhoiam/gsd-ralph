@@ -100,32 +100,32 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INIT-01 | — | Pending |
-| INIT-02 | — | Pending |
-| INIT-03 | — | Pending |
-| EXEC-01 | — | Pending |
-| EXEC-02 | — | Pending |
-| EXEC-03 | — | Pending |
-| EXEC-04 | — | Pending |
-| EXEC-05 | — | Pending |
-| EXEC-06 | — | Pending |
-| EXEC-07 | — | Pending |
-| PEER-01 | — | Pending |
-| PEER-02 | — | Pending |
-| MERG-01 | — | Pending |
-| MERG-02 | — | Pending |
-| MERG-03 | — | Pending |
-| MERG-04 | — | Pending |
-| MERG-05 | — | Pending |
-| CLEN-01 | — | Pending |
-| CLEN-02 | — | Pending |
-| XCUT-01 | — | Pending |
+| INIT-01 | Phase 1 | Pending |
+| INIT-02 | Phase 1 | Pending |
+| INIT-03 | Phase 1 | Pending |
+| EXEC-01 | Phase 3 | Pending |
+| EXEC-02 | Phase 2 | Pending |
+| EXEC-03 | Phase 2 | Pending |
+| EXEC-04 | Phase 2 | Pending |
+| EXEC-05 | Phase 3 | Pending |
+| EXEC-06 | Phase 3 | Pending |
+| EXEC-07 | Phase 2 | Pending |
+| PEER-01 | Phase 3 | Pending |
+| PEER-02 | Phase 3 | Pending |
+| MERG-01 | Phase 4 | Pending |
+| MERG-02 | Phase 4 | Pending |
+| MERG-03 | Phase 4 | Pending |
+| MERG-04 | Phase 4 | Pending |
+| MERG-05 | Phase 4 | Pending |
+| CLEN-01 | Phase 5 | Pending |
+| CLEN-02 | Phase 5 | Pending |
+| XCUT-01 | Phase 1 | Pending |
 
 **Coverage:**
 - v1 requirements: 20 total
-- Mapped to phases: 0
-- Unmapped: 20
+- Mapped to phases: 20
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-13*
-*Last updated: 2026-02-13 after initial definition*
+*Last updated: 2026-02-13 after roadmap creation*
