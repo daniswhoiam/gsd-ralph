@@ -2,15 +2,15 @@
 # tests/test_helper/common.bash -- Shared test setup
 
 _common_setup() {
-    # Load bats libraries
-    load 'bats-support/load'
-    load 'bats-assert/load'
-    load 'bats-file/load'
-
     # Get the containing directory of this file (test_helper/)
     # then resolve to the project root
     PROJECT_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
     PATH="$PROJECT_ROOT/bin:$PATH"
+
+    # Load bats libraries from test_helper/ using absolute paths
+    load "${PROJECT_ROOT}/tests/test_helper/bats-support/load"
+    load "${PROJECT_ROOT}/tests/test_helper/bats-assert/load"
+    load "${PROJECT_ROOT}/tests/test_helper/bats-file/load"
 
     # Create temp directory for test isolation
     TEST_TEMP_DIR="$(mktemp -d)"
