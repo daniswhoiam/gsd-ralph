@@ -1,0 +1,70 @@
+#!/bin/bash
+# bin/gsd-ralph -- Entry point for gsd-ralph CLI
+
+set -euo pipefail
+
+# Resolve script location (works even if symlinked)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+GSD_RALPH_HOME="$(dirname "$SCRIPT_DIR")"
+
+# Source shared libraries
+source "$GSD_RALPH_HOME/lib/common.sh"
+source "$GSD_RALPH_HOME/lib/config.sh"
+
+# Version
+GSD_RALPH_VERSION="0.1.0"
+
+# Global options
+VERBOSE=false
+
+usage() {
+    cat <<EOF
+gsd-ralph v${GSD_RALPH_VERSION} -- Bridge GSD planning with Ralph execution
+
+Usage: gsd-ralph [options] <command> [args]
+
+Commands:
+  init        Initialize gsd-ralph in a GSD project
+  execute N   Execute phase N in parallel worktrees
+  status N    Show status of phase N worktrees
+  merge N     Merge completed branches for phase N
+  cleanup N   Remove worktrees and branches for phase N
+
+Options:
+  -h, --help     Show this help message
+  -v, --verbose  Enable verbose output
+  --version      Show version
+
+Run 'gsd-ralph <command> --help' for command-specific help.
+EOF
+}
+
+# Parse global options (before subcommand)
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)    usage; exit 0 ;;
+        --version)    echo "gsd-ralph v${GSD_RALPH_VERSION}"; exit 0 ;;
+        -v|--verbose) VERBOSE=true; shift ;;
+        -*)           print_error "Unknown option: $1"; usage; exit 1 ;;
+        *)            break ;;  # First non-option is the subcommand
+    esac
+done
+
+if [[ $# -eq 0 ]]; then
+    usage
+    exit 1
+fi
+
+COMMAND="$1"; shift
+
+# Dispatch to command handler
+COMMAND_FILE="$GSD_RALPH_HOME/lib/commands/${COMMAND}.sh"
+if [[ -f "$COMMAND_FILE" ]]; then
+    # shellcheck source=/dev/null
+    source "$COMMAND_FILE"
+    "cmd_${COMMAND}" "$@"
+else
+    print_error "Unknown command: $COMMAND"
+    usage
+    exit 1
+fi
