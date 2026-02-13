@@ -27,7 +27,7 @@ print_header() {
 }
 
 print_success() { printf "${GREEN}[ok]${NC} %s\n" "$1"; }
-print_warning() { printf "${YELLOW}[warn]${NC} %s\n" "$1"; }
+print_warning() { printf "${YELLOW}[warn]${NC} %s\n" "$1" >&2; }
 print_error()   { printf "${RED}[error]${NC} %s\n" "$1" >&2; }
 print_info()    { printf "${BLUE}[info]${NC} %s\n" "$1"; }
 
@@ -80,11 +80,11 @@ check_all_dependencies() {
     # Ralph is a soft dependency -- only needed at execute time
     if ! command -v ralph >/dev/null 2>&1; then
         print_warning "ralph is not installed. You'll need it before running 'gsd-ralph execute'."
-        printf "  Install: %s\n" "https://github.com/frankbria/ralph-claude-code"
+        printf "  Install: %s\n" "https://github.com/frankbria/ralph-claude-code" >&2
     fi
 
     if [[ $missing -gt 0 ]]; then
-        printf "\n"
+        printf "\n" >&2
         print_error "$missing required dependency(ies) missing. Install them and re-run."
         return 1
     fi

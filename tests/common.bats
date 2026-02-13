@@ -35,6 +35,13 @@ teardown() {
     assert_output --partial "be careful"
 }
 
+@test "print_info outputs [info] prefix" {
+    run print_info "info message"
+    assert_success
+    assert_output --partial "[info]"
+    assert_output --partial "info message"
+}
+
 @test "die exits with code 1 and prints error" {
     run die "fatal error"
     assert_failure 1

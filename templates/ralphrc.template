@@ -8,8 +8,6 @@
 
 PROJECT_NAME="{{PROJECT_NAME}}"
 PROJECT_TYPE="{{PROJECT_TYPE}}"
-TEST_CMD="{{TEST_CMD}}"
-BUILD_CMD="{{BUILD_CMD}}"
 
 # =============================================================================
 # LOOP SETTINGS
@@ -23,7 +21,7 @@ CLAUDE_OUTPUT_FORMAT="json"
 # TOOL PERMISSIONS
 # =============================================================================
 
-# Broad access — Ralph needs full bash for npm, vitest, tsc, git, etc.
+# Broad access — Ralph needs full bash for build, test, git, etc.
 ALLOWED_TOOLS="Write,Read,Edit,Grep,Glob,Bash(*)"
 
 # =============================================================================
@@ -39,6 +37,13 @@ SESSION_EXPIRY_HOURS=24
 
 # Ralph reads .planning/STATE.md to discover current phase and plan
 TASK_SOURCES="local"
+
+# =============================================================================
+# BUILD & TEST COMMANDS
+# =============================================================================
+
+TEST_CMD="{{TEST_CMD}}"
+BUILD_CMD="{{BUILD_CMD}}"
 
 # =============================================================================
 # CIRCUIT BREAKER THRESHOLDS

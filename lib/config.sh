@@ -59,7 +59,12 @@ detect_project_type() {
 
     elif [[ -f "$project_dir/pyproject.toml" ]]; then
         lang="python"
-        test_cmd="pytest"
+        # Check for common test frameworks
+        if [[ -f "$project_dir/pytest.ini" ]] || [[ -d "$project_dir/tests" ]]; then
+            test_cmd="pytest"
+        elif [[ -f "$project_dir/setup.py" ]]; then
+            test_cmd="python -m pytest"
+        fi
         build_cmd=""
         pkg_manager="pip"
         # Detect poetry/uv
@@ -76,6 +81,16 @@ detect_project_type() {
         test_cmd="python -m pytest"
         build_cmd=""
         pkg_manager="pip"
+
+    elif [[ -f "$project_dir/Makefile" ]]; then
+        lang="unknown"
+        # Check if Makefile has test/build targets
+        if grep -q '^test:' "$project_dir/Makefile" 2>/dev/null; then
+            test_cmd="make test"
+        fi
+        if grep -q '^build:' "$project_dir/Makefile" 2>/dev/null; then
+            build_cmd="make build"
+        fi
 
     elif [[ -f "$project_dir/Gemfile" ]]; then
         lang="ruby"

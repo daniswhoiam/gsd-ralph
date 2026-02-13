@@ -35,7 +35,7 @@ teardown() {
 }
 
 @test "detect_project_type with go.mod detects go" {
-    touch go.mod
+    echo 'module example.com/test' > go.mod
     detect_project_type "."
     [[ "$DETECTED_LANG" == "go" ]]
 }

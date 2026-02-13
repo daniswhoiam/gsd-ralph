@@ -1,0 +1,2 @@
+- [x] Task 1: Implement the gsd-ralph init command
+- [x] Task 2: Write comprehensive integration tests for the init command
