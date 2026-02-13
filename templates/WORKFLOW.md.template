@@ -1,0 +1,105 @@
+# Execution Workflow
+
+Quick reference for the GSD + Ralph parallel execution workflow.
+
+## The Loop (For Each Phase)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  1. PLAN    →  /gsd:plan-phase N                            │
+│  2. SETUP   →  ./scripts/ralph-execute.sh N                 │
+│  3. RUN     →  cd worktree && ralph  (in each terminal)     │
+│  4. MONITOR →  ./scripts/ralph-status.sh N                  │
+│  5. MERGE   →  ./scripts/ralph-merge.sh N                   │
+│  6. CLEAN   →  ./scripts/ralph-cleanup.sh N                 │
+│  7. NEXT    →  Repeat for Phase N+1                         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Commands Reference
+
+| Step | Command | What It Does |
+|------|---------|--------------|
+| Plan | `/gsd:plan-phase N` | Create detailed tasks for phase N |
+| Setup | `./scripts/ralph-execute.sh N` | Create worktrees, shows next steps |
+| Run | `cd ../bayesian-it-pN-01 && ralph` | Start Ralph in a worktree |
+| Status | `./scripts/ralph-status.sh N` | Check all worktrees for phase N |
+| Merge | `./scripts/ralph-merge.sh N` | Merge all branches back to main |
+| Cleanup | `./scripts/ralph-cleanup.sh N` | Remove worktrees and branches |
+
+## Worktree Layout
+
+After running `ralph-execute.sh 2`, you'll have:
+
+```
+~/Projects/
+├── bayesian-it/              # Planning checkout (main)
+│   ├── .planning/            # Plans, roadmap, requirements
+│   ├── .ralph/               # Ralph base config
+│   ├── scripts/              # Execution scripts (ralph-*.sh)
+│   └── WORKFLOW.md           # This file
+├── bayesian-it-p2-01/        # Phase 2, Plan 01 worktree
+│   ├── .ralph/               # Ralph state (isolated, extends base)
+│   │   ├── PROMPT.md         # Base + phase overrides
+│   │   ├── AGENT.md          # Build/test commands
+│   │   ├── fix_plan.md       # Tasks from 02-01-PLAN.md
+│   │   └── status.json       # Progress tracking
+│   └── @fix_plan.md          # Legacy compatibility
+└── bayesian-it-p2-02/        # Phase 2, Plan 02 worktree
+    └── ...
+```
+
+## GSD Plan File Naming
+
+The scripts handle both GSD naming conventions:
+- **Single plan**: `.planning/phases/phase-N/PLAN.md`
+- **Multiple plans**: `.planning/phases/phase-N/NN-MM-PLAN.md` (e.g., `02-01-PLAN.md`)
+
+## Blocked Plans
+
+If a plan blocks on a dependency:
+1. Ralph writes BLOCKED to `.ralph/status.json`
+2. Waits 2 minutes, then rechecks
+3. Continues automatically when dependency resolves
+
+Check blocked plans: `./scripts/ralph-status.sh N`
+
+## Troubleshooting
+
+**Plan not found:**
+```
+Error: Phase N not planned yet.
+```
+→ Run `/gsd:plan-phase N` first
+
+**Merge conflict:**
+```
+✗ Merge conflict!
+```
+→ Resolve manually in main checkout, then `git add . && git commit`
+
+**Worktree already exists:**
+→ Choose option 2 to remove and recreate, or 1 to reuse
+
+**Ralph not installed:**
+```
+command not found: ralph
+```
+→ Install: https://github.com/frankbria/ralph-claude-code
+
+## Quick Start
+
+```bash
+# Phase 2
+/gsd:plan-phase 2                    # Plan the phase
+./scripts/ralph-execute.sh 2         # Setup worktrees
+# Open terminals and run ralph in each worktree
+./scripts/ralph-status.sh 2          # Monitor
+./scripts/ralph-merge.sh 2           # Merge when done
+./scripts/ralph-cleanup.sh 2         # Clean up
+
+# Phase 3
+/gsd:plan-phase 3
+./scripts/ralph-execute.sh 3
+# ... repeat
+```

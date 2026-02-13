@@ -1,0 +1,18 @@
+# Ralph runtime artifacts
+.ralph/logs/
+.ralph/status.json
+.ralph/.ralph_session
+.ralph/.ralph_session_history
+.ralph/.call_count
+.ralph/.last_reset
+.ralph/docs/generated/
+
+# OS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
