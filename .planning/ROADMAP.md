@@ -47,7 +47,7 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 02-01-PLAN.md -- Discovery module, parameterized templates, and test fixtures
+- [x] 02-01-PLAN.md -- Discovery module, parameterized templates, and test fixtures
 - [ ] 02-02-PLAN.md -- File generation pipeline and generate subcommand
 
 ### Phase 3: Phase Execution
@@ -110,7 +110,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Project Initialization | 2/2 | Complete | 2026-02-13 |
-| 2. Prompt Generation | 0/2 | Ready | - |
+| 2. Prompt Generation | 1/2 | In Progress | - |
 | 3. Phase Execution | 0/TBD | Not started | - |
 | 4. Merge Orchestration | 0/TBD | Not started | - |
 | 5. Cleanup | 0/TBD | Not started | - |

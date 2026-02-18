@@ -4,7 +4,7 @@
 
 - [x] Task 1: Create lib/discovery.sh with plan discovery functions and test fixtures
 - [x] Task 2: Parameterize PROMPT.md.template and AGENT.md.template
-- [ ] Create 02-01-SUMMARY.md after all Plan 02-01 tasks are complete
+- [x] Create 02-01-SUMMARY.md after all Plan 02-01 tasks are complete
 
 ## Plan 02-02: File generation pipeline and generate subcommand (Wave 2, depends on 02-01)
 
