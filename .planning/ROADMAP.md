@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Project Initialization** - CLI scaffolding, dependency validation, and project type detection
 - [x] **Phase 2: Prompt Generation** - Template system that produces PROMPT.md, fix_plan.md, and .ralphrc from GSD plans
-- [ ] **Phase 3: Phase Execution** - Dependency-aware worktree creation, wave scheduling, peer visibility, and completion notifications
+- [ ] **Phase 3: Phase Execution** - Sequential GSD-protocol execution with frontmatter parsing and strategy analysis
 - [ ] **Phase 4: Merge Orchestration** - Wave-aware auto-merge with dry-run conflict detection, review mode, and rollback safety
 - [ ] **Phase 5: Cleanup** - Registry-driven worktree and branch removal after phase completion
 
@@ -51,26 +51,21 @@ Plans:
 - [x] 02-02-PLAN.md -- File generation pipeline and generate subcommand
 
 ### Phase 3: Phase Execution
-**Goal**: User can execute a full GSD phase by creating isolated worktrees with dependency-aware scheduling that maximizes parallel execution
+**Goal**: User can run `gsd-ralph execute N` to create an execution environment where a GSD-disciplined Ralph autonomously completes all plans in a phase
 **Depends on**: Phase 2
-**Requirements**: EXEC-01, EXEC-05, EXEC-06, PEER-01, PEER-02, WAVE-01, WAVE-02, WAVE-03
-
-**Lesson from Phase 1**: Plans 01-01 (wave 1) and 01-02 (wave 2, depends_on 01-01) were executed in parallel worktrees despite the dependency. Plan 01-02 rebuilt Plan 01-01's files independently, producing divergent implementations and 12 merge conflicts. Wave/dependency metadata exists in plan frontmatter but was not enforced at execution time. The execution model must respect `wave` and `depends_on` while maximizing parallelism.
-
+**Requirements**: EXEC-01 (adapted), EXEC-05, WAVE-01 (partial)
 **Success Criteria** (what must be TRUE):
-  1. User can run `gsd-ralph execute N` and get one git worktree per plan for that phase, each with generated PROMPT.md, fix_plan.md, and .ralphrc
-  2. User receives clear instructions for launching Ralph in each created worktree
-  3. Each Ralph instance has full read access to peer worktree contents (source, status, fix_plan) via paths included in its PROMPT.md
-  4. User hears a terminal bell when all plans complete or any plan fails
-  5. Execute reads `wave` and `depends_on` from plan frontmatter and builds a dependency graph
-  6. Wave 1 plans launch immediately; later-wave plans launch only after their specific dependencies (not all prior waves) have completed and merged
-  7. Each later-wave worktree is created from the post-merge main (containing dependency outputs), so agents never need to rebuild what a dependency already produced
-  8. A dependency manifest is generated per worktree listing what upstream plans provide (from `files_modified` and `artifacts` in plan frontmatter), so agents understand what's already available vs. what they build
-**Plans**: TBD
+  1. User can run `gsd-ralph execute N` and get a git branch with GSD-protocol PROMPT.md, combined fix_plan.md, and execution log — ready for Ralph
+  2. Execute command parses plan frontmatter and reports the phase's dependency structure (sequential vs parallel-capable)
+  3. Execute command validates dependencies (no circular refs, no missing deps)
+  4. Generated PROMPT.md contains the 7-step GSD Execution Protocol that Ralph follows autonomously
+  5. Generated fix_plan.md groups tasks by plan with summary creation tasks
+  6. Ralph can be launched on the branch and complete the phase following the protocol (verified by running Phase 3 itself this way)
+**Plans:** 2 plans
 
 Plans:
-- [ ] 03-01: TBD
-- [ ] 03-02: TBD
+- [ ] 03-01-PLAN.md -- Frontmatter parsing and execution strategy analysis
+- [ ] 03-02-PLAN.md -- Execute command with sequential mode and protocol PROMPT.md
 
 ### Phase 4: Merge Orchestration
 **Goal**: User can merge all completed branches for a phase with safety guarantees, conflict prevention, and wave-aware triggering
@@ -111,6 +106,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 |-------|----------------|--------|-----------|
 | 1. Project Initialization | 2/2 | Complete | 2026-02-13 |
 | 2. Prompt Generation | 2/2 | Complete | 2026-02-18 |
-| 3. Phase Execution | 0/TBD | Not started | - |
+| 3. Phase Execution | 0/2 | Not started | - |
 | 4. Merge Orchestration | 0/TBD | Not started | - |
 | 5. Cleanup | 0/TBD | Not started | - |
