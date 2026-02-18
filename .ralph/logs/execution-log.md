@@ -59,3 +59,25 @@
 **Commit:** (pending) — docs(02-01): create plan summary
 **Deviations from plan:** None
 **Next:** Plan 02-02 Task 1: Create lib/prompt.sh with file generation functions
+
+## Loop 4 — 2026-02-18 19:25 UTC
+
+**Plan:** 02-02 | **Task:** Task 1: Create lib/prompt.sh with file generation functions and unit tests
+
+**What was done:**
+- Created `lib/prompt.sh` with 5 functions: extract_tasks_to_fix_plan, generate_prompt_md, append_scope_lock, append_merge_order, append_peer_visibility
+- extract_tasks_to_fix_plan uses python3 regex for reliable multiline XML task extraction
+- Dynamic sections handle single-plan vs multi-plan correctly (skip merge order / no-peer note)
+- Created `tests/prompt.bats` with 12 unit tests
+- Fixed bats `run` incompatibility with functions that write to files (direct invocation instead)
+- Manually verified extraction against real Phase 1 plan (2 tasks extracted correctly)
+
+**Verification results:**
+- `shellcheck -s bash lib/prompt.sh` — PASS
+- `make test` — PASS (62/62 tests, 12 new)
+- `grep -c '@test' tests/prompt.bats` — 12 (>= 10 required) — PASS
+- Manual test with real plan file — PASS
+
+**Commit:** 76bd399 — feat(prompt): add PROMPT.md and fix_plan.md generation pipeline
+**Deviations from plan:** None
+**Next:** Task 2: Create generate subcommand with integration tests

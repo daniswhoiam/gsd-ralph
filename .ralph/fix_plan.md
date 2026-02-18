@@ -8,6 +8,6 @@
 
 ## Plan 02-02: File generation pipeline and generate subcommand (Wave 2, depends on 02-01)
 
-- [ ] Task 1: Create lib/prompt.sh with file generation functions and unit tests
+- [x] Task 1: Create lib/prompt.sh with file generation functions and unit tests
 - [ ] Task 2: Create generate subcommand with integration tests
 - [ ] Create 02-02-SUMMARY.md after all Plan 02-02 tasks are complete
