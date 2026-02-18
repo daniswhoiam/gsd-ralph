@@ -156,3 +156,104 @@ EOF
         echo "- Source: \`${peer_path}/\` (read-only)" >> "$output"
     done
 }
+
+# Generate protocol PROMPT.md for sequential execution.
+# Renders the protocol template and appends phase context section.
+# Args: output_path, template_path, phase_num, phase_dir,
+#       project_name, project_lang, test_cmd, build_cmd, plan_order_array...
+generate_protocol_prompt_md() {
+    local output_path="$1"
+    local template_path="$2"
+    local phase_num="$3"
+    local phase_dir="$4"
+    local project_name="$5"
+    local project_lang="$6"
+    local test_cmd="$7"
+    local build_cmd="$8"
+    shift 8
+    # Remaining args are plan files in execution order
+    local plan_files=("$@")
+
+    # Step 1: Render base protocol template
+    render_template "$template_path" "$output_path" \
+        "PROJECT_NAME=${project_name}" \
+        "PROJECT_LANG=${project_lang}" \
+        "TEST_CMD=${test_cmd}" \
+        "BUILD_CMD=${build_cmd}"
+
+    # Step 2: Append phase context section
+    local phase_slug
+    phase_slug=$(basename "$phase_dir")
+
+    cat >> "$output_path" << EOF
+
+# --- PHASE CONTEXT (Phase ${phase_num}) ---
+
+## Phase Directory
+
+\`${phase_dir}\`
+
+## Execution Order
+
+EOF
+
+    local plan_file plan_id task_count
+    local total_tasks=0
+    for plan_file in "${plan_files[@]}"; do
+        plan_id=$(plan_id_from_filename "$plan_file")
+        # Count tasks in this plan
+        task_count=$(python3 -c "
+import re, sys
+content = open(sys.argv[1]).read()
+tasks = re.findall(r'<task[^>]*>(.*?)</task>', content, re.DOTALL)
+print(len(tasks))
+" "$plan_file" 2>/dev/null || echo "0")
+        total_tasks=$((total_tasks + task_count))
+        echo "- Plan ${plan_id} ($(basename "$plan_file")): ${task_count} task(s)" >> "$output_path"
+    done
+
+    cat >> "$output_path" << EOF
+
+**Total tasks:** ${total_tasks}
+**Mode:** Sequential — complete all plans in order on this branch
+EOF
+}
+
+# Generate combined fix_plan.md from all plans in a phase.
+# Groups tasks by plan with headers and adds summary creation tasks.
+# Args: phase_dir, output_path, plan_order_array...
+generate_combined_fix_plan() {
+    local phase_dir="$1"
+    local output_path="$2"
+    shift 2
+    local plan_files=("$@")
+
+    local phase_slug
+    phase_slug=$(basename "$phase_dir")
+
+    : > "$output_path"
+
+    local plan_file plan_id plan_filename
+    for plan_file in "${plan_files[@]}"; do
+        plan_id=$(plan_id_from_filename "$plan_file")
+        plan_filename=$(basename "$plan_file")
+
+        # Plan header
+        echo "## Plan ${plan_id}: ${plan_filename}" >> "$output_path"
+        echo "" >> "$output_path"
+
+        # Extract tasks from this plan
+        local temp_tasks
+        temp_tasks=$(mktemp)
+        extract_tasks_to_fix_plan "$plan_file" "$temp_tasks"
+
+        if [[ -s "$temp_tasks" ]]; then
+            cat "$temp_tasks" >> "$output_path"
+        fi
+        rm -f "$temp_tasks"
+
+        # Add summary creation task
+        echo "- [ ] Create ${phase_slug}/${plan_id}-SUMMARY.md" >> "$output_path"
+        echo "" >> "$output_path"
+    done
+}
