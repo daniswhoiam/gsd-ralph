@@ -28,6 +28,7 @@ Usage: gsd-ralph [options] <command> [args]
 
 Commands:
   init        Initialize gsd-ralph in a GSD project
+  generate N  Generate per-plan files for phase N (for testing/debugging)
   execute N   Execute phase N in parallel worktrees
   status N    Show status of phase N worktrees
   merge N     Merge completed branches for phase N
