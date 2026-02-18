@@ -18,3 +18,24 @@
 **Commit:** 629ce35 — feat(discovery): add plan discovery module with test fixtures
 **Deviations from plan:** None
 **Next:** Task 2: Parameterize PROMPT.md.template and AGENT.md.template
+
+## Loop 2 — 2026-02-18 19:10 UTC
+
+**Plan:** 02-01 | **Task:** Task 2: Parameterize PROMPT.md.template and AGENT.md.template
+
+**What was done:**
+- Rewrote `templates/PROMPT.md.template` from hardcoded bayesian-it content to parameterized template with {{PROJECT_NAME}}, {{PROJECT_LANG}}, {{TEST_CMD}}, {{BUILD_CMD}}
+- Rewrote `templates/AGENT.md.template` with same parameterized variables
+- Removed all bayesian-it references, TypeScript/Vitest/Zod/better-sqlite3/NodeNext specifics
+- Removed File Structure section (project-specific, will be populated dynamically)
+- Kept generic GSD workflow sections (task format, required reading, execution rules, status reporting)
+
+**Verification results:**
+- `grep -i 'bayesian|vitest|better-sqlite|zod|nodenext'` — PASS (no matches)
+- `grep -c '{{' PROMPT.md.template` — 9 placeholders (>= 4 required) — PASS
+- `grep -c '{{' AGENT.md.template` — 6 placeholders (>= 3 required) — PASS
+- `make check` — PASS (lint clean, 50/50 tests pass)
+
+**Commit:** 4d9c013 — feat(templates): parameterize PROMPT.md and AGENT.md templates
+**Deviations from plan:** None
+**Next:** Plan 02-01 verification and summary
