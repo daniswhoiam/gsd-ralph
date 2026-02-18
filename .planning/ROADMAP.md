@@ -12,7 +12,7 @@ gsd-ralph delivers a CLI tool that bridges GSD structured planning with Ralph au
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Project Initialization** - CLI scaffolding, dependency validation, and project type detection
+- [x] **Phase 1: Project Initialization** - CLI scaffolding, dependency validation, and project type detection
 - [ ] **Phase 2: Prompt Generation** - Template system that produces PROMPT.md, fix_plan.md, and .ralphrc from GSD plans
 - [ ] **Phase 3: Phase Execution** - Dependency-aware worktree creation, wave scheduling, peer visibility, and completion notifications
 - [ ] **Phase 4: Merge Orchestration** - Wave-aware auto-merge with dry-run conflict detection, review mode, and rollback safety
@@ -32,8 +32,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans:** 2 plans
 
 Plans:
-- [ ] 01-01-PLAN.md -- CLI skeleton, shared libraries, and bats-core test infrastructure
-- [ ] 01-02-PLAN.md -- Init command implementation with integration tests
+- [x] 01-01-PLAN.md -- CLI skeleton, shared libraries, and bats-core test infrastructure
+- [x] 01-02-PLAN.md -- Init command implementation with integration tests
 
 ### Phase 2: Prompt Generation
 **Goal**: Tool can parse GSD plans and generate complete, correct per-worktree files from templates
@@ -109,8 +109,8 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Project Initialization | 0/2 | Planned | - |
-| 2. Prompt Generation | 0/TBD | Not started | - |
+| 1. Project Initialization | 2/2 | Complete | 2026-02-13 |
+| 2. Prompt Generation | 0/2 | Ready | - |
 | 3. Phase Execution | 0/TBD | Not started | - |
 | 4. Merge Orchestration | 0/TBD | Not started | - |
 | 5. Cleanup | 0/TBD | Not started | - |
