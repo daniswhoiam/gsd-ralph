@@ -1,5 +1,6 @@
 # Ralph runtime artifacts
 .ralph/logs/
+!.ralph/logs/execution-log.md
 .ralph/status.json
 .ralph/.ralph_session
 .ralph/.ralph_session_history
