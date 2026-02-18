@@ -1,53 +1,19 @@
-# Agent Build Instructions — bayesian-it
-
-## Project Setup
-
-```bash
-npm install
-```
+# Agent Build Instructions — {{PROJECT_NAME}}
 
 ## Build
 
 ```bash
-# TypeScript compilation
-npm run build
-
-# Type checking only (no emit)
-npm run typecheck
+{{BUILD_CMD}}
 ```
 
 ## Running Tests
 
 ```bash
-# Run all tests
-npm test
-
-# Run tests in watch mode
-npx vitest --watch
-
-# Run specific test file
-npx vitest src/storage/episodes.test.ts
-
-# Run with coverage
-npx vitest --coverage
+{{TEST_CMD}}
 ```
 
-## Project Structure
+## Project Info
 
-- `src/` — TypeScript source (ES2022, NodeNext modules)
-- `dist/` — Compiled output (gitignored)
-- `.bayesian/` — Runtime SQLite storage (gitignored)
-- `.planning/` — GSD planning artifacts
-
-## Key Patterns
-
-- **ES modules**: All files use `import`/`export`, file extensions required in imports
-- **Zod validation**: Runtime schemas in `src/storage/schema.ts`, types derived with `z.infer`
-- **SQLite via better-sqlite3**: Synchronous API, prepared statements cached at store creation
-- **Vitest**: Tests co-located with source (`*.test.ts`)
-
-## Key Learnings
-
-- Zod v3 (not v4) — v4 not yet stable
-- Prepared statements: prepare once at store creation, reuse per call
-- Schema versioning: `schema_version` table included from day one
+- **Language**: {{PROJECT_LANG}}
+- **Testing**: {{TEST_CMD}}
+- **Build**: {{BUILD_CMD}}
