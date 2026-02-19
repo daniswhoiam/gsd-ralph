@@ -93,11 +93,11 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. User can run `gsd-ralph cleanup N` and all worktrees and branches for the phase are removed
   2. Tool only removes worktrees it created (registry-driven, not glob-based), preventing accidental deletion of unrelated worktrees
-**Plans:** 2 plans
+**Plans:** 2 plans in 2 waves
 
 Plans:
-- [ ] 05-01-PLAN.md -- Worktree registry module and execute-side registration
-- [ ] 05-02-PLAN.md -- Cleanup command implementation with integration tests
+- [ ] 05-01-PLAN.md -- Worktree registry module and execute-side registration (wave 1)
+- [ ] 05-02-PLAN.md -- Cleanup command implementation with integration tests (wave 2, depends on 05-01)
 
 ## Progress
 
