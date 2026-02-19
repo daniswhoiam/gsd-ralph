@@ -16,7 +16,7 @@ lint:
 
 install:
 	@echo "Installing gsd-ralph..."
-	ln -sf "$(PWD)/bin/gsd-ralph" /usr/local/bin/gsd-ralph
+	ln -sf "$(CURDIR)/bin/gsd-ralph" /usr/local/bin/gsd-ralph
 	@echo "Installed. Run 'gsd-ralph --help' to verify."
 
 uninstall:
