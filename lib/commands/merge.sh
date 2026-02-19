@@ -2,8 +2,7 @@
 # lib/commands/merge.sh -- Merge completed branches for a phase back to main
 #
 # Provides dry-run conflict detection, auto-resolution of known safe conflicts,
-# rollback safety, and branch discovery. The actual merge pipeline loop is
-# implemented in Plan 04-02.
+# rollback safety, branch discovery, and post-merge summary with optional review.
 
 # Source required modules
 # shellcheck source=/dev/null
@@ -18,6 +17,8 @@ source "$GSD_RALPH_HOME/lib/merge/dry_run.sh"
 source "$GSD_RALPH_HOME/lib/merge/rollback.sh"
 # shellcheck source=/dev/null
 source "$GSD_RALPH_HOME/lib/merge/auto_resolve.sh"
+# shellcheck source=/dev/null
+source "$GSD_RALPH_HOME/lib/merge/review.sh"
 
 merge_usage() {
     cat <<EOF
@@ -191,37 +192,140 @@ cmd_merge() {
         print_info "  - $branch"
     done
 
-    # Dry-run mode: show conflict report and exit
-    if [[ "$dry_run" == true ]]; then
-        print_header "Dry-Run Conflict Report"
-        local has_conflicts=false
-        for branch in "${MERGE_BRANCHES[@]}"; do
-            if merge_dry_run "$branch"; then
-                print_success "$branch: clean merge"
-            else
-                has_conflicts=true
-                print_warning "$branch: conflicts detected"
-                if merge_dry_run_conflicts "$branch"; then
-                    local conflict_file
-                    while IFS= read -r conflict_file; do
-                        [[ -n "$conflict_file" ]] && print_info "    $conflict_file"
-                    done <<< "$DRY_RUN_CONFLICTS"
-                fi
+    # ── Phase 1: Dry-run preflight (all branches before any merge) ──
+    print_header "Dry-Run Preflight"
+    local clean_branches=()
+    local conflict_branches=()
+    local conflict_files_map=()  # parallel array: conflict file lists per conflict_branches entry
+
+    for branch in "${MERGE_BRANCHES[@]}"; do
+        if merge_dry_run "$branch"; then
+            print_success "$branch: clean merge"
+            clean_branches+=("$branch")
+        else
+            print_warning "$branch: conflicts detected"
+            local conflict_file_list=""
+            if merge_dry_run_conflicts "$branch"; then
+                conflict_file_list="$DRY_RUN_CONFLICTS"
+                local conflict_file
+                while IFS= read -r conflict_file; do
+                    [[ -n "$conflict_file" ]] && print_info "    $conflict_file"
+                done <<< "$DRY_RUN_CONFLICTS"
             fi
-        done
-        if [[ "$has_conflicts" == true ]]; then
+            conflict_branches+=("$branch")
+            conflict_files_map+=("$conflict_file_list")
+        fi
+    done
+
+    # Dry-run mode: show report and return without merging
+    if [[ "$dry_run" == true ]]; then
+        if [[ ${#conflict_branches[@]} -gt 0 ]]; then
             return 1
         fi
         return 0
     fi
 
-    # Merge pipeline placeholder -- Plan 04-02 implements the actual merge loop
-    print_info ""
-    print_info "Merge pipeline not yet implemented (see Plan 04-02)."
-    print_info "Use --dry-run to preview conflicts."
+    # If ALL branches conflict, nothing to merge
+    if [[ ${#clean_branches[@]} -eq 0 ]]; then
+        print_warning "All branches have conflicts. Nothing to merge."
+        # Report conflict guidance for each
+        local idx=0
+        for branch in "${conflict_branches[@]}"; do
+            print_conflict_guidance "$branch" "${conflict_files_map[$idx]}"
+            idx=$((idx + 1))
+        done
+        return 1
+    fi
 
-    # Suppress unused variable warnings for flags consumed by future pipeline
-    : "${do_review:=false}"
+    # ── Phase 2: Save rollback point ──
+    save_rollback_point "$phase_num"
+    local rollback_sha
+    rollback_sha=$(git rev-parse HEAD)
+    print_verbose "Rollback point saved at $rollback_sha"
 
+    # ── Phase 3: Merge clean branches sequentially ──
+    print_header "Merging Branches"
+
+    # Results array: colon-delimited "branch:status:details:commits"
+    local merge_results=()
+    local success_count=0
+    local skip_count=0
+
+    for branch in "${clean_branches[@]}"; do
+        print_info "Merging $branch ..."
+        local sha_before
+        sha_before=$(git rev-parse HEAD)
+
+        if git merge --no-ff --no-edit "$branch" >/dev/null 2>&1; then
+            # Merge succeeded cleanly
+            local stat_line commit_count
+            stat_line=$(git diff --stat "$sha_before"..HEAD 2>/dev/null | tail -1)
+            commit_count=$(git rev-list --count "$sha_before"..HEAD 2>/dev/null)
+            record_merged_branch "$branch" "$sha_before"
+            merge_results+=("${branch}:merged:${stat_line}:${commit_count}")
+            success_count=$((success_count + 1))
+            print_success "$branch merged"
+        else
+            # Merge conflict -- attempt auto-resolution
+            print_verbose "Conflict during merge of $branch, attempting auto-resolve ..."
+            auto_resolve_known_conflicts
+            local resolve_exit=$?
+
+            if [[ $resolve_exit -eq 0 ]]; then
+                # Auto-resolved all conflicts
+                local stat_line commit_count
+                stat_line=$(git diff --stat "$sha_before"..HEAD 2>/dev/null | tail -1)
+                commit_count=$(git rev-list --count "$sha_before"..HEAD 2>/dev/null)
+                record_merged_branch "$branch" "$sha_before"
+                merge_results+=("${branch}:merged*:${stat_line}:${commit_count}")
+                success_count=$((success_count + 1))
+                print_success "$branch merged (auto-resolved)"
+            else
+                # Remaining conflicts -- skip this branch
+                local conflicted_files
+                conflicted_files=$(git diff --name-only --diff-filter=U 2>/dev/null | tr '\n' ' ')
+                git merge --abort >/dev/null 2>&1
+                merge_results+=("${branch}:skipped:conflict in ${conflicted_files}:0")
+                skip_count=$((skip_count + 1))
+                print_warning "$branch skipped (unresolvable conflicts)"
+                print_conflict_guidance "$branch" "$conflicted_files"
+            fi
+        fi
+    done
+
+    # Add dry-run-detected conflict branches to results (not attempted)
+    if [[ ${#conflict_branches[@]} -gt 0 ]]; then
+        for branch in "${conflict_branches[@]}"; do
+            merge_results+=("${branch}:conflict:dry-run detected:0")
+        done
+    fi
+
+    # ── Phase 4: Store results for review ──
+    # shellcheck disable=SC2034
+    MERGE_RESULTS=("${merge_results[@]}")
+    # shellcheck disable=SC2034
+    MERGE_PHASE="$phase_num"
+    # shellcheck disable=SC2034
+    MERGE_ROLLBACK_SHA="$rollback_sha"
+    # shellcheck disable=SC2034
+    MERGE_BRANCH_COUNT=${#MERGE_BRANCHES[@]}
+    # shellcheck disable=SC2034
+    MERGE_SUCCESS_COUNT=$success_count
+    # shellcheck disable=SC2034
+    MERGE_SKIP_COUNT=$skip_count
+
+    # ── Print summary ──
+    print_merge_summary "${merge_results[@]}"
+
+    # ── Optional detailed review ──
+    if [[ "$do_review" == true ]]; then
+        print_merge_review "$phase_num"
+    fi
+
+    # Return non-zero if any branches were skipped or had dry-run conflicts
+    local conflict_branch_count=${#conflict_branches[@]}
+    if [[ $skip_count -gt 0 ]] || [[ $conflict_branch_count -gt 0 ]]; then
+        return 1
+    fi
     return 0
 }
