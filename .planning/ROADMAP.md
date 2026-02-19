@@ -79,11 +79,12 @@ Plans:
   5. Pre-merge commit hash is saved and user can rollback if a merge goes wrong
   6. Pre-merge dry-run detects conflicts before attempting the real merge, so the user knows upfront which branches will conflict
   7. Wave-aware merge: when wave N branches are merged, the tool signals Phase 3's execution pipeline to unblock wave N+1 plans that depended on them
-**Plans**: TBD
+**Plans:** 3 plans
 
 Plans:
-- [ ] 04-01: TBD
-- [ ] 04-02: TBD
+- [ ] 04-01-PLAN.md -- Merge infrastructure modules (dry-run, rollback, auto-resolve) and command skeleton
+- [ ] 04-02-PLAN.md -- Core merge pipeline with conflict handling, review output, and summary
+- [ ] 04-03-PLAN.md -- Wave signaling, post-merge testing, state updates, and execute integration
 
 ### Phase 5: Cleanup
 **Goal**: User can remove all worktrees and branches for a completed phase cleanly
@@ -107,5 +108,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 | 1. Project Initialization | 2/2 | Complete | 2026-02-13 |
 | 2. Prompt Generation | 2/2 | Complete | 2026-02-18 |
 | 3. Phase Execution | 2/2 | Complete    | 2026-02-18 |
-| 4. Merge Orchestration | 0/TBD | Not started | - |
+| 4. Merge Orchestration | 0/3 | Not started | - |
 | 5. Cleanup | 0/TBD | Not started | - |
