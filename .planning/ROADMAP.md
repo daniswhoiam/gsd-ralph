@@ -82,8 +82,8 @@ Plans:
 **Plans:** 3 plans
 
 Plans:
-- [ ] 04-01-PLAN.md -- Merge infrastructure modules (dry-run, rollback, auto-resolve) and command skeleton
-- [ ] 04-02-PLAN.md -- Core merge pipeline with conflict handling, review output, and summary
+- [x] 04-01-PLAN.md -- Merge infrastructure modules (dry-run, rollback, auto-resolve) and command skeleton
+- [x] 04-02-PLAN.md -- Core merge pipeline with conflict handling, review output, and summary
 - [ ] 04-03-PLAN.md -- Wave signaling, post-merge testing, state updates, and execute integration
 
 ### Phase 5: Cleanup

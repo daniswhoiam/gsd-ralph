@@ -30,9 +30,9 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Merge
 
-- [ ] **MERG-01**: User can auto-merge all completed branches for a phase in plan order with `gsd-ralph merge N`
-- [ ] **MERG-02**: User can review each branch diff before merging with `--review` flag
-- [ ] **MERG-03**: Tool detects merge conflicts and provides clear resolution guidance
+- [x] **MERG-01**: User can auto-merge all completed branches for a phase in plan order with `gsd-ralph merge N`
+- [x] **MERG-02**: User can review each branch diff before merging with `--review` flag
+- [x] **MERG-03**: Tool detects merge conflicts and provides clear resolution guidance
 - [x] **MERG-04**: Tool auto-resolves .planning/ conflicts (prefer main's version)
 - [x] **MERG-05**: Tool saves pre-merge commit hash and offers rollback on failure
 
@@ -112,9 +112,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | EXEC-07 | Phase 2 | Pending |
 | PEER-01 | Phase 3 | Pending |
 | PEER-02 | Phase 3 | Pending |
-| MERG-01 | Phase 4 | Pending |
-| MERG-02 | Phase 4 | Pending |
-| MERG-03 | Phase 4 | Pending |
+| MERG-01 | Phase 4 | Complete |
+| MERG-02 | Phase 4 | Complete |
+| MERG-03 | Phase 4 | Complete |
 | MERG-04 | Phase 4 | Complete |
 | MERG-05 | Phase 4 | Complete |
 | CLEN-01 | Phase 5 | Pending |
