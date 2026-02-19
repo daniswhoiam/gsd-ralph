@@ -25,9 +25,34 @@ if [ -z "$PHASE_NUM" ]; then
     exit 1
 fi
 
+# Find phase directory by phase number.
+# Supports both GSD format (NN-slug, e.g., 01-project-initialization)
+# and legacy format (phase-N).
+find_phase_dir() {
+    local phase_num="$1"
+    local padded
+    padded=$(printf "%02d" "$phase_num")
+
+    # Try GSD format first: NN-slug
+    local dir
+    dir=$(ls -d .planning/phases/${padded}-* 2>/dev/null | head -1)
+    if [ -n "$dir" ] && [ -d "$dir" ]; then
+        echo "$dir"
+        return 0
+    fi
+
+    # Fallback: phase-N format (legacy)
+    if [ -d ".planning/phases/phase-${phase_num}" ]; then
+        echo ".planning/phases/phase-${phase_num}"
+        return 0
+    fi
+
+    return 1
+}
+
 # Validate phase directory exists
-PHASE_DIR=".planning/phases/phase-${PHASE_NUM}"
-if [ ! -d "$PHASE_DIR" ]; then
+PHASE_DIR=$(find_phase_dir "$PHASE_NUM" 2>/dev/null) || true
+if [ -z "$PHASE_DIR" ] || [ ! -d "$PHASE_DIR" ]; then
     echo "Error: Phase ${PHASE_NUM} not planned yet."
     echo "Run: /gsd:plan-phase ${PHASE_NUM}"
     exit 1
@@ -124,7 +149,7 @@ for i in $(seq 0 $((PLAN_COUNT - 1))); do
 
 You are executing **Phase ${PHASE_NUM}, Plan ${PLAN_ID}** ONLY.
 
-- Your plan file: \`.planning/phases/phase-${PHASE_NUM}/${PLAN_FILENAME}\`
+- Your plan file: \`${PHASE_DIR}/${PLAN_FILENAME}\`
 - Do NOT work on tasks from other phases or plans
 - Do NOT modify the task discovery sequence — your tasks are in the plan file above
 
@@ -193,7 +218,7 @@ for t in tasks:
   "status": "ready",
   "started_at": null,
   "blocked_reason": null,
-  "last_activity": "$(date -Iseconds)"
+  "last_activity": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 EOF
 
