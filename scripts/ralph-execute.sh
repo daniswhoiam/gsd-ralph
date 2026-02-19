@@ -13,7 +13,22 @@
 
 set -e
 
-PHASE_NUM="$1"
+# Parse arguments
+PHASE_NUM=""
+NO_MERGE=false
+
+for arg in "$@"; do
+    case "$arg" in
+        --no-merge) NO_MERGE=true ;;
+        -*)         echo "Unknown option: $arg"; exit 1 ;;
+        *)
+            if [ -z "$PHASE_NUM" ]; then
+                PHASE_NUM="$arg"
+            fi
+            ;;
+    esac
+done
+
 REPO_NAME=$(basename "$PWD")
 PARENT_DIR=$(dirname "$PWD")
 PLANNING_DIR="$PWD"
@@ -54,6 +69,31 @@ wait_for_enter() {
     read -p "Press ENTER when ready to continue..."
 }
 
+# Find phase directory by phase number.
+# Supports both GSD format (NN-slug, e.g., 01-project-initialization)
+# and legacy format (phase-N).
+find_phase_dir() {
+    local phase_num="$1"
+    local padded
+    padded=$(printf "%02d" "$phase_num")
+
+    # Try GSD format first: NN-slug
+    local dir
+    dir=$(ls -d .planning/phases/${padded}-* 2>/dev/null | head -1)
+    if [ -n "$dir" ] && [ -d "$dir" ]; then
+        echo "$dir"
+        return 0
+    fi
+
+    # Fallback: phase-N format (legacy)
+    if [ -d ".planning/phases/phase-${phase_num}" ]; then
+        echo ".planning/phases/phase-${phase_num}"
+        return 0
+    fi
+
+    return 1
+}
+
 # Discover plan files for a phase directory.
 # GSD naming conventions:
 #   Single plan:   PLAN.md
@@ -79,14 +119,18 @@ discover_plans() {
 
 if [ -z "$PHASE_NUM" ]; then
     print_step "Ralph Phase Execution"
-    echo "Usage: $0 <phase_number>"
+    echo "Usage: $0 [options] <phase_number>"
+    echo ""
+    echo "Options:"
+    echo "  --no-merge  Skip automatic merge after Ralph completes"
     echo ""
     echo "This script guides you through:"
     echo "  1. Planning the phase (if not done)"
     echo "  2. Creating worktrees for parallel execution"
     echo "  3. Starting Ralph instances"
     echo "  4. Monitoring progress"
-    echo "  5. Merging completed work"
+    echo "  5. Waiting for Ralph to complete"
+    echo "  6. Merging completed work (automatic, unless --no-merge)"
     echo ""
     echo "Available phases:"
     grep -E "^- \[ \] \*\*Phase" .planning/ROADMAP.md | head -10
@@ -96,9 +140,9 @@ fi
 print_step "Ralph Execute: Phase ${PHASE_NUM}"
 
 # Step 1: Check if phase is planned
-PHASE_DIR=".planning/phases/phase-${PHASE_NUM}"
+PHASE_DIR=$(find_phase_dir "$PHASE_NUM" 2>/dev/null) || true
 
-if [ ! -d "$PHASE_DIR" ]; then
+if [ -z "$PHASE_DIR" ] || [ ! -d "$PHASE_DIR" ]; then
     print_warning "Phase ${PHASE_NUM} has not been planned yet."
     echo ""
     echo "You need to plan this phase first. Run:"
@@ -213,26 +257,48 @@ for wt in "${WORKTREES[@]}"; do
 done
 echo ""
 
-# Step 5: After completion
-print_step "Step 5: After All Plans Complete"
+# Step 5: Wait for Ralph to complete
+print_step "Step 5: Wait for Ralph to Complete"
 
-echo "When all Ralph instances finish successfully:"
+echo "Open ${NUM_WORKTREES} terminal(s) and start Ralph in each worktree."
 echo ""
-echo "  1. Review changes in each worktree:"
+echo "When all Ralph instances have finished, return here and press ENTER."
+echo ""
+echo "  Review changes in each worktree before continuing:"
 for wt in "${WORKTREES[@]}"; do
     echo -e "       ${GREEN}cd $wt && git diff main${NC}"
 done
 echo ""
-echo "  2. Merge each branch back to main:"
-echo -e "       ${GREEN}./scripts/ralph-merge.sh ${PHASE_NUM}${NC}"
-echo ""
-echo "  3. Clean up worktrees:"
-echo -e "       ${GREEN}./scripts/ralph-cleanup.sh ${PHASE_NUM}${NC}"
-echo ""
-echo "  4. Move to next phase:"
-echo -e "       ${GREEN}./scripts/ralph-execute.sh $((PHASE_NUM + 1))${NC}"
+
+wait_for_enter
+
+# Step 6: Merge completed work
+print_step "Step 6: Merge Completed Work"
+
+if [ "$NO_MERGE" = true ]; then
+    print_warning "Automatic merge skipped (--no-merge flag)."
+    echo ""
+    echo "  To merge manually, run:"
+    echo -e "    ${GREEN}gsd-ralph merge ${PHASE_NUM}${NC}"
+    echo ""
+else
+    print_action "Merging completed branches back to main..."
+    cd "$PLANNING_DIR"
+    if gsd-ralph merge "$PHASE_NUM"; then
+        print_success "Merge completed successfully."
+    else
+        print_warning "Merge completed with warnings. Check output above for details."
+    fi
+fi
+
 echo ""
 
-print_step "Ready to Execute Phase ${PHASE_NUM}"
-echo "Open ${NUM_WORKTREES} terminal(s) and start Ralph in each worktree."
+# Step 7: Next steps
+print_step "Step 7: Next Steps"
+
+echo "  1. Clean up worktrees:"
+echo -e "       ${GREEN}./scripts/ralph-cleanup.sh ${PHASE_NUM}${NC}"
+echo ""
+echo "  2. Move to next phase:"
+echo -e "       ${GREEN}./scripts/ralph-execute.sh $((PHASE_NUM + 1))${NC}"
 echo ""

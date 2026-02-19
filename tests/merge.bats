@@ -455,3 +455,194 @@ PLAN
     assert_output --partial "To resolve manually"
     assert_output --partial "code-file.txt"
 }
+
+# ---------------------------------------------------------------------------
+# Post-merge testing (Plan 04-03 tests)
+# ---------------------------------------------------------------------------
+
+@test "merge runs post-merge tests when test command available" {
+    setup_merge_branch
+
+    # Create a package.json with a test script that always passes
+    cat > package.json << 'PKG'
+{
+  "name": "test-project",
+  "scripts": {
+    "test": "exit 0"
+  }
+}
+PKG
+    git add package.json >/dev/null 2>&1
+    git commit -m "Add package.json with test script" >/dev/null 2>&1
+
+    run gsd-ralph merge 3
+    assert_success
+
+    # Should report tests passing
+    assert_output --partial "All tests passing"
+}
+
+@test "merge warns when no test command configured" {
+    setup_merge_branch
+
+    # No package.json, Cargo.toml, etc. -- no detectable test command
+    run gsd-ralph merge 3
+    assert_success
+
+    # Should warn about no test command
+    assert_output --partial "No test command configured"
+}
+
+@test "merge writes wave completion signal" {
+    setup_merge_branch
+
+    run gsd-ralph merge 3
+    assert_success
+
+    # Check that wave completion signal file exists
+    assert_file_exists ".ralph/merge-signals/phase-3-wave-1-complete"
+
+    # Verify signal file is valid JSON with expected fields
+    local phase_val
+    phase_val=$(jq -r '.phase' ".ralph/merge-signals/phase-3-wave-1-complete")
+    [[ "$phase_val" == "3" ]]
+    local wave_val
+    wave_val=$(jq -r '.wave' ".ralph/merge-signals/phase-3-wave-1-complete")
+    [[ "$wave_val" == "1" ]]
+}
+
+@test "merge updates STATE.md on full phase completion" {
+    setup_merge_branch
+
+    run gsd-ralph merge 3
+    assert_success
+
+    # STATE.md should be updated to show phase complete
+    local state_content
+    state_content=$(<.planning/STATE.md)
+    echo "$state_content" | grep -q "Complete"
+}
+
+@test "merge updates ROADMAP.md on full phase completion" {
+    setup_merge_branch
+
+    # Create a ROADMAP.md with a progress table matching the expected pattern
+    cat > .planning/ROADMAP.md << 'ROADMAP'
+# Roadmap
+
+## Progress
+
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 3. Phase Execution | 1/1 | In Progress | - |
+ROADMAP
+    git add .planning/ROADMAP.md >/dev/null 2>&1
+    git commit -m "Update ROADMAP with progress table" >/dev/null 2>&1
+
+    run gsd-ralph merge 3
+    assert_success
+
+    # ROADMAP.md should show phase complete
+    local roadmap_content
+    roadmap_content=$(<.planning/ROADMAP.md)
+    echo "$roadmap_content" | grep -q "Complete"
+}
+
+@test "merge with test regressions suggests rollback" {
+    setup_merge_branch
+
+    # Create a test script that always fails (simulating regression)
+    cat > run-tests.sh << 'TESTSCRIPT'
+#!/bin/bash
+exit 1
+TESTSCRIPT
+    chmod +x run-tests.sh
+
+    # Create a package.json pointing to the failing test script
+    cat > package.json << 'PKG'
+{
+  "name": "test-project",
+  "scripts": {
+    "test": "./run-tests.sh"
+  }
+}
+PKG
+    git add package.json run-tests.sh >/dev/null 2>&1
+    git commit -m "Add package.json with failing test" >/dev/null 2>&1
+
+    run gsd-ralph merge 3
+    # Merge itself succeeds but tests fail -- need to check output
+    # The exit code depends on whether pre-merge tests also fail (they should,
+    # since run-tests.sh exists on main too). So this is pre-existing failure.
+    # The merge should succeed with a warning about pre-existing failures.
+    assert_output --partial "Tests failing, but failures existed before merge"
+}
+
+@test "merge detects new regressions when pre-merge tests passed" {
+    # Setup: create package.json with passing tests on main BEFORE branching
+    mkdir -p .planning/phases/03-phase-execution
+    cat > .planning/phases/03-phase-execution/03-01-PLAN.md << 'PLAN'
+---
+phase: 03-phase-execution
+plan: 01
+type: execute
+wave: 1
+depends_on: []
+---
+PLAN
+    # Create package.json with test command that runs run-tests.sh
+    cat > package.json << 'PKG'
+{
+  "name": "test-project",
+  "scripts": {
+    "test": "./run-tests.sh"
+  }
+}
+PKG
+    # Create a passing test script on main
+    cat > run-tests.sh << 'TESTSCRIPT'
+#!/bin/bash
+exit 0
+TESTSCRIPT
+    chmod +x run-tests.sh
+    git add .planning/phases/03-phase-execution/03-01-PLAN.md package.json run-tests.sh >/dev/null 2>&1
+    git commit -m "Add phase 3 plan with passing tests" >/dev/null 2>&1
+
+    # Create branch that replaces test script with a failing one
+    git checkout -b "phase-3/phase-execution" >/dev/null 2>&1
+    cat > run-tests.sh << 'TESTSCRIPT'
+#!/bin/bash
+exit 1
+TESTSCRIPT
+    chmod +x run-tests.sh
+    echo "branch feature" > feature.txt
+    git add run-tests.sh feature.txt >/dev/null 2>&1
+    git commit -m "Add failing test and feature on branch" >/dev/null 2>&1
+    git checkout main >/dev/null 2>&1 || git checkout master >/dev/null 2>&1
+
+    run gsd-ralph merge 3
+    # Should fail because merge introduces regressions
+    assert_failure
+    assert_output --partial "regressions"
+    assert_output --partial "--rollback"
+}
+
+# ---------------------------------------------------------------------------
+# Execute-merge integration (Plan 04-03 tests)
+# ---------------------------------------------------------------------------
+
+@test "ralph-execute.sh calls gsd-ralph merge after completion" {
+    # Check that the script contains the automatic merge call
+    local script_content
+    script_content=$(<"$PROJECT_ROOT/scripts/ralph-execute.sh")
+    echo "$script_content" | grep -q "gsd-ralph merge"
+    echo "$script_content" | grep -q "Merging completed branches"
+}
+
+@test "ralph-execute.sh --no-merge skips automatic merge" {
+    # Check that the script handles --no-merge flag
+    local script_content
+    script_content=$(<"$PROJECT_ROOT/scripts/ralph-execute.sh")
+    echo "$script_content" | grep -q "no-merge"
+    echo "$script_content" | grep -q "Automatic merge skipped"
+}

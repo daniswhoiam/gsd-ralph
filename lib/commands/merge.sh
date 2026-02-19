@@ -19,6 +19,12 @@ source "$GSD_RALPH_HOME/lib/merge/rollback.sh"
 source "$GSD_RALPH_HOME/lib/merge/auto_resolve.sh"
 # shellcheck source=/dev/null
 source "$GSD_RALPH_HOME/lib/merge/review.sh"
+# shellcheck source=/dev/null
+source "$GSD_RALPH_HOME/lib/merge/signals.sh"
+# shellcheck source=/dev/null
+source "$GSD_RALPH_HOME/lib/merge/test_runner.sh"
+# shellcheck source=/dev/null
+source "$GSD_RALPH_HOME/lib/config.sh"
 
 merge_usage() {
     cat <<EOF
@@ -316,7 +322,64 @@ cmd_merge() {
         done
     fi
 
-    # ── Phase 4: Store results for review ──
+    # ── Phase 4: Post-merge testing ──
+    local test_failed=false
+    if [[ $success_count -gt 0 ]]; then
+        print_header "Post-Merge Testing"
+        detect_project_type "."
+        local pre_merge_sha
+        pre_merge_sha=$(jq -r '.pre_merge_sha' "$ROLLBACK_FILE" 2>/dev/null)
+
+        if ! run_post_merge_tests "$DETECTED_TEST_CMD" "$pre_merge_sha"; then
+            test_failed=true
+            print_error "New test regressions detected after merge."
+            print_info "To undo the merge: gsd-ralph merge $phase_num --rollback"
+        fi
+    fi
+
+    # ── Phase 5: Wave signaling and state updates ──
+    if [[ $success_count -gt 0 ]] && [[ "$test_failed" == false ]]; then
+        print_header "Wave Signaling"
+
+        # Build space-separated list of successfully merged branches
+        local merged_branches_list=""
+        local result
+        for result in "${merge_results[@]}"; do
+            local r_status
+            r_status=$(echo "$result" | cut -d: -f2)
+            case "$r_status" in
+                merged|merged*)
+                    local r_branch
+                    r_branch=$(echo "$result" | cut -d: -f1)
+                    if [[ -n "$merged_branches_list" ]]; then
+                        merged_branches_list="$merged_branches_list $r_branch"
+                    else
+                        merged_branches_list="$r_branch"
+                    fi
+                    ;;
+            esac
+        done
+
+        # Determine wave number: for sequential mode, always wave 1
+        local wave_num=1
+        signal_wave_complete "$phase_num" "$wave_num" "$merged_branches_list"
+
+        # Check if ALL branches for the phase are merged (no skipped, no conflicts)
+        local conflict_branch_count=${#conflict_branches[@]}
+        if [[ $skip_count -eq 0 ]] && [[ $conflict_branch_count -eq 0 ]]; then
+            signal_phase_complete "$phase_num"
+        else
+            print_info "Some branches not merged. Phase $phase_num not yet complete."
+            if [[ $skip_count -gt 0 ]]; then
+                print_info "  Skipped: $skip_count branch(es) with unresolvable conflicts"
+            fi
+            if [[ $conflict_branch_count -gt 0 ]]; then
+                print_info "  Conflicts: $conflict_branch_count branch(es) detected in dry-run"
+            fi
+        fi
+    fi
+
+    # ── Phase 6: Store results and print summary ──
     # shellcheck disable=SC2034
     MERGE_RESULTS=("${merge_results[@]}")
     # shellcheck disable=SC2034
@@ -330,17 +393,27 @@ cmd_merge() {
     # shellcheck disable=SC2034
     MERGE_SKIP_COUNT=$skip_count
 
-    # ── Print summary ──
+    # Print summary table
     print_merge_summary "${merge_results[@]}"
 
-    # ── Optional detailed review ──
+    # Add test and signal status to summary output
+    if [[ "$test_failed" == true ]]; then
+        print_error "Tests: REGRESSIONS DETECTED"
+    elif [[ $success_count -gt 0 ]] && [[ -n "$DETECTED_TEST_CMD" ]]; then
+        print_success "Tests: passing"
+    fi
+    if [[ $success_count -gt 0 ]] && [[ "$test_failed" == false ]]; then
+        print_success "Wave ${wave_num:-1} complete signal written"
+    fi
+
+    # Optional detailed review
     if [[ "$do_review" == true ]]; then
         print_merge_review "$phase_num"
     fi
 
-    # Return non-zero if any branches were skipped or had dry-run conflicts
+    # Return non-zero if any branches were skipped, had dry-run conflicts, or tests failed
     local conflict_branch_count=${#conflict_branches[@]}
-    if [[ $skip_count -gt 0 ]] || [[ $conflict_branch_count -gt 0 ]]; then
+    if [[ $skip_count -gt 0 ]] || [[ $conflict_branch_count -gt 0 ]] || [[ "$test_failed" == true ]]; then
         return 1
     fi
     return 0
