@@ -163,7 +163,7 @@ EOF
 }
 
 @test "parse_plan_frontmatter handles real plan file with full frontmatter" {
-    parse_plan_frontmatter "$PROJECT_ROOT/.planning/phases/02-prompt-generation/02-01-PLAN.md"
+    parse_plan_frontmatter "$PROJECT_ROOT/.planning/milestones/v1.0-phases/02-prompt-generation/02-01-PLAN.md"
     assert_equal "$FM_PHASE" "02-prompt-generation"
     assert_equal "$FM_PLAN" "01"
     assert_equal "$FM_WAVE" "1"
