@@ -212,8 +212,24 @@ cmd_merge() {
                     [[ -n "$conflict_file" ]] && print_info "    $conflict_file"
                 done <<< "$DRY_RUN_CONFLICTS"
             fi
-            conflict_branches+=("$branch")
-            conflict_files_map+=("$conflict_file_list")
+            # Check if ALL conflicting files are auto-resolvable
+            # If so, still attempt the merge (auto-resolve will handle it)
+            local all_auto_resolvable=true
+            local cfile
+            for cfile in $conflict_file_list; do
+                [[ -z "$cfile" ]] && continue
+                if ! matches_auto_resolve_pattern "$cfile"; then
+                    all_auto_resolvable=false
+                    break
+                fi
+            done
+            if [[ "$all_auto_resolvable" == true ]] && [[ -n "$conflict_file_list" ]]; then
+                print_info "$branch: all conflicts auto-resolvable, will attempt merge"
+                clean_branches+=("$branch")
+            else
+                conflict_branches+=("$branch")
+                conflict_files_map+=("$conflict_file_list")
+            fi
         fi
     done
 

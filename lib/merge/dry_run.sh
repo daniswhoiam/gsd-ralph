@@ -72,10 +72,26 @@ merge_dry_run_conflicts() {
             return 1
         fi
 
-        # Parse output: first line is tree SHA, remaining lines are conflicting files
-        # The conflicted file names appear after the informational messages
-        local conflicts
-        conflicts=$(echo "$output" | tail -n +2)
+        # Parse output: first line is tree SHA, then file names until first empty line.
+        # After the empty line: informational messages (Auto-merging, CONFLICT).
+        # Extract only actual file names (non-empty lines between SHA and messages).
+        local conflicts=""
+        local line
+        local skip_first=true
+        while IFS= read -r line; do
+            if [[ "$skip_first" == true ]]; then
+                skip_first=false
+                continue  # Skip tree SHA line
+            fi
+            # Stop at first empty line or informational message
+            [[ -z "$line" ]] && break
+            if [[ -n "$conflicts" ]]; then
+                conflicts="${conflicts}
+${line}"
+            else
+                conflicts="$line"
+            fi
+        done <<< "$output"
         if [[ -n "$conflicts" ]]; then
             # shellcheck disable=SC2034
             DRY_RUN_CONFLICTS="$conflicts"

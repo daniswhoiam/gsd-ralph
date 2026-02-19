@@ -226,3 +226,232 @@ PLAN
     content=$(<.planning/STATE.md)
     [[ "$content" == "main state" ]]
 }
+
+# ---------------------------------------------------------------------------
+# Merge pipeline (Plan 04-02 tests)
+# ---------------------------------------------------------------------------
+
+# Helper: create a conflicting branch (same file, different content on main and branch)
+setup_conflicting_branch() {
+    local branch_name="${1:-phase-3/conflicting}"
+    local phase_dir="${2:-.planning/phases/03-phase-execution}"
+
+    # Ensure phase directory and plan exist on main
+    mkdir -p "$phase_dir"
+    if [[ ! -f "$phase_dir/03-01-PLAN.md" ]]; then
+        cat > "$phase_dir/03-01-PLAN.md" << 'PLAN'
+---
+phase: 03-phase-execution
+plan: 01
+type: execute
+wave: 1
+depends_on: []
+---
+PLAN
+        git add "$phase_dir/03-01-PLAN.md" >/dev/null 2>&1
+        git commit -m "Add phase 3 plan" >/dev/null 2>&1
+    fi
+
+    # Create conflicting content on main first
+    echo "main content" > shared-file.txt
+    git add shared-file.txt >/dev/null 2>&1
+    git commit -m "Add shared file on main" >/dev/null 2>&1
+
+    # Create branch with conflicting content
+    git checkout -b "$branch_name" >/dev/null 2>&1
+    echo "branch content" > shared-file.txt
+    git add shared-file.txt >/dev/null 2>&1
+    git commit -m "Modify shared file on branch" >/dev/null 2>&1
+
+    # Switch back to main
+    git checkout main >/dev/null 2>&1 || git checkout master >/dev/null 2>&1
+}
+
+@test "merge merges a clean branch into main" {
+    setup_merge_branch
+
+    # Capture main HEAD before merge
+    local main_sha_before
+    main_sha_before=$(git rev-parse HEAD)
+
+    run gsd-ralph merge 3
+    assert_success
+
+    # Verify branch changes are in main (merge commit exists)
+    local merge_log
+    merge_log=$(git log --oneline)
+    echo "$merge_log" | grep -q "Merge branch"
+
+    # Verify the branch file exists on main now
+    assert_file_exists "branch-file.txt"
+}
+
+@test "merge produces summary table" {
+    setup_merge_branch
+
+    run gsd-ralph merge 3
+    assert_success
+
+    # Assert output contains summary table with "merged" and branch name
+    assert_output --partial "merged"
+    assert_output --partial "phase-3/phase-execution"
+    assert_output --partial "Branch"
+    assert_output --partial "Status"
+}
+
+@test "merge skips conflicted branch and continues" {
+    # Create phase directory with plan and a shared file as common ancestor
+    mkdir -p .planning/phases/03-phase-execution
+    cat > .planning/phases/03-phase-execution/03-01-PLAN.md << 'PLAN'
+---
+phase: 03-phase-execution
+plan: 01
+type: execute
+wave: 1
+depends_on: []
+---
+PLAN
+    echo "original content" > shared-file.txt
+    git add .planning/phases/03-phase-execution/03-01-PLAN.md shared-file.txt >/dev/null 2>&1
+    git commit -m "Add phase 3 plan and shared file" >/dev/null 2>&1
+
+    # Create clean branch with a non-conflicting file
+    git checkout -b "phase-3/phase-execution" >/dev/null 2>&1
+    echo "clean content" > clean-file.txt
+    git add clean-file.txt >/dev/null 2>&1
+    git commit -m "Add clean file" >/dev/null 2>&1
+    git checkout main >/dev/null 2>&1 || git checkout master >/dev/null 2>&1
+
+    # Create per-plan branch that modifies shared-file.txt differently
+    git checkout -b "phase/3/plan-02" >/dev/null 2>&1
+    echo "branch version of content" > shared-file.txt
+    git add shared-file.txt >/dev/null 2>&1
+    git commit -m "Modify shared file on branch" >/dev/null 2>&1
+    git checkout main >/dev/null 2>&1 || git checkout master >/dev/null 2>&1
+
+    # Modify shared-file.txt on main (creates true conflict with branch)
+    echo "main version of content" > shared-file.txt
+    git add shared-file.txt >/dev/null 2>&1
+    git commit -m "Modify shared file on main" >/dev/null 2>&1
+
+    run gsd-ralph merge 3
+    # Exit code is 1 because some branches had conflicts
+    assert_failure
+
+    # Clean branch should be merged
+    assert_output --partial "merged"
+    assert_file_exists "clean-file.txt"
+
+    # Conflicting branch should show conflict status
+    assert_output --partial "conflict"
+}
+
+@test "merge with --dry-run shows report without merging" {
+    setup_merge_branch
+
+    # Record HEAD before dry-run
+    local sha_before
+    sha_before=$(git rev-parse HEAD)
+
+    run gsd-ralph merge 3 --dry-run
+    assert_success
+
+    # Output shows clean status
+    assert_output --partial "clean"
+    assert_output --partial "phase-3/phase-execution"
+
+    # Verify HEAD did not move (no merge happened)
+    local sha_after
+    sha_after=$(git rev-parse HEAD)
+    [[ "$sha_before" == "$sha_after" ]]
+}
+
+@test "merge with --review shows detailed diffs" {
+    setup_merge_branch
+
+    run gsd-ralph merge 3 --review
+    assert_success
+
+    # Review output should contain diff stats and commit log
+    assert_output --partial "Detailed Review"
+    assert_output --partial "Diff stat"
+    assert_output --partial "Commits"
+}
+
+@test "merge auto-resolves .planning/ conflicts during pipeline" {
+    # Create phase directory with plan
+    mkdir -p .planning/phases/03-phase-execution
+    cat > .planning/phases/03-phase-execution/03-01-PLAN.md << 'PLAN'
+---
+phase: 03-phase-execution
+plan: 01
+type: execute
+wave: 1
+depends_on: []
+---
+PLAN
+    git add .planning/phases/03-phase-execution/03-01-PLAN.md >/dev/null 2>&1
+    git commit -m "Add phase 3 plan" >/dev/null 2>&1
+
+    # Create branch BEFORE changing STATE.md on main, so both sides diverge
+    git checkout -b "phase-3/phase-execution" >/dev/null 2>&1
+    echo "branch state content" > .planning/STATE.md
+    echo "new feature" > feature.txt
+    git add .planning/STATE.md feature.txt >/dev/null 2>&1
+    git commit -m "Branch changes" >/dev/null 2>&1
+    git checkout main >/dev/null 2>&1 || git checkout master >/dev/null 2>&1
+
+    # Now modify STATE.md on main (creates true conflict in .planning/)
+    echo "main state content" > .planning/STATE.md
+    git add .planning/STATE.md >/dev/null 2>&1
+    git commit -m "Update STATE.md on main" >/dev/null 2>&1
+
+    run gsd-ralph merge 3
+    assert_success
+
+    # Verify merge succeeded (auto-resolved)
+    assert_output --partial "merged"
+    # The feature file should be present
+    assert_file_exists "feature.txt"
+    # STATE.md should have main's version (auto-resolved with --ours)
+    local state_content
+    state_content=$(<.planning/STATE.md)
+    [[ "$state_content" == "main state content" ]]
+}
+
+@test "merge reports conflict guidance for skipped branches" {
+    # Create phase directory with plan and a shared file as common ancestor
+    mkdir -p .planning/phases/03-phase-execution
+    cat > .planning/phases/03-phase-execution/03-01-PLAN.md << 'PLAN'
+---
+phase: 03-phase-execution
+plan: 01
+type: execute
+wave: 1
+depends_on: []
+---
+PLAN
+    echo "original code" > code-file.txt
+    git add .planning/phases/03-phase-execution/03-01-PLAN.md code-file.txt >/dev/null 2>&1
+    git commit -m "Add phase 3 plan and code file" >/dev/null 2>&1
+
+    # Create branch that modifies code-file.txt
+    git checkout -b "phase-3/phase-execution" >/dev/null 2>&1
+    echo "branch code changes" > code-file.txt
+    git add code-file.txt >/dev/null 2>&1
+    git commit -m "Modify code file on branch" >/dev/null 2>&1
+    git checkout main >/dev/null 2>&1 || git checkout master >/dev/null 2>&1
+
+    # Modify code-file.txt on main (creates true conflict)
+    echo "main code changes" > code-file.txt
+    git add code-file.txt >/dev/null 2>&1
+    git commit -m "Modify code file on main" >/dev/null 2>&1
+
+    run gsd-ralph merge 3
+    # Should fail (conflict)
+    assert_failure
+
+    # Should show conflict guidance
+    assert_output --partial "To resolve manually"
+    assert_output --partial "code-file.txt"
+}
