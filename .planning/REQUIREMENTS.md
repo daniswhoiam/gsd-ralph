@@ -35,6 +35,8 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **MERG-03**: Tool detects merge conflicts and provides clear resolution guidance
 - [x] **MERG-04**: Tool auto-resolves .planning/ conflicts (prefer main's version)
 - [x] **MERG-05**: Tool saves pre-merge commit hash and offers rollback on failure
+- [x] **MERG-06**: Pre-merge dry-run detects conflicts before attempting the real merge, so the user knows upfront which branches will conflict
+- [x] **MERG-07**: Wave-aware merge: when wave N branches are merged, the tool signals the execution pipeline to unblock wave N+1 dependents
 
 ### Cleanup
 
@@ -117,13 +119,15 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MERG-03 | Phase 4 | Complete |
 | MERG-04 | Phase 4 | Complete |
 | MERG-05 | Phase 4 | Complete |
+| MERG-06 | Phase 4 | Complete |
+| MERG-07 | Phase 4 | Complete |
 | CLEN-01 | Phase 5 | Pending |
 | CLEN-02 | Phase 5 | Pending |
 | XCUT-01 | Phase 1 | Pending |
 
 **Coverage:**
-- v1 requirements: 20 total
-- Mapped to phases: 20
+- v1 requirements: 22 total
+- Mapped to phases: 22
 - Unmapped: 0
 
 ---
