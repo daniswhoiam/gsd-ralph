@@ -297,7 +297,7 @@ echo ""
 print_step "Step 7: Next Steps"
 
 echo "  1. Clean up worktrees:"
-echo -e "       ${GREEN}./scripts/ralph-cleanup.sh ${PHASE_NUM}${NC}"
+echo -e "       ${GREEN}gsd-ralph cleanup ${PHASE_NUM}${NC}"
 echo ""
 echo "  2. Move to next phase:"
 echo -e "       ${GREEN}./scripts/ralph-execute.sh $((PHASE_NUM + 1))${NC}"

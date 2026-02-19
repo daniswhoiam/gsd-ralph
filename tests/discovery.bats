@@ -128,11 +128,3 @@ teardown() {
     assert_success
     assert_output "02"
 }
-
-# --- worktree_path_for_plan ---
-
-@test "worktree_path_for_plan computes correct path" {
-    run worktree_path_for_plan "/home/user/projects" "myrepo" "2" "01"
-    assert_success
-    assert_output "/home/user/projects/myrepo-p2-01"
-}

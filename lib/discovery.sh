@@ -66,14 +66,3 @@ plan_id_from_filename() {
         echo "01"
     fi
 }
-
-# Compute worktree path for a plan.
-# Format: ${parent_dir}/${repo_name}-p${phase_num}-${plan_id}
-# Args: parent_dir, repo_name, phase_num, plan_id
-worktree_path_for_plan() {
-    local parent_dir="$1"
-    local repo_name="$2"
-    local phase_num="$3"
-    local plan_id="$4"
-    echo "${parent_dir}/${repo_name}-p${phase_num}-${plan_id}"
-}

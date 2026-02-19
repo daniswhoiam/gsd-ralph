@@ -42,6 +42,13 @@ die() {
     exit "${2:-1}"
 }
 
+# Ring the terminal bell to notify the user of command completion.
+# Called after long-running operations (execute, merge) succeed or fail.
+# Not called on trivial validation errors (missing args, wrong directory).
+ring_bell() {
+    printf '\a'
+}
+
 # ISO 8601 timestamp that works on both macOS and Linux
 iso_timestamp() {
     date -u +%Y-%m-%dT%H:%M:%SZ

@@ -72,3 +72,8 @@ teardown() {
     # Match YYYY-MM-DDTHH:MM:SSZ pattern
     assert_output --regexp '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'
 }
+
+@test "ring_bell function exists and succeeds" {
+    run ring_bell
+    assert_success
+}

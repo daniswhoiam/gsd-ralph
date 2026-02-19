@@ -263,3 +263,13 @@ PLAN
     assert_output --partial "PROJECT.md"
     assert_output --partial "ROADMAP.md"
 }
+
+# --- Terminal bell ---
+
+@test "execute rings terminal bell on completion" {
+    setup_sequential_phase
+    run gsd-ralph execute 3
+    assert_success
+    # BEL character (ASCII 0x07) should be in output from ring_bell
+    [[ "$output" == *$'\a'* ]]
+}

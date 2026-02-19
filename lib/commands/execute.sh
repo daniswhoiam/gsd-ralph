@@ -12,6 +12,8 @@ source "$GSD_RALPH_HOME/lib/prompt.sh"
 source "$GSD_RALPH_HOME/lib/frontmatter.sh"
 # shellcheck source=/dev/null
 source "$GSD_RALPH_HOME/lib/strategy.sh"
+# shellcheck source=/dev/null
+source "$GSD_RALPH_HOME/lib/cleanup/registry.sh"
 
 execute_usage() {
     cat <<EOF
@@ -154,6 +156,13 @@ print(len(tasks))
     git checkout -b "$branch_name" >/dev/null 2>&1
     print_success "Created branch: $branch_name"
 
+    # Register branch in worktree registry for cleanup tracking
+    register_worktree "$phase_num" "$(pwd)" "$branch_name"
+    print_verbose "Registered branch in worktree registry"
+
+    # Ensure bell rings if any post-branch step fails (user has done significant work)
+    trap 'ring_bell' EXIT
+
     # Step 7: Generate protocol PROMPT.md
     mkdir -p .ralph/logs
     generate_protocol_prompt_md \
@@ -234,4 +243,6 @@ EOF
     # Step 13: Print launch instructions
     printf "\n"
     print_success "Run 'ralph' to start execution"
+    ring_bell
+    trap - EXIT
 }

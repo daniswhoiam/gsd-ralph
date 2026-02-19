@@ -414,7 +414,9 @@ cmd_merge() {
     # Return non-zero if any branches were skipped, had dry-run conflicts, or tests failed
     local conflict_branch_count=${#conflict_branches[@]}
     if [[ $skip_count -gt 0 ]] || [[ $conflict_branch_count -gt 0 ]] || [[ "$test_failed" == true ]]; then
+        ring_bell
         return 1
     fi
+    ring_bell
     return 0
 }

@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A standalone CLI tool that bridges GSD planning with Ralph autonomous execution. It provides a single-command workflow for turning planned phases into parallel autonomous execution with worktree isolation, progress monitoring, auto-merge, and cleanup — so the human stays in the loop for thinking and Ralph handles the doing.
+A standalone Bash CLI tool that bridges GSD structured planning with Ralph autonomous execution. Provides a complete lifecycle (init, generate, execute, merge, cleanup) for turning GSD-planned phases into working, merged code — with branch isolation, protocol-driven prompts, wave-aware merging, and registry-driven cleanup.
 
 ## Core Value
 
@@ -12,60 +12,66 @@ One command takes a GSD-planned phase and produces merged, working code — no m
 
 ### Validated
 
-(None yet — ship to validate)
+- ✓ Initialize Ralph in any GSD project (create configs, GSD-aware prompts) — v1.0
+- ✓ Execute a full phase with one command (branch creation, prompt generation, Ralph launch) — v1.0
+- ✓ Generate context-specific PROMPT.md, fix_plan.md, and .ralphrc from templates — v1.0
+- ✓ Handle GSD dual naming conventions (PLAN.md and NN-MM-PLAN.md) — v1.0
+- ✓ Auto-merge completed branches in plan order with dry-run conflict detection — v1.0
+- ✓ Wave-aware merge signaling to unblock dependent plans — v1.0
+- ✓ Review mode for branch inspection before merging — v1.0
+- ✓ Pre-merge rollback safety with commit hash preservation — v1.0
+- ✓ Auto-resolve .planning/ conflicts (prefer main's version) — v1.0
+- ✓ Registry-driven cleanup of worktrees and branches — v1.0
+- ✓ Terminal bell notifications on completion/failure — v1.0
+- ✓ Works with any GSD project regardless of tech stack — v1.0
 
 ### Active
 
-- [ ] Initialize Ralph in any GSD project (create configs, GSD-aware prompts)
-- [ ] Execute a full phase with one command (worktree creation, prompt generation, Ralph launch)
-- [ ] Dependency-aware wave scheduling: read `wave` and `depends_on` from plan frontmatter, build dependency graph, launch later-wave plans only after their specific dependencies complete and merge (WAVE-01)
-- [ ] Later-wave worktrees branch from post-merge main so agents inherit dependency outputs and never rebuild what's already been built (WAVE-02)
-- [ ] Dependency manifest per worktree: each agent knows what upstream plans provided (files, artifacts) vs. what it must build (WAVE-03)
-- [ ] Monitor status of all active worktrees for a phase
-- [ ] Auto-merge completed branches when clean, flag conflicts
-- [ ] Pre-merge dry-run conflict detection before attempting real merge (MERG-06)
-- [ ] Wave-aware merge triggering: merging wave N signals execution pipeline to unblock wave N+1 dependents (MERG-07)
-- [ ] Option to review branches before merging
-- [ ] Terminal bell notifications when plans complete or fail
-- [ ] Clean up worktrees and branches after phase completion
-- [ ] Work with any GSD project (detect project stack, conventions)
+(None yet — define with `/gsd:new-milestone`)
 
 ### Out of Scope
 
 - GSD plugin integration — standalone tool first, integration later
-- Ralph plugin system — this wraps Ralph, doesn't extend it
-- GUI or web dashboard — CLI only
-- OS-level notifications (macOS Notification Center) — terminal bell is sufficient for v1
-- Custom notification channels (Slack, email) — terminal only
+- GUI or web dashboard — CLI only, target users are terminal-native
+- OS-level notifications (macOS Notification Center) — terminal bell is sufficient
+- Custom notification channels (Slack, email) — terminal only for simplicity
+- Custom LLM provider support — coupled to Ralph + Claude Code intentionally
+- Interactive plan editing — GSD owns planning; gsd-ralph reads plans, doesn't edit them
+- Plugin/extension system — premature abstraction; build monolithically first
+- Git hosting integration (PR creation, CI triggers) — scope ends at local merge
+- Multi-repo support — single git repo only
 
 ## Context
 
-- Extracted from bayesian-it where this workflow was developed as ad-hoc bash scripts
-- Existing scripts (`scripts/`) serve as logic reference, not starting code — building clean
-- GSD creates structured plans with phases, XML-format tasks, dependencies, and verification criteria
-- Ralph is an autonomous Claude Code execution loop that works from PROMPT.md and fix_plan.md
-- Templates (`templates/`) capture the prompt/config patterns that worked in bayesian-it
-- The tool must understand both GSD's file layout (.planning/, ROADMAP.md, STATE.md, XML tasks, phase naming) and Ralph's conventions (.ralph/, PROMPT.md, fix_plan.md, .ralphrc)
+Shipped v1.0 with 3,695 LOC Bash + 2,533 LOC Bats tests.
+Tech stack: Bash 3.2, bats-core, ShellCheck, jq, python3.
+Built in 7 days across 6 phases with 13 plans and 78 commits.
+Extracted from bayesian-it where this workflow was developed as ad-hoc scripts.
+
+Known v2 candidates from deferred requirements: status monitoring (STAT-01-04), peer visibility (PEER-01-02), enhanced execution (EEXC-01-03), enhanced merge (EMRG-01-02), advanced orchestration (ADVO-01-06). See `milestones/v1.0-REQUIREMENTS.md` for full list.
 
 ## Constraints
 
-- **Ecosystem**: Same tooling as GSD and Ralph — no exotic dependencies
+- **Bash 3.2**: macOS system bash — no associative arrays, no readarray, no nameref
 - **Portability**: Must work on macOS (primary dev environment)
-- **Non-invasive**: Works alongside existing GSD and Ralph installations, doesn't replace them
-- **GSD dual naming**: Must handle both PLAN.md and NN-MM-PLAN.md conventions
+- **Non-invasive**: Works alongside existing GSD and Ralph installations
+- **GSD dual naming**: Handles both PLAN.md and NN-MM-PLAN.md conventions
 - **Git worktrees**: Relies on git worktree for isolation — requires git repo
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Standalone CLI (not GSD/Ralph plugin) | Keeps tool independent, simpler to develop and test | — Pending |
-| Auto-merge by default with review option | Optimizes for speed while preserving safety | — Pending |
-| Terminal bell for notifications | Simplest approach, no extra deps, works everywhere | — Pending |
-| Existing scripts as reference only | Clean architecture over incremental refactoring | — Pending |
-| Same ecosystem as GSD/Ralph | Minimizes friction, no new runtime dependencies | — Pending |
-| Dependency-graph execution (not strict wave sequential) | Maximizes parallelism: wave 2 plan unblocks as soon as its specific dependency merges, not when all of wave 1 finishes. Learned from Phase 1 where ignoring dependencies caused 12 merge conflicts from duplicate implementations. | — Pending |
-| Later-wave worktrees from post-merge main (not rebase) | Simpler than speculative execution with mid-flight rebase. Agents never start with stale code. Tradeoff: slightly more latency vs. speculative start, but eliminates entire class of merge conflicts. | — Pending |
+| Standalone Bash CLI (not Node.js/plugin) | Keeps tool independent, simpler to develop and test, same ecosystem as GSD/Ralph | ✓ Good — 3,695 LOC Bash works well |
+| Auto-merge by default with review option | Optimizes for speed while preserving safety | ✓ Good — --review flag provides safety valve |
+| Terminal bell for notifications | Simplest approach, no extra deps, works everywhere | ✓ Good — printf '\a' is POSIX-standard |
+| Existing scripts as reference only | Clean architecture over incremental refactoring | ✓ Good — avoided legacy patterns |
+| Sequential execution default (not parallel) | Learned from Phase 1 merge conflicts; simpler mental model | ✓ Good — zero conflicts in Phases 3-6 |
+| Dependency-graph execution model | Maximizes parallelism when opted in; later-wave plans launch when specific deps merge | ✓ Good — architecture ready for parallel when needed |
+| Later-wave worktrees from post-merge main | Simpler than speculative execution with mid-flight rebase | ✓ Good — eliminates entire class of merge conflicts |
+| git merge-tree --write-tree for dry-run | Zero-risk conflict detection without touching working tree | ✓ Good — works with Git 2.38+ fallback |
+| Registry-driven cleanup | Only removes what it created; prevents orphans | ✓ Good — fire-and-forget registration pattern |
+| EXIT trap for failure notification | Bell fires after significant work, not on trivial validation errors | ✓ Good — right granularity |
 
 ---
-*Last updated: 2026-02-13 after Phase 1 merge conflict learnings*
+*Last updated: 2026-02-19 after v1.0 milestone*

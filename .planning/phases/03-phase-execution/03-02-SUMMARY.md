@@ -42,7 +42,9 @@ patterns-established:
   - "Protocol prompt appends phase context section with execution order and task counts"
   - "Combined fix_plan groups tasks by plan with summary creation tasks per plan"
 
-requirements-completed: []
+requirements-completed:
+  - EXEC-01
+  - EXEC-05
 
 # Metrics
 duration: 5min

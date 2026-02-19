@@ -646,3 +646,15 @@ TESTSCRIPT
     echo "$script_content" | grep -q "no-merge"
     echo "$script_content" | grep -q "Automatic merge skipped"
 }
+
+# ---------------------------------------------------------------------------
+# Terminal bell (Plan 06-01 tests)
+# ---------------------------------------------------------------------------
+
+@test "merge rings terminal bell on completion" {
+    setup_merge_branch
+    run gsd-ralph merge 3
+    assert_success
+    # BEL character (ASCII 0x07) should be in output from ring_bell
+    [[ "$output" == *$'\a'* ]]
+}

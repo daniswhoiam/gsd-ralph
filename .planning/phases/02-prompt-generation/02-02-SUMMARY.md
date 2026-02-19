@@ -1,3 +1,41 @@
+---
+phase: 02-prompt-generation
+plan: 02
+subsystem: prompt-generation
+tags: [bash, cli, generate-command, prompt-generation, task-extraction]
+requires:
+  - phase: 02-prompt-generation
+    provides: discovery module, parameterized templates, test fixtures
+provides:
+  - File generation pipeline (extract_tasks_to_fix_plan, generate_prompt_md, etc.)
+  - gsd-ralph generate N subcommand
+  - 12 prompt unit tests and 17 generate integration tests
+affects: [03-phase-execution]
+tech-stack:
+  added: []
+  patterns: [python3-regex-task-extraction, two-part-template-generation]
+key-files:
+  created:
+    - lib/prompt.sh
+    - lib/commands/generate.sh
+    - tests/prompt.bats
+    - tests/generate.bats
+  modified:
+    - bin/gsd-ralph
+key-decisions:
+  - "python3 -c with re.findall for multiline XML task extraction"
+  - "Two-part generation: render_template for base + heredoc for dynamic sections"
+patterns-established:
+  - "Task extraction via python3 regex (not grep/sed)"
+  - "Generate command: discovery -> generation -> per-plan output directory"
+requirements-completed:
+  - EXEC-02
+  - EXEC-03
+  - EXEC-04
+duration: single-session
+completed: 2026-02-18
+---
+
 # Plan 02-02 Summary: File generation pipeline and generate subcommand
 
 ## What Was Built
