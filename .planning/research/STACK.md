@@ -1,260 +1,274 @@
-# Technology Stack
+# Stack Research: v1.1 Stability & Safety
 
-**Project:** gsd-ralph
-**Researched:** 2026-02-13
-**Overall confidence:** MEDIUM (no WebSearch available; recommendations based on codebase analysis, foundational document constraints, and training data knowledge of bash CLI tooling)
+**Domain:** Bash CLI tool safety hardening, UX improvements
+**Researched:** 2026-02-20
+**Confidence:** HIGH
 
-## Decision: Bash, Not Node.js
+**Scope:** This document covers ONLY the stack additions/changes needed for v1.1 features. The existing v1.0 stack (Bash 3.2, git, jq, python3, bats-core, ShellCheck) is validated and unchanged. See `milestones/v1.0-REQUIREMENTS.md` and the git history for v1.0 stack decisions.
 
-The foundational document explicitly states: "Bash-based CLI for portability (same environment as Ralph)" and "No additional runtime dependencies beyond what GSD and Ralph already require." The PROJECT.md reinforces: "Same ecosystem as GSD/Ralph."
+## Core Finding: No New Dependencies Required
 
-Ralph is a bash tool. gsd-ralph orchestrates Ralph. Building gsd-ralph in bash means:
-- Zero new dependencies for users who already have Ralph installed
-- Native access to `git worktree`, process management, file system operations
-- Same debugging/maintenance mental model as Ralph itself
-- The existing reference scripts are already bash and work
+All v1.1 features can be implemented using **existing tools already in the stack** (Bash 3.2 builtins, git, jq). No new binaries, libraries, or runtime dependencies are needed. This is the correct outcome for a stability milestone -- adding dependencies to a stability release would be contradictory.
 
-Building in Node.js would require a package.json, npm install step, and node runtime -- friction that contradicts the "no exotic dependencies" constraint. GSD uses Node.js for its *plugin system*, but gsd-ralph is explicitly a standalone tool, not a GSD plugin.
+## Feature-by-Feature Stack Requirements
 
-**Verdict:** Pure bash with structured project layout. Use `python3` only for XML parsing (already a dependency in the existing scripts; available on all macOS systems).
+### 1. Safety Guardrails (Cleanup Data-Loss Bug)
 
-## Recommended Stack
+**The bug:** `execute.sh` line 160 calls `register_worktree "$phase_num" "$(pwd)" "$branch_name"` in sequential mode. In sequential mode, `$(pwd)` is the project root (not a worktree). When cleanup runs, `git worktree remove` fails on the main working tree, and the `rm -rf` fallback on line 180 of `cleanup.sh` deletes the entire project directory.
 
-### Core Runtime
+**Stack needed:** Pure Bash builtins only.
 
-| Technology | Version | Purpose | Why | Confidence |
-|------------|---------|---------|-----|------------|
-| Bash | 3.2+ (macOS default) | Script runtime | Required by Ralph ecosystem; macOS ships with 3.2, most devs have 5.x via Homebrew. Target 3.2 for maximum compat (avoid associative arrays, `readarray`, etc.) | HIGH |
-| Git | 2.20+ | Worktree management | `git worktree` is stable since ~2.15; 2.20+ for reliable `git worktree list --porcelain` | HIGH |
-| jq | 1.6+ | JSON parsing (status.json) | Already used in existing scripts for status checking. Available via Homebrew, lightweight, standard for bash JSON work | HIGH |
-| Python 3 | 3.8+ | XML task extraction | Already used in existing scripts for regex-based XML parsing. Ships with macOS (or via Xcode CLI tools). Only used for the `<task>` extraction step, not as a general dependency | MEDIUM |
+| Technique | Purpose | Why | Confidence |
+|-----------|---------|-----|------------|
+| `git rev-parse --show-toplevel` | Get canonical project root path | Already used elsewhere in the codebase. Returns the absolute path of the repo root | HIGH |
+| `git rev-parse --git-dir` vs `--git-common-dir` | Detect main worktree vs linked worktree | If both return the same value, you are in the main worktree. If they differ, you are in a linked worktree. Available in git 2.13+ | HIGH |
+| `[[ "$path1" -ef "$path2" ]]` | Inode-level path comparison | Compares filesystem inodes, ignoring symlinks, trailing slashes, and relative vs absolute differences. Works in Bash 3.2 on macOS. Verified on darwin24/arm64 | HIGH |
+| `cd "$dir" && pwd -P` | Resolve symlinks to canonical path | Pure Bash builtin, no external tools. `-P` flag resolves symlinks. Use for path normalization before string comparison | HIGH |
 
-### Project Structure
+**What NOT to use:**
 
-| Component | Path | Purpose | Why | Confidence |
-|-----------|------|---------|-----|------------|
-| Entry point | `bin/gsd-ralph` | Single executable with subcommand dispatch | Standard pattern for bash CLI tools. `bin/` convention matches npm/Homebrew expectations for installable scripts | HIGH |
-| Library modules | `lib/*.sh` | Shared functions sourced by commands | Separates concerns without Node.js. Each module owns one domain (git, templates, output, config) | HIGH |
-| Subcommands | `lib/commands/*.sh` | One file per subcommand (init, execute, status, merge, cleanup) | Clean separation. Each command is testable in isolation. `bin/gsd-ralph` dispatches to the right file | HIGH |
-| Templates | `templates/*.template` | Prompt/config templates with variable substitution | Already exists in the project. Template files with `{{VARIABLE}}` placeholders, substituted via `sed` or `envsubst` | HIGH |
-| Tests | `tests/*.bats` | Automated test suite | BATS is the standard bash testing framework. Tests verify each command and library function | HIGH |
-| Config | `.gsd-ralphrc` | Per-project config (optional) | Mirrors Ralph's `.ralphrc` pattern. Source it if present, use defaults otherwise | MEDIUM |
+| Avoid | Why | Use Instead |
+|-------|-----|-------------|
+| `realpath` | Not available on macOS by default (requires coreutils from Homebrew) | `cd "$dir" && pwd -P` or `[[ -ef ]]` |
+| `readlink -f` | BSD `readlink` on macOS does not support `-f` flag | `cd "$dir" && pwd -P` for resolution |
+| `rm -rf` as fallback for worktree removal | This is the root cause of the critical bug. Never use rm -rf on paths from a registry | `git worktree remove --force` only; if that fails, error out instead of falling back to rm -rf |
 
-### Recommended Project Layout
-
-```
-gsd-ralph/
-  bin/
-    gsd-ralph              # Entry point (chmod +x, hashbang)
-  lib/
-    common.sh              # Colors, printing, error handling
-    config.sh              # Config loading (.gsd-ralphrc, defaults)
-    git.sh                 # Worktree creation, branch management, merge
-    discovery.sh           # Plan file discovery (GSD naming conventions)
-    templates.sh           # Template rendering (variable substitution)
-    process.sh             # Ralph launching, PID tracking, monitoring
-    notify.sh              # Terminal bell, completion notifications
-    commands/
-      init.sh              # gsd-ralph init
-      execute.sh           # gsd-ralph execute N
-      status.sh            # gsd-ralph status N
-      merge.sh             # gsd-ralph merge N
-      cleanup.sh           # gsd-ralph cleanup N
-  templates/
-    PROMPT.md.template     # Already exists
-    AGENT.md.template      # Already exists
-    fix_plan.md.template   # Already exists
-    ralphrc.template       # Already exists
-    WORKFLOW.md.template   # Already exists
-  tests/
-    test_helper.bash       # BATS test helpers, fixtures setup
-    discovery.bats         # Plan discovery tests
-    git.bats               # Worktree/branch tests
-    templates.bats         # Template rendering tests
-    init.bats              # Init command integration tests
-    execute.bats           # Execute command integration tests
-  Makefile                 # install, test, lint targets
-  README.md
-```
-
-### Testing Framework
-
-| Technology | Version | Purpose | Why | Confidence |
-|------------|---------|---------|-----|------------|
-| bats-core | 1.11+ | Bash test runner | The de facto standard for testing bash scripts. Provides `@test` blocks, `run` command capture, setup/teardown. Actively maintained (bats-core org took over from original bats) | HIGH |
-| bats-support | 0.3.0 | Test assertions | Provides `assert_success`, `assert_failure`, `assert_output` -- cleaner than raw `[ "$status" -eq 0 ]` | HIGH |
-| bats-assert | 2.2.0 | Extended assertions | `assert_line`, `refute_output`, partial matching. Part of the bats-core ecosystem | HIGH |
-| bats-file | 0.4.0 | File assertions | `assert_file_exists`, `assert_dir_exists`. Useful for testing init/worktree creation | MEDIUM |
-
-**Installation for testing:** BATS and helpers install via git submodules in `tests/libs/` or via Homebrew (`brew install bats-core`). Git submodules preferred for CI reproducibility.
-
-### Linting
-
-| Technology | Version | Purpose | Why | Confidence |
-|------------|---------|---------|-----|------------|
-| ShellCheck | 0.10+ | Static analysis | Catches common bash pitfalls (unquoted variables, useless use of cat, POSIX issues). Widely adopted, integrates with editors. Non-negotiable for a bash project of this size | HIGH |
-
-### Supporting Tools (Already Available)
-
-| Tool | Purpose | Notes |
-|------|---------|-------|
-| `envsubst` | Template variable substitution | Part of `gettext`; available on macOS via Homebrew or use `sed` fallback |
-| `mktemp` | Temporary file/directory creation for tests | Standard POSIX utility |
-| `date` | Timestamps for status.json | macOS `date` differs from GNU; use `-Iseconds` carefully or fall back to `date +%Y-%m-%dT%H:%M:%S%z` |
-| `tput` | Terminal bell (`tput bel`) | More portable than `echo -e "\a"` |
-| `wc`, `sort`, `find` | File counting, ordering, discovery | Already used in existing scripts |
-
-## Template Rendering Strategy
-
-The existing scripts use bash heredocs and `cat >>` for template rendering. This works but is fragile (templates embedded in bash code). Better approach:
-
-**Use `sed`-based variable substitution on external template files.**
+**Implementation pattern -- safe deletion guard:**
 
 ```bash
-render_template() {
-    local template="$1"
-    local output="$2"
-    # Shift past the first two args, remaining are KEY=VALUE pairs
-    shift 2
-    local content
-    content=$(<"$template")
-    for pair in "$@"; do
-        local key="${pair%%=*}"
-        local value="${pair#*=}"
-        content="${content//\{\{${key}\}\}/${value}}"
-    done
-    printf '%s\n' "$content" > "$output"
+# Guard: refuse to remove the git toplevel directory
+is_project_root() {
+    local target_path="$1"
+    local toplevel
+    toplevel=$(git rev-parse --show-toplevel 2>/dev/null) || return 1
+    [[ "$target_path" -ef "$toplevel" ]]
+}
+
+# In cleanup: replace rm -rf fallback
+if is_project_root "$wt_path"; then
+    print_error "SAFETY: Refusing to remove project root directory: $wt_path"
+    print_error "This entry was incorrectly registered. Skipping."
+    continue
+fi
+# If git worktree remove fails and it's NOT the project root,
+# still do NOT rm -rf. Just report the failure.
+```
+
+**Registration fix -- don't register main worktree:**
+
+```bash
+# In execute.sh: only register if we actually created a worktree
+# Sequential mode creates a branch in the main worktree, not a separate worktree
+local git_toplevel
+git_toplevel=$(git rev-parse --show-toplevel)
+if [[ "$(pwd)" -ef "$git_toplevel" ]]; then
+    # Sequential mode: register with a sentinel value or skip registration
+    register_worktree "$phase_num" "__MAIN_WORKTREE__" "$branch_name"
+else
+    register_worktree "$phase_num" "$(pwd)" "$branch_name"
+fi
+```
+
+### 2. Auto-Push to Remote
+
+**Stack needed:** git only (already in stack).
+
+| Technique | Purpose | Why | Confidence |
+|-----------|---------|-----|------------|
+| `git remote` | Detect if a remote exists | Returns 0 with output if remotes configured, empty output if none. Already a standard git command | HIGH |
+| `git push -u origin <branch>` | Push branch and set upstream | The `-u` flag sets up tracking. Available in all supported git versions. Use explicit remote name ("origin") rather than relying on config | HIGH |
+| `git push origin <main-branch>` | Push merged results | Push after successful merge. Use the detected main branch name (main/master) | HIGH |
+| `git config --get remote.origin.url` | Verify remote is reachable | Check remote URL exists before attempting push. Avoids cryptic errors | HIGH |
+
+**What NOT to use:**
+
+| Avoid | Why | Use Instead |
+|-------|-----|-------------|
+| `push.autoSetupRemote` config | Requires git 2.37+; modifying user's git config is invasive. The tool should not alter global or even local git configuration | Explicit `git push -u origin <branch>` with the branch name |
+| `git push --all` | Pushes ALL local branches, not just the one we created. Dangerous side effect | Push only the specific branch by name |
+| `git push --force` | Never force-push in an automation tool. Risk of data loss on remote | Standard `git push`; if it fails, report and let user resolve |
+
+**Implementation pattern:**
+
+```bash
+has_remote() {
+    local remote_count
+    remote_count=$(git remote 2>/dev/null | wc -l | tr -d ' ')
+    [[ "$remote_count" -gt 0 ]]
+}
+
+auto_push_branch() {
+    local branch="$1"
+    if ! has_remote; then
+        print_verbose "No remote configured, skipping push"
+        return 0
+    fi
+    if git push -u origin "$branch" 2>/dev/null; then
+        print_success "Pushed $branch to origin"
+    else
+        print_warning "Failed to push $branch to origin (non-fatal)"
+        # Non-fatal: push failure should not block local workflow
+    fi
 }
 ```
 
-This keeps templates as standalone files (easy to edit, version, and review) while avoiding `envsubst` as a hard dependency. The `{{VARIABLE}}` syntax is simple and grep-able.
+**Key design decision:** Push failures are **warnings, not errors**. The tool must work fully offline. Push is a convenience/safety-net feature, not a requirement. If the remote is unreachable, the user sees a warning but their local workflow proceeds uninterrupted.
 
-**Confidence:** HIGH -- this is a well-established pattern for bash template rendering.
+### 3. Improved Merge UX (Auto-Switch, Stash Handling)
 
-## Process Management Strategy
+**Stack needed:** git only (already in stack).
 
-For launching and monitoring Ralph instances:
+| Technique | Purpose | Why | Confidence |
+|-----------|---------|-----|------------|
+| `git symbolic-ref --short HEAD` | Detect current branch | Already used in merge.sh line 169. Returns current branch name or fails if detached | HIGH |
+| `git checkout <main-branch>` | Auto-switch to main | Replace the `die` on line 176 of merge.sh with an automatic checkout. Simple, well-understood | HIGH |
+| `git status --porcelain` | Detect dirty working tree | Already used in merge.sh line 181. Returns non-empty if there are uncommitted changes | HIGH |
+| `git stash push -m "gsd-ralph: auto-stash before merge"` | Auto-stash dirty changes | `git stash push -m` available since git 2.13+. The message makes the stash identifiable. Use `push` not deprecated `save` | HIGH |
+| `git stash pop` | Restore stashed changes after merge | Restores the auto-stashed changes. If merge fails and we roll back, the stash is still available | HIGH |
 
-| Approach | When | How |
-|----------|------|-----|
-| **Foreground (interactive)** | Default for `execute` | Print instructions for user to open terminals manually. This is what existing scripts do and it works well -- user maintains control |
-| **Background (automated)** | Optional `--background` flag | Launch Ralph via `nohup ralph > .ralph/logs/ralph.log 2>&1 &` and store PID in `.ralph/pid`. Status command reads PIDs to check if processes are alive |
-| **Terminal bell** | On completion/failure | `tput bel` when status detects all worktrees complete or any worktree errored |
+**Stash strategy -- use `apply` + `drop`, not `pop`:**
 
-**Start with foreground mode only** (matching existing behavior). Background mode is a differentiator feature for later phases.
+Per best practices for scripted automation, prefer `git stash apply` followed by `git stash drop` over `git stash pop`. If `apply` fails (conflicts with merge results), the stash is preserved and the user can manually resolve. With `pop`, a conflict would leave the stash in a weird state.
 
-**Confidence:** HIGH for foreground, MEDIUM for background (needs careful signal handling and orphan process cleanup).
+```bash
+auto_stash_if_dirty() {
+    local porcelain
+    porcelain=$(git status --porcelain 2>/dev/null)
+    if [[ -z "$porcelain" ]]; then
+        MERGE_AUTO_STASHED=false
+        return 0
+    fi
+    print_info "Dirty working tree detected. Auto-stashing changes..."
+    if git stash push -u -m "gsd-ralph: auto-stash before merge phase $1" >/dev/null 2>&1; then
+        MERGE_AUTO_STASHED=true
+        print_success "Changes stashed"
+    else
+        die "Failed to stash changes. Please commit or stash manually before merging."
+    fi
+}
+
+auto_unstash_if_needed() {
+    if [[ "${MERGE_AUTO_STASHED:-false}" != true ]]; then
+        return 0
+    fi
+    print_info "Restoring auto-stashed changes..."
+    if git stash apply >/dev/null 2>&1; then
+        git stash drop >/dev/null 2>&1
+        print_success "Stashed changes restored"
+    else
+        print_warning "Could not cleanly restore stashed changes."
+        print_info "Your changes are preserved in: git stash list"
+        print_info "Restore manually with: git stash pop"
+    fi
+}
+```
+
+**What NOT to use:**
+
+| Avoid | Why | Use Instead |
+|-------|-----|-------------|
+| `git stash pop` | On conflict, leaves stash in ambiguous state; harder to recover in scripts | `git stash apply` then `git stash drop` on success |
+| `git stash save` | Deprecated since git 2.16 in favor of `git stash push` | `git stash push -m "message"` |
+| `git checkout -f` | Force-checkout discards uncommitted changes silently | `git stash push` first, then `git checkout` |
+| `git reset --merge` after failed stash pop | Destructive; could lose merge results | Let user resolve manually; their stash is preserved |
+
+### 4. CLI Guidance (Next-Step Instructions)
+
+**Stack needed:** Pure Bash builtins only (printf, the existing color functions in common.sh).
+
+| Technique | Purpose | Why | Confidence |
+|-----------|---------|-----|------------|
+| `print_info` / `print_success` (existing) | Output guidance messages | Already defined in lib/common.sh. Consistent styling | HIGH |
+| Here-doc or multi-line printf | Print structured guidance blocks | Standard Bash. No new dependencies | HIGH |
+
+**Implementation pattern -- guidance helper:**
+
+```bash
+# Add to lib/common.sh
+print_next_step() {
+    printf "\n${GREEN}Next step:${NC} %s\n" "$1"
+}
+
+print_guidance() {
+    printf "\n${BLUE}%s${NC}\n" "---"
+    local line
+    for line in "$@"; do
+        printf "  %s\n" "$line"
+    done
+    printf "${BLUE}%s${NC}\n" "---"
+}
+```
+
+**Where to add guidance (by command):**
+
+| Command | Current Ending | Add |
+|---------|---------------|-----|
+| `init` | "Initialized successfully" | "Next step: gsd-ralph execute <N>" |
+| `execute` | "Run 'ralph' to start execution" | Keep, but also add "After Ralph finishes: gsd-ralph merge <N>" |
+| `merge` | Summary table | "Next step: gsd-ralph cleanup <N>" or "Fix conflicts, then re-run merge" |
+| `cleanup` | "Phase N cleanup complete" | "Phase N is fully cleaned up. Ready for next phase." |
+| `status` | Status table | Contextual: if complete, suggest merge; if in-progress, suggest waiting |
+
+No new tools needed. This is purely adding `printf` statements at the end of each command.
+
+## Version Compatibility Matrix
+
+All techniques above are verified against the project's minimum requirements:
+
+| Requirement | Minimum | Verified | Notes |
+|-------------|---------|----------|-------|
+| Bash | 3.2 | 3.2.57 on darwin24 | `[[ -ef ]]`, `pwd -P`, `local`, arrays all work |
+| Git | 2.20+ | 2.53.0 on test system | `git stash push -m` (2.13+), `rev-parse --git-common-dir` (2.13+), `worktree` (2.15+) all well within range |
+| jq | 1.6+ | (existing) | No new jq usage needed for v1.1 features |
+| python3 | 3.8+ | (existing) | Not needed for any v1.1 features |
+
+**Git version floor remains 2.20+.** The newest git feature used across v1.0 and v1.1 is `git merge-tree --write-tree` (git 2.38+, with fallback). The stash and rev-parse features needed for v1.1 are available since git 2.13+, well within range.
 
 ## Alternatives Considered
 
 | Category | Recommended | Alternative | Why Not |
 |----------|-------------|-------------|---------|
-| Language | Bash | Node.js (Commander.js/oclif) | Foundational doc explicitly requires bash. Adding npm/node dependency contradicts "no additional runtime dependencies" constraint |
-| Language | Bash | Python | Heavier runtime, not in Ralph ecosystem, creates a dependency management problem (pip/venv) |
-| Language | Bash | Go (compiled binary) | Compile step, different ecosystem, harder for users to inspect/modify. Over-engineering for this scope |
-| Testing | bats-core | shunit2 | shunit2 is older, less actively maintained. bats-core has better ecosystem (bats-support, bats-assert, bats-file) |
-| Testing | bats-core | No tests | The existing scripts have zero tests. This is tech debt. A clean rebuild should include tests from day one |
-| Template rendering | sed substitution | envsubst | envsubst requires gettext package, not always available. sed-based approach has zero extra deps |
-| Template rendering | sed substitution | gomplate/mustache CLI | Extra binary dependency, overkill for simple variable substitution |
-| JSON parsing | jq | python3 json module | jq is purpose-built, faster, already a dependency in existing scripts |
-| XML parsing | python3 regex | xmlstarlet/xmllint | The GSD "XML" is actually embedded in Markdown, not a valid XML document. Regex extraction is the pragmatic approach (and what works in the existing scripts) |
-| Arg parsing | Manual case/getopts | bash framework (bash-argsparse, etc.) | getopts is built-in, well-understood, zero dependencies. The subcommand set is small (5 commands) -- no framework needed |
-| Linting | ShellCheck | bashate | ShellCheck is more comprehensive and more widely adopted |
+| Path comparison | `[[ -ef ]]` operator | String comparison of resolved paths | `-ef` handles symlinks, mount points, and trailing slashes automatically at the inode level. More robust than any string comparison |
+| Path resolution | `cd "$dir" && pwd -P` | `realpath` / `readlink -f` | `realpath` not on macOS by default; `readlink -f` not on BSD. `pwd -P` is a Bash builtin, zero dependencies |
+| Auto-stash | `git stash push -m` + `apply`/`drop` | Require clean worktree (current behavior) | Current behavior is hostile UX. Auto-stash is standard in tools like `git rebase` and `git pull`. Safe with `apply`+`drop` pattern |
+| Auto-push | Explicit `git push -u origin <branch>` | Set `push.autoSetupRemote` in git config | Modifying user's git config is invasive. Explicit push is transparent and predictable |
+| Cleanup safety | Remove `rm -rf` fallback entirely | Add path guards but keep `rm -rf` | The `rm -rf` fallback is the root cause of the data loss. Removing it entirely is the correct fix. If `git worktree remove` fails, the correct response is to report the error, not to escalate to a more destructive operation |
 
-## What NOT to Use
+## What NOT to Add for v1.1
 
 | Technology | Why Not |
 |------------|---------|
-| **Node.js / npm** | Contradicts bash ecosystem constraint. Adds runtime dependency. Over-engineering |
-| **Docker** | Users run this locally in their terminal alongside their editor. Docker adds startup latency and filesystem complexity with worktrees |
-| **Make as CLI** | Make is for build targets, not user-facing CLIs. Confusing UX |
-| **zsh-specific features** | bash is the portable target. Existing Ralph scripts use bash |
-| **GNU-specific flags** | macOS ships BSD utils. Avoid `grep -P`, `sed -i''` without backup arg, `date --iso-8601`. Use POSIX-compatible flags |
-| **Associative arrays** | Requires bash 4+. macOS ships bash 3.2. Use indexed arrays or plain variables |
-| **`readarray`/`mapfile`** | Bash 4+ only. Use `while IFS= read -r` loops |
-| **`[[ ]]` with regex** | Works but varies across bash versions. Use `grep` or `case` for pattern matching |
-| **Fancy TUI frameworks** | charmbracelet/gum, dialog, whiptail. Adds dependencies. printf/echo with ANSI codes is sufficient (already working in existing scripts) |
+| **safe-rm** (npm/pip package) | External dependency for a problem solvable with 5 lines of Bash. Over-engineering |
+| **trash-cli** / **trash** | macOS Trash integration is overkill for worktree cleanup. We should not rm -rf at all |
+| **bashup/realpaths** (external Bash library) | Nice library but adds a vendored dependency. `[[ -ef ]]` and `pwd -P` are builtins that solve the same problem |
+| **GNU coreutils** (for realpath) | Requiring Homebrew coreutils for a single function is unacceptable dependency creep |
+| **Any git config modifications** | The tool should not alter the user's git configuration (global or local). All git behavior should be controlled via explicit flags in git commands |
+| **Interactive prompts beyond y/N** | Keep UX simple. No `select` menus, no multi-choice prompts. The existing y/N confirmation pattern in cleanup is sufficient |
+| **External logging frameworks** | printf to stdout/stderr with the existing color functions is sufficient for CLI guidance |
 
-## Installation Strategy
+## Installation
 
-The tool should be installable by:
-
-1. **Git clone + PATH** (primary): `git clone`, add `bin/` to PATH or symlink `bin/gsd-ralph` to `/usr/local/bin/`
-2. **Makefile install**: `make install` copies to `/usr/local/bin/gsd-ralph` and bundles lib/ + templates/
-3. **Homebrew tap** (future): For polished distribution, but not for v1
-
-The binary (`bin/gsd-ralph`) must resolve its own location to find `lib/` and `templates/` relative to itself:
+No changes to installation process. v1.1 uses the same dependencies as v1.0:
 
 ```bash
-#!/bin/bash
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-GSD_RALPH_HOME="$(dirname "$SCRIPT_DIR")"
-# Now source libs from $GSD_RALPH_HOME/lib/
+# No new dependencies to install
+# Verify existing stack:
+git --version    # 2.20+ required
+jq --version     # 1.6+ required
+bash --version   # 3.2+ required (macOS default)
 ```
-
-**Confidence:** HIGH -- this is standard practice for self-contained bash tool distribution.
-
-## Dependency Summary
-
-### Required (user must have)
-
-| Dependency | Likely Already Installed | Why |
-|------------|--------------------------|-----|
-| bash 3.2+ | Yes (ships with macOS) | Script runtime |
-| git 2.20+ | Yes (required by both GSD and Ralph) | Worktree management |
-| jq 1.6+ | Likely (common dev tool, `brew install jq`) | JSON parsing for status.json |
-| python3 3.8+ | Yes (ships with macOS or via Xcode tools) | XML task extraction from GSD plans |
-
-### Required for development only
-
-| Dependency | Purpose |
-|------------|---------|
-| bats-core 1.11+ | Running test suite |
-| ShellCheck 0.10+ | Linting |
-
-### Pre-flight Check
-
-The `gsd-ralph init` command (or a `gsd-ralph doctor` subcommand) should verify dependencies at first run:
-
-```bash
-check_dependencies() {
-    local missing=()
-    command -v git >/dev/null 2>&1 || missing+=("git")
-    command -v jq >/dev/null 2>&1 || missing+=("jq")
-    command -v python3 >/dev/null 2>&1 || missing+=("python3")
-    command -v ralph >/dev/null 2>&1 || missing+=("ralph (https://github.com/frankbria/ralph-claude-code)")
-
-    if [ ${#missing[@]} -gt 0 ]; then
-        echo "Missing dependencies: ${missing[*]}"
-        return 1
-    fi
-}
-```
-
-## Bash 3.2 Compatibility Checklist
-
-Since macOS ships bash 3.2 and the project targets macOS as primary platform:
-
-| Feature | Bash 3.2 | Bash 4+ | Approach |
-|---------|----------|---------|----------|
-| Associative arrays | NO | `declare -A` | Use flat variables or temp files |
-| `readarray`/`mapfile` | NO | YES | Use `while IFS= read -r` |
-| `${var,,}` lowercase | NO | YES | Use `tr '[:upper:]' '[:lower:]'` |
-| `${var^^}` uppercase | NO | YES | Use `tr '[:lower:]' '[:upper:]'` |
-| `|&` pipe stderr | NO | YES | Use `2>&1 |` |
-| `[[ ]]` | YES | YES | Safe to use |
-| `$(...)` command sub | YES | YES | Safe to use |
-| Regular arrays | YES | YES | Safe to use |
-| `local` variables | YES | YES | Safe to use |
-| Here-strings `<<<` | YES | YES | Safe to use |
-
-**Confidence:** HIGH -- these are well-documented bash version differences.
 
 ## Sources
 
-- Existing codebase analysis: `/Users/daniswhoiam/Projects/gsd-ralph/scripts/*.sh` (5 scripts analyzed)
-- Existing templates: `/Users/daniswhoiam/Projects/gsd-ralph/templates/*.template` (5 templates analyzed)
-- Foundational document: `/Users/daniswhoiam/Projects/gsd-ralph/FOUNDATIONAL_DOCUMENT.md`
-- Project requirements: `/Users/daniswhoiam/Projects/gsd-ralph/.planning/PROJECT.md`
-- Ralph config reference: `/Users/daniswhoiam/Projects/gsd-ralph/templates/ralphrc.template`
-- Training data knowledge for bats-core, ShellCheck, bash version compatibility (MEDIUM confidence -- versions should be verified against official repos before development begins)
+- Git official documentation: `git-stash` -- https://git-scm.com/docs/git-stash (verified `push -m` since 2.13+)
+- Git official documentation: `git-rev-parse` -- https://git-scm.com/docs/git-rev-parse (verified `--git-common-dir`, `--show-toplevel`)
+- Git official documentation: `git-push` -- https://git-scm.com/docs/git-push (verified `-u` flag behavior)
+- Git official documentation: `push.autoSetupRemote` -- introduced in git 2.37.0 (July 2022), https://github.com/git/git/commit/05d57750c66e4b58233787954c06b8f714bbee75
+- Bash 3.2 path comparison: `[[ -ef ]]` operator verified on macOS Bash 3.2.57 (arm64-apple-darwin24) -- HIGH confidence
+- Git stash scripting best practices: prefer `apply`+`drop` over `pop` in automation -- https://git-scm.com/book/en/v2/Git-Tools-Stashing-and-Cleaning, https://hostman.com/tutorials/best-practices-for-using-the-git-stash-command/
+- macOS path resolution without realpath: `cd && pwd -P` pattern -- https://www.baeldung.com/linux/bash-expand-relative-path
+- Codebase analysis: `lib/commands/cleanup.sh` line 180 (rm -rf fallback), `lib/commands/execute.sh` line 160 ($(pwd) registration), `lib/commands/merge.sh` lines 168-177 (branch check), lines 180-184 (clean tree check)
+
+---
+*Stack research for: gsd-ralph v1.1 Stability & Safety*
+*Researched: 2026-02-20*

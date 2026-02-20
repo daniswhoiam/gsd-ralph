@@ -1,443 +1,613 @@
-# Architecture Patterns
+# Architecture Research: v1.1 Safety & UX Integration
 
-**Domain:** CLI tool orchestrating parallel autonomous coding agents via git worktrees
-**Researched:** 2026-02-13
-**Confidence:** MEDIUM (based on training data for CLI orchestration patterns, git worktree mechanics, and process management; no live verification available this session)
+**Domain:** Bash CLI tool -- safety guardrails, UX improvements, and remote push integration
+**Researched:** 2026-02-20
+**Confidence:** HIGH (based on direct reading of the v1.0 codebase; all integration points verified against actual source)
 
-## Recommended Architecture
+## Current Architecture (v1.0 Baseline)
 
-gsd-ralph is a process orchestrator: it reads structured plans, fans out work to isolated git worktrees, monitors autonomous agents, and converges results back via merges. The architecture follows a **pipeline-with-feedback** pattern: linear flow from plan parsing through execution, with a monitoring loop that feeds status back to the user.
+The existing system follows a command-dispatch pattern with shared libraries.
 
 ```
-                          +------------------+
-                          |  CLI Entry Point |
-                          |  (commander/yargs)|
-                          +--------+---------+
-                                   |
-                    +--------------+--------------+
-                    |              |               |
-              +-----v----+  +-----v-----+  +------v------+
-              | GSD Plan  |  | Worktree  |  |   Status    |
-              | Parser    |  | Manager   |  |   Monitor   |
-              +-----------+  +-----------+  +-------------+
-                    |              |               ^
-                    v              v               |
-              +-----------+  +-----------+         |
-              | Prompt    |  | Ralph     +---------+
-              | Generator |  | Launcher  |
-              +-----------+  +-----------+
-                                   |
-                                   v
-                          +--------+---------+
-                          | Merge            |
-                          | Orchestrator     |
-                          +------------------+
-                                   |
-                                   v
-                          +------------------+
-                          | Notification     |
-                          | System           |
-                          +------------------+
-```
-
-### Component Boundaries
-
-| Component | Responsibility | Communicates With | I/O |
-|-----------|---------------|-------------------|-----|
-| **CLI Entry Point** | Parse args, route subcommands (`init`, `execute`, `status`, `merge`, `cleanup`), handle global flags | All components (dispatches to each) | stdin/stdout, exit codes |
-| **GSD Plan Parser** | Read `.planning/` directory structure, parse XML tasks, understand dual naming conventions, extract task graph with dependencies | CLI Entry Point (receives commands), Prompt Generator (provides parsed tasks) | Reads `.planning/` filesystem; outputs structured task objects |
-| **Worktree Manager** | Create/list/remove git worktrees, ensure clean branch naming, handle worktree lifecycle | CLI Entry Point, Ralph Launcher (provides worktree paths), Merge Orchestrator (provides branch info), Cleanup | Calls `git worktree` commands; manages filesystem |
-| **Prompt Generator** | Transform parsed tasks into PROMPT.md, fix_plan.md, and .ralphrc files using templates | GSD Plan Parser (receives task data), Worktree Manager (receives target paths) | Reads templates; writes prompt files into worktrees |
-| **Ralph Launcher** | Spawn Ralph processes in worktrees, manage process lifecycle, capture output streams | Worktree Manager (gets paths), Prompt Generator (ensures prompts exist), Status Monitor (reports process state) | Spawns child processes; manages PIDs |
-| **Status Monitor** | Track progress across all active worktrees, aggregate status, detect completion/failure | Ralph Launcher (subscribes to events), CLI Entry Point (serves status queries) | Reads process state + git state; outputs status reports |
-| **Merge Orchestrator** | Auto-merge clean branches back to target, detect conflicts, flag manual resolution needed | Worktree Manager (gets branch list), Status Monitor (knows which are complete) | Runs `git merge`; reports success/conflict |
-| **Notification System** | Alert user on completion, conflicts, failures via terminal bell and optional hooks | Status Monitor and Merge Orchestrator (subscribe to events) | Terminal bell, stdout messages |
-
-### Data Flow
-
-**Phase 1: Plan Ingestion (init/execute)**
-```
-.planning/ directory
+bin/gsd-ralph                    # Entry point: parse globals, dispatch to cmd_<name>
     |
-    v
-GSD Plan Parser
-    |  Produces: TaskGraph { tasks: Task[], dependencies: Edge[] }
-    |  Each Task: { id, name, description, phase, files, acceptance_criteria }
-    v
-Prompt Generator
-    |  Consumes: TaskGraph + Templates
-    |  Produces: Per-task prompt files (PROMPT.md, .ralphrc, fix_plan.md)
-    v
-Written into worktree directories
-```
-
-**Phase 2: Execution (execute)**
-```
-TaskGraph (with dependency order)
+    +-- lib/common.sh            # Output helpers, die(), ring_bell(), deps check
+    +-- lib/config.sh            # detect_project_type() -> DETECTED_LANG, etc.
     |
-    v
-Worktree Manager
-    |  Creates: one worktree per task (or per parallelizable batch)
-    |  Branch naming: gsd/<phase>/<task-slug>
-    v
-Ralph Launcher
-    |  Spawns: one Ralph process per worktree
-    |  Manages: process handles, stdout/stderr streams
-    v
-Status Monitor (polling loop)
-    |  Checks: process alive? git diff empty? tests passing?
-    |  Updates: in-memory status map { taskId -> WorkerStatus }
-    v
-Notification System
-    |  Fires on: completion, failure, conflict
-```
-
-**Phase 3: Convergence (merge)**
-```
-Status Monitor (all tasks complete)
+    +-- lib/commands/
+    |       init.sh              # cmd_init: create .ralph/, .ralphrc
+    |       generate.sh          # cmd_generate: per-plan file generation
+    |       execute.sh           # cmd_execute: branch, prompt, launch env
+    |       merge.sh             # cmd_merge: dry-run, merge, test, signal
+    |       cleanup.sh           # cmd_cleanup: registry-driven removal
+    |       status.sh            # cmd_status: stub (not implemented)
     |
-    v
-Merge Orchestrator
-    |  For each completed branch:
-    |    1. Check merge-ability (git merge --no-commit --no-ff, then abort)
-    |    2. If clean: fast-forward or merge commit
-    |    3. If conflict: flag for manual resolution
-    |  Order: respects dependency graph (merge dependencies first)
-    v
-Notification System
-    |  Reports: merged branches, conflict branches, summary
-    v
-Worktree Manager (cleanup)
-    |  Removes: merged worktrees
-    |  Preserves: conflict worktrees for manual resolution
+    +-- lib/discovery.sh         # find_phase_dir(), discover_plan_files()
+    +-- lib/frontmatter.sh       # Plan file parsing
+    +-- lib/prompt.sh            # Prompt/fix_plan generation
+    +-- lib/strategy.sh          # Phase strategy analysis (waves, deps)
+    +-- lib/templates.sh         # Template rendering
+    |
+    +-- lib/merge/
+    |       dry_run.sh           # merge_dry_run(), merge_dry_run_conflicts()
+    |       rollback.sh          # save/restore/record rollback points
+    |       auto_resolve.sh      # Auto-resolve .planning/*, lock files
+    |       review.sh            # Summary tables, conflict guidance
+    |       signals.sh           # Wave/phase completion signals
+    |       test_runner.sh       # Post-merge regression detection
+    |
+    +-- lib/cleanup/
+            registry.sh          # Worktree registry CRUD (JSON via jq)
 ```
 
-**Shared State**
+### Key Architectural Properties
 
-The system needs a lightweight state file to survive process restarts:
+1. **Global state via shell variables**: Commands set globals (PHASE_DIR, PLAN_FILES, STRATEGY_MODE, etc.) that downstream functions read. No return values for complex data.
+
+2. **Source-on-demand**: Each command sources only the libraries it needs (execute.sh sources discovery.sh, prompt.sh, etc.). The entry point only sources common.sh and config.sh.
+
+3. **JSON state files via jq**: Registry (.ralph/worktree-registry.json), rollback (.ralph/merge-rollback.json), and signals (.ralph/merge-signals/) use JSON manipulated by jq.
+
+4. **Validation-then-action pattern**: Every command validates environment (git repo? .planning exists? .ralph exists?) before doing work. Validation errors exit early without side effects.
+
+5. **EXIT trap for bell notification**: execute.sh and merge.sh use `trap 'ring_bell' EXIT` after significant work begins, cleared on success.
+
+## v1.1 Integration Architecture
+
+### System Overview: What Changes
 
 ```
-.planning/.gsd-ralph-state.json
-{
-  "session_id": "uuid",
-  "started_at": "ISO-8601",
-  "tasks": {
-    "task-id": {
-      "status": "pending|running|complete|failed|merged|conflict",
-      "worktree_path": "/path/to/worktree",
-      "branch": "gsd/phase-1/task-slug",
-      "pid": 12345,
-      "started_at": "ISO-8601",
-      "completed_at": "ISO-8601|null",
-      "exit_code": 0
-    }
-  }
+bin/gsd-ralph                         # UNCHANGED (no modifications needed)
+    |
+    +-- lib/common.sh                 # MODIFY: add print_next_step()
+    +-- lib/config.sh                 # UNCHANGED
+    |
+    +-- lib/safety.sh                 # NEW: path validation, rm-rf prevention
+    +-- lib/git_remote.sh             # NEW: remote detection, push helpers
+    +-- lib/guidance.sh               # NEW: next-step guidance engine
+    |
+    +-- lib/commands/
+    |       init.sh                   # MODIFY: detect remote, next-step guidance
+    |       execute.sh                # MODIFY: auto-push, next-step guidance
+    |       merge.sh                  # MODIFY: auto-switch, stash, auto-push, guidance
+    |       cleanup.sh                # MODIFY: safety guards, next-step guidance
+    |       generate.sh               # MODIFY: next-step guidance (minor)
+    |       status.sh                 # UNCHANGED (still stub)
+    |
+    +-- lib/cleanup/
+            registry.sh               # MODIFY: remove rm-rf fallback, add safety check
+```
+
+### New Components
+
+| Component | File | Responsibility | Sourced By |
+|-----------|------|----------------|------------|
+| **Safety Guards** | `lib/safety.sh` | Path validation, rm-rf prevention, git-toplevel protection | cleanup.sh, any command doing file removal |
+| **Git Remote** | `lib/git_remote.sh` | Remote detection, push-with-retry, push-after-action helpers | execute.sh, merge.sh, init.sh |
+| **Guidance Engine** | `lib/guidance.sh` | Context-aware next-step messaging after each command completes | All commands |
+
+### Modified Components
+
+| Component | File | Changes | Reason |
+|-----------|------|---------|--------|
+| **Common** | `lib/common.sh` | Add `print_next_step()` formatting helper | Consistent next-step output styling |
+| **Init** | `lib/commands/init.sh` | Detect and store remote info; print guidance | Remote awareness for auto-push |
+| **Execute** | `lib/commands/execute.sh` | Push branch after commit; print guidance | Auto-push safety net |
+| **Merge** | `lib/commands/merge.sh` | Auto-switch to main, stash/unstash dirty worktree, push after merge; print guidance | UX friction removal |
+| **Cleanup** | `lib/commands/cleanup.sh` | Remove rm-rf fallback, add path safety checks; print guidance | Critical data-loss bug fix |
+| **Registry** | `lib/cleanup/registry.sh` | Skip registration of main worktree path; validate paths before use | Prevent cleanup of project root |
+
+## Detailed Component Designs
+
+### Component 1: Safety Guards (`lib/safety.sh`)
+
+**Purpose:** Centralized path validation to prevent destructive operations. This is the highest-priority component because it fixes a known data-loss bug.
+
+**Functions:**
+
+```bash
+# Refuse to remove paths that match dangerous patterns.
+# Returns 0 if safe, 1 if dangerous (with error message).
+# Checks: is git toplevel? is home dir? is root? is parent of .git?
+assert_safe_to_remove() {
+    local target_path="$1"
+    local git_toplevel
+    git_toplevel=$(git rev-parse --show-toplevel 2>/dev/null)
+
+    # Resolve to absolute path for comparison
+    local abs_path
+    abs_path=$(cd "$target_path" 2>/dev/null && pwd) || abs_path="$target_path"
+
+    # Block: git toplevel (project root)
+    if [[ "$abs_path" == "$git_toplevel" ]]; then
+        print_error "SAFETY: Refusing to remove project root: $abs_path"
+        return 1
+    fi
+
+    # Block: home directory
+    if [[ "$abs_path" == "$HOME" ]]; then
+        print_error "SAFETY: Refusing to remove home directory"
+        return 1
+    fi
+
+    # Block: filesystem root
+    if [[ "$abs_path" == "/" ]]; then
+        print_error "SAFETY: Refusing to remove filesystem root"
+        return 1
+    fi
+
+    # Block: paths that don't look like worktrees (no .git file)
+    if [[ -d "$abs_path" ]] && [[ ! -f "$abs_path/.git" ]]; then
+        print_error "SAFETY: Path does not appear to be a git worktree (no .git file): $abs_path"
+        return 1
+    fi
+
+    return 0
+}
+
+# Validate a path from the registry before using it.
+# Returns 0 if valid, 1 if suspicious.
+validate_registry_path() {
+    local path="$1"
+
+    # Must be absolute
+    if [[ "$path" != /* ]]; then
+        print_error "SAFETY: Registry path is not absolute: $path"
+        return 1
+    fi
+
+    # Must not contain path traversal
+    case "$path" in
+        *..*)
+            print_error "SAFETY: Registry path contains traversal: $path"
+            return 1
+            ;;
+    esac
+
+    return 0
 }
 ```
 
-This state file is the **single source of truth** for session recovery. Every component reads/writes through a shared StateManager abstraction -- never directly.
+**Integration points:**
+- `cleanup.sh` line 174-183: Replace `rm -rf` fallback with `assert_safe_to_remove` guard
+- `cleanup.sh` line 143: Add `validate_registry_path` before using registry paths
+- `registry.sh` `register_worktree`: Skip registration when worktree_path equals git toplevel
 
-## Patterns to Follow
+### Component 2: Git Remote (`lib/git_remote.sh`)
 
-### Pattern 1: Command Pattern for CLI Subcommands
+**Purpose:** Detect remote availability and push branches/merges automatically. Acts as a data-loss safety net.
 
-**What:** Each subcommand (`init`, `execute`, `status`, `merge`, `cleanup`) is an independent module implementing a common interface. The CLI entry point dispatches to the correct command handler.
+**Functions:**
 
-**When:** Always. This is the standard CLI architecture pattern.
+```bash
+# Check if a push-capable remote exists.
+# Caches result for the session in GSD_RALPH_REMOTE.
+# Returns 0 if remote available, 1 if not.
+has_push_remote() {
+    if [[ -n "${GSD_RALPH_REMOTE:-}" ]]; then
+        [[ "$GSD_RALPH_REMOTE" != "none" ]]
+        return $?
+    fi
 
-**Why:** Keeps the entry point thin. Each command can be tested independently. Adding new commands requires zero changes to existing code.
-
-```typescript
-// src/commands/types.ts
-interface Command {
-  name: string;
-  description: string;
-  options: OptionDefinition[];
-  execute(args: ParsedArgs, context: AppContext): Promise<number>; // exit code
+    local remote
+    remote=$(git remote 2>/dev/null | head -1)
+    if [[ -n "$remote" ]]; then
+        GSD_RALPH_REMOTE="$remote"
+        return 0
+    else
+        GSD_RALPH_REMOTE="none"
+        return 1
+    fi
 }
 
-// src/commands/execute.ts
-export const executeCommand: Command = {
-  name: 'execute',
-  description: 'Run tasks in parallel worktrees',
-  options: [
-    { name: '--plan', description: 'Path to planning directory', default: '.planning' },
-    { name: '--parallel', description: 'Max parallel workers', default: '4' },
-    { name: '--dry-run', description: 'Show what would happen', default: false },
-  ],
-  async execute(args, context) {
-    const tasks = await context.planParser.parse(args.plan);
-    const batches = context.scheduler.schedule(tasks, args.parallel);
-    // ...
-    return 0;
-  },
-};
-```
+# Push a branch to the remote. Non-blocking: warns on failure, does not die.
+# Args: branch_name
+# Returns: 0 on success, 1 on failure (with warning)
+push_branch() {
+    local branch="$1"
+    if ! has_push_remote; then
+        print_verbose "No remote configured, skipping push"
+        return 0
+    fi
 
-### Pattern 2: Event Emitter for Cross-Component Communication
+    if git push "$GSD_RALPH_REMOTE" "$branch" 2>/dev/null; then
+        print_success "Pushed $branch to $GSD_RALPH_REMOTE"
+        return 0
+    else
+        print_warning "Failed to push $branch to $GSD_RALPH_REMOTE (network issue?)"
+        return 1
+    fi
+}
 
-**What:** Components communicate through a typed event bus rather than direct method calls. The Status Monitor, Notification System, and Merge Orchestrator all subscribe to events rather than polling or being called directly.
-
-**When:** For all async lifecycle events (task started, task completed, task failed, merge complete, conflict detected).
-
-**Why:** Decouples components. The Ralph Launcher does not need to know about notifications. The Status Monitor does not need to know about merging. Adding new reactions (e.g., a web dashboard) requires zero changes to existing emitters.
-
-```typescript
-// src/events.ts
-type GsdEvents = {
-  'task:started': { taskId: string; worktree: string; pid: number };
-  'task:completed': { taskId: string; exitCode: number };
-  'task:failed': { taskId: string; error: string };
-  'merge:success': { taskId: string; branch: string };
-  'merge:conflict': { taskId: string; branch: string; files: string[] };
-  'session:complete': { merged: number; conflicts: number; failed: number };
-};
-```
-
-### Pattern 3: Dependency-Aware Task Scheduler
-
-**What:** Tasks are scheduled in topological order respecting the dependency graph. Independent tasks run in parallel up to the concurrency limit. Dependent tasks wait for their prerequisites.
-
-**When:** During `execute` — this is the core scheduling logic.
-
-**Why:** GSD plans have phases and task dependencies. Blindly parallelizing everything would create merge conflicts and broken code. Respecting the dependency graph is the whole point of an orchestrator.
-
-```typescript
-// src/scheduler.ts
-class TaskScheduler {
-  schedule(graph: TaskGraph, maxParallel: number): TaskBatch[] {
-    // Kahn's algorithm: topological sort with level grouping
-    // Each batch = set of tasks whose dependencies are all satisfied
-    // Batch size capped at maxParallel
-  }
+# Push current branch (typically main after merge).
+# Returns: 0 on success, 1 on failure (with warning)
+push_current_branch() {
+    local current
+    current=$(git symbolic-ref --short HEAD 2>/dev/null)
+    if [[ -n "$current" ]]; then
+        push_branch "$current"
+    fi
 }
 ```
 
-### Pattern 4: Idempotent Operations with State Recovery
+**Integration points:**
+- `execute.sh` after Step 11 (commit): Call `push_branch "$branch_name"`
+- `merge.sh` after Phase 5 (wave signaling): Call `push_current_branch`
+- `init.sh` after Step 4 (deps): Call `has_push_remote` and report status
 
-**What:** Every operation checks current state before acting. `execute` resumes from where it left off. `merge` skips already-merged branches. `cleanup` only removes worktrees that exist.
+**Design decision -- push is advisory, not mandatory:**
+Push failures warn but do not block the workflow. The user may be offline, the remote may be temporarily unavailable, or they may not have push access. The tool should never fail because a remote is unreachable. This matches the existing pattern where `ring_bell` is best-effort notification.
 
-**When:** Always. Users will re-run commands after failures, interrupts, and partial completions.
+### Component 3: Guidance Engine (`lib/guidance.sh`)
 
-**Why:** The user's workflow is: run, check status, fix issues, re-run. If re-running causes duplicate worktrees, double merges, or crashes on missing state, the tool is unusable.
+**Purpose:** After each command completes, tell the user exactly what to do next. Context-aware: the guidance depends on what just happened and what state the project is in.
 
-```typescript
-// Before creating a worktree:
-if (state.tasks[taskId]?.status === 'running') {
-  // Check if process is actually alive
-  if (isProcessAlive(state.tasks[taskId].pid)) {
-    log.info(`Task ${taskId} already running, skipping`);
-    continue;
-  }
-  // Process died — mark as failed, allow retry
-  state.tasks[taskId].status = 'failed';
+**Functions:**
+
+```bash
+# Print next-step guidance after a command completes.
+# Args: command_name, phase_num, [extra context vars...]
+# Uses the command name to select the appropriate guidance block.
+print_guidance() {
+    local command="$1"
+    local phase_num="${2:-}"
+
+    printf "\n"
+    print_info "Next steps:"
+
+    case "$command" in
+        init)
+            printf "  1. Review .ralphrc configuration\n"
+            printf "  2. Plan your first phase with GSD\n"
+            printf "  3. Run: gsd-ralph execute 1\n"
+            ;;
+        execute)
+            printf "  1. Run 'ralph' in this terminal to start autonomous execution\n"
+            printf "  2. Wait for Ralph to complete all tasks\n"
+            printf "  3. Run: gsd-ralph merge %s\n" "$phase_num"
+            ;;
+        merge)
+            printf "  1. Verify the merged code works as expected\n"
+            printf "  2. Run: gsd-ralph cleanup %s\n" "$phase_num"
+            local next_phase=$((phase_num + 1))
+            printf "  3. Next phase: gsd-ralph execute %s\n" "$next_phase"
+            ;;
+        merge_partial)
+            printf "  1. Resolve conflicts in the listed branches manually\n"
+            printf "  2. Re-run: gsd-ralph merge %s\n" "$phase_num"
+            ;;
+        merge_rollback)
+            printf "  1. Investigate the issue on the phase branch\n"
+            printf "  2. Re-run: gsd-ralph merge %s\n" "$phase_num"
+            ;;
+        cleanup)
+            local next_phase=$((phase_num + 1))
+            printf "  1. Run: gsd-ralph execute %s\n" "$next_phase"
+            ;;
+        generate)
+            printf "  1. Review generated files in .ralph/generated/\n"
+            printf "  2. Run: gsd-ralph execute %s\n" "$phase_num"
+            ;;
+    esac
 }
 ```
 
-### Pattern 5: Git Operations Through an Abstraction Layer
+**Integration points:**
+- Replace ad-hoc "Next steps" blocks in init.sh (lines 90-93), execute.sh (lines 243-246)
+- Add guidance calls at end of merge.sh, cleanup.sh, generate.sh
+- Different guidance for merge success vs partial merge vs rollback
 
-**What:** All git operations (worktree create/remove, branch operations, merge) go through a GitOperations interface, never raw shell commands scattered through the codebase.
+### Component 4: Merge UX Improvements (in `lib/commands/merge.sh`)
 
-**When:** Always. Every component that touches git should use this layer.
+**Purpose:** Remove two friction points: (1) user must manually switch to main before merging, (2) dirty worktree blocks merge with no remedy.
 
-**Why:** Git operations are the most failure-prone part of this system. Centralizing them enables: consistent error handling, dry-run support, logging, testing with mocks, and future support for alternative VCS.
+**Change 1: Auto-switch to main branch**
 
-```typescript
-// src/git/operations.ts
-interface GitOperations {
-  worktreeAdd(path: string, branch: string): Promise<void>;
-  worktreeRemove(path: string): Promise<void>;
-  worktreeList(): Promise<Worktree[]>;
-  mergeBranch(branch: string, into: string): Promise<MergeResult>;
-  isMergeClean(branch: string, into: string): Promise<boolean>;
-  currentBranch(): Promise<string>;
-  branchExists(name: string): Promise<boolean>;
+Replace the current hard-fail at merge.sh lines 168-177:
+
+```bash
+# CURRENT (v1.0): Dies if not on main
+local current_branch
+current_branch=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
+if [[ "$current_branch" != "main" ]] && [[ "$current_branch" != "master" ]]; then
+    die "Not on main branch. Switch to main first: git checkout main"
+fi
+```
+
+With auto-switching:
+
+```bash
+# NEW (v1.1): Auto-switch to main
+local current_branch
+current_branch=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
+local main_branch=""
+for candidate in main master; do
+    if git show-ref --verify --quiet "refs/heads/$candidate" 2>/dev/null; then
+        main_branch="$candidate"
+        break
+    fi
+done
+
+if [[ -z "$main_branch" ]]; then
+    die "No main or master branch found."
+fi
+
+if [[ "$current_branch" != "$main_branch" ]]; then
+    print_info "Currently on '$current_branch', switching to '$main_branch'..."
+    # Handle dirty worktree before switching (see Change 2)
+    handle_dirty_worktree
+    git checkout "$main_branch" 2>/dev/null || \
+        die "Failed to switch to $main_branch. Check for uncommitted changes."
+    print_success "Switched to $main_branch"
+fi
+```
+
+**Change 2: Stash/unstash for dirty worktree**
+
+Add a helper function within merge.sh or in a shared location:
+
+```bash
+# Stash uncommitted changes if worktree is dirty.
+# Sets MERGE_STASHED=true if a stash was created.
+MERGE_STASHED=false
+
+handle_dirty_worktree() {
+    local porcelain
+    porcelain=$(git status --porcelain 2>/dev/null)
+    if [[ -z "$porcelain" ]]; then
+        return 0  # Clean, nothing to do
+    fi
+
+    print_info "Stashing uncommitted changes..."
+    if git stash push -m "gsd-ralph merge: auto-stash" 2>/dev/null; then
+        MERGE_STASHED=true
+        print_success "Stashed uncommitted changes (will restore after merge)"
+    else
+        die "Failed to stash changes. Commit or discard manually before merging."
+    fi
+}
+
+# Restore stashed changes after merge completes.
+restore_stash() {
+    if [[ "$MERGE_STASHED" == true ]]; then
+        print_info "Restoring stashed changes..."
+        if git stash pop 2>/dev/null; then
+            print_success "Restored stashed changes"
+        else
+            print_warning "Could not auto-restore stash. Run 'git stash pop' manually."
+        fi
+        MERGE_STASHED=false
+    fi
 }
 ```
+
+**Integration:** Call `restore_stash` at the end of cmd_merge, just before the final return. Also call it in error paths (before die calls after work has started) to avoid losing stashed changes.
+
+### Component 5: Registry Safety (in `lib/cleanup/registry.sh`)
+
+**Purpose:** Prevent the project root from being registered as a worktree path.
+
+**Changes to `register_worktree()`:**
+
+```bash
+register_worktree() {
+    local phase_num="$1"
+    local worktree_path="$2"
+    local branch_name="$3"
+
+    # SAFETY: Never register the main working tree
+    local git_toplevel
+    git_toplevel=$(git rev-parse --show-toplevel 2>/dev/null)
+    local abs_wt_path
+    abs_wt_path=$(cd "$worktree_path" 2>/dev/null && pwd) || abs_wt_path="$worktree_path"
+
+    if [[ "$abs_wt_path" == "$git_toplevel" ]]; then
+        print_verbose "Skipping registry for main working tree (safety guard)"
+        return 0
+    fi
+
+    # ... rest of existing function unchanged
+}
+```
+
+**Changes to cleanup.sh worktree removal (line 174-183):**
+
+Replace the `rm -rf` fallback entirely:
+
+```bash
+# BEFORE (v1.0 -- DANGEROUS):
+# rm -rf "$wt_path" 2>/dev/null || true
+
+# AFTER (v1.1):
+if assert_safe_to_remove "$wt_path"; then
+    print_warning "git worktree remove failed. Worktree may need manual cleanup: $wt_path"
+else
+    print_error "SAFETY: Blocked removal of $wt_path -- not a valid worktree"
+fi
+```
+
+## Data Flow Changes
+
+### v1.0 Execute Flow
+```
+cmd_execute
+    -> validate environment
+    -> discover plans
+    -> create branch
+    -> register_worktree($(pwd), branch)    # BUG: registers project root
+    -> generate prompts
+    -> commit
+    -> print summary
+```
+
+### v1.1 Execute Flow
+```
+cmd_execute
+    -> validate environment
+    -> discover plans
+    -> create branch
+    -> register_worktree($(pwd), branch)    # FIXED: skips main worktree
+    -> generate prompts
+    -> commit
+    -> push_branch(branch)                  # NEW: auto-push
+    -> print summary
+    -> print_guidance("execute", phase)     # NEW: next steps
+```
+
+### v1.0 Merge Flow
+```
+cmd_merge
+    -> validate: must be on main             # FRICTION: manual switch required
+    -> validate: clean worktree              # FRICTION: manual stash required
+    -> dry-run preflight
+    -> save rollback
+    -> merge branches
+    -> post-merge tests
+    -> wave signaling
+    -> print summary
+```
+
+### v1.1 Merge Flow
+```
+cmd_merge
+    -> detect main branch                    # NEW: find main/master
+    -> auto-switch to main                   # NEW: handles being on phase branch
+    -> handle_dirty_worktree (stash)         # NEW: auto-stash
+    -> dry-run preflight
+    -> save rollback
+    -> merge branches
+    -> post-merge tests
+    -> wave signaling
+    -> push_current_branch                   # NEW: auto-push merged main
+    -> print summary
+    -> restore_stash                         # NEW: pop stash
+    -> print_guidance("merge", phase)        # NEW: next steps
+```
+
+### v1.0 Cleanup Flow
+```
+cmd_cleanup
+    -> read registry
+    -> for each entry:
+        -> git worktree remove
+        -> if fail: rm -rf (DANGEROUS)       # BUG: can delete project root
+        -> git branch -d
+    -> prune
+    -> deregister
+```
+
+### v1.1 Cleanup Flow
+```
+cmd_cleanup
+    -> read registry
+    -> for each entry:
+        -> validate_registry_path(path)      # NEW: path validation
+        -> assert_safe_to_remove(path)       # NEW: safety check
+        -> git worktree remove
+        -> if fail: warn (no rm -rf)         # FIXED: no fallback deletion
+        -> git branch -d
+    -> prune
+    -> deregister
+    -> print_guidance("cleanup", phase)      # NEW: next steps
+```
+
+## Internal Boundaries
+
+| Boundary | Communication | Notes |
+|----------|---------------|-------|
+| safety.sh <-> cleanup.sh | Direct function call (source safety.sh, call assert_safe_to_remove) | Safety module is stateless -- pure validation |
+| git_remote.sh <-> execute.sh | Direct function call (source git_remote.sh, call push_branch) | Push is fire-and-forget; failure is warning only |
+| git_remote.sh <-> merge.sh | Direct function call (call push_current_branch) | Same as execute |
+| guidance.sh <-> all commands | Direct function call (call print_guidance at end) | Guidance is output-only, no side effects |
+| merge.sh stash <-> merge.sh main flow | Global variable MERGE_STASHED | Follows existing pattern (MERGE_BRANCHES, etc.) |
 
 ## Anti-Patterns to Avoid
 
-### Anti-Pattern 1: Shared Mutable Filesystem State
+### Anti-Pattern 1: Conditional Safety Based on Mode
 
-**What:** Multiple worktree agents reading/writing the same `.planning/` directory or state files concurrently without coordination.
+**What people do:** Only apply safety checks in non-force mode, bypass them with --force.
+**Why it is wrong:** The --force flag should force-delete *unmerged branches*. It should never bypass path safety checks. A user passing --force still does not want their project root deleted.
+**Do this instead:** Safety checks (assert_safe_to_remove) are unconditional. They fire regardless of --force. The --force flag only controls git branch deletion (-d vs -D) and confirmation prompts.
 
-**Why bad:** Race conditions. Two agents completing simultaneously both try to update status. File corruption. Merge orchestrator reads partial state.
+### Anti-Pattern 2: Push as a Blocking Prerequisite
 
-**Instead:** Single writer for state files. Use file locking (e.g., `proper-lockfile`) or funnel all state writes through a single process (the main orchestrator). Worktrees should be fully isolated -- each gets its own copy of what it needs.
+**What people do:** Make the workflow fail if push to remote fails.
+**Why it is wrong:** The user may be offline, on a plane, behind a VPN, or the remote may be temporarily down. The core workflow (branch, execute, merge, cleanup) must work locally.
+**Do this instead:** Push is advisory. Success: print green message. Failure: print yellow warning. Never die() on push failure. The user can push manually later.
 
-### Anti-Pattern 2: Tight Coupling Between Plan Format and Execution
+### Anti-Pattern 3: Stash Without Pop
 
-**What:** Embedding GSD plan parsing logic directly in the execute command or prompt generator.
+**What people do:** Stash changes at the start of merge but forget to pop on error paths.
+**Why it is wrong:** User's uncommitted work silently disappears. They may not realize it is in the stash.
+**Do this instead:** Use an EXIT trap or ensure every exit path (including die() calls after stashing) calls restore_stash(). Consider wrapping the merge body in a subshell or using trap to guarantee stash restoration.
 
-**Why bad:** The GSD plan format will evolve. Dual naming conventions already hint at format complexity. If parsing is scattered, format changes require touching every component.
+### Anti-Pattern 4: Guidance That Assumes Linear Workflow
 
-**Instead:** The GSD Plan Parser is a hard boundary. It outputs a normalized `TaskGraph` structure. Downstream components never see raw XML or directory layouts. Format changes are isolated to the parser.
+**What people do:** Always print "next: execute N+1" after merge, even when the merge partially failed.
+**Why it is wrong:** If some branches had conflicts, the next step is to resolve conflicts and re-merge, not to move on.
+**Do this instead:** Branch the guidance based on merge outcome: full success -> cleanup, partial -> resolve + re-merge, rollback -> investigate + re-merge.
 
-### Anti-Pattern 3: Synchronous Process Management
+## Build Order (Dependency-Driven)
 
-**What:** Using `execSync` or blocking on each Ralph process sequentially.
-
-**Why bad:** The entire value proposition of gsd-ralph is parallelism. Blocking on each process defeats the purpose and makes the tool slower than manual work.
-
-**Instead:** Use `child_process.spawn` with async management. Track processes by PID. Use an event loop for status polling. The scheduler manages concurrency, not sequential waiting.
-
-### Anti-Pattern 4: Worktree Paths as Primary Keys
-
-**What:** Using filesystem paths as the primary identifier for tasks/workers throughout the system.
-
-**Why bad:** Paths are fragile (user moves repo, cleanup removes and recreates), platform-dependent, and hard to serialize/deserialize reliably.
-
-**Instead:** Use task IDs as primary keys everywhere. Map task ID to worktree path only when needed, through the Worktree Manager.
-
-### Anti-Pattern 5: Optimistic Merging Without Pre-Check
-
-**What:** Running `git merge` and hoping for the best, then trying to recover from conflicts after the fact.
-
-**Why bad:** A failed merge leaves the target branch in a dirty state. If the orchestrator crashes mid-conflict-resolution, the user's main branch is corrupted.
-
-**Instead:** Always dry-run merges first (`git merge --no-commit --no-ff` then `git merge --abort`). Only proceed with actual merge if dry-run is clean. This is the merge orchestrator's core safety guarantee.
-
-## Component Dependency Graph (Build Order)
-
-The build order is dictated by which components can be tested independently versus which need other components to exist.
+The features have these dependency relationships:
 
 ```
-Layer 0 (no dependencies - build first):
-  - Git Operations abstraction
-  - State Manager (read/write .gsd-ralph-state.json)
-  - Event Bus
-
-Layer 1 (depends on Layer 0):
-  - GSD Plan Parser (needs: filesystem only)
-  - Worktree Manager (needs: Git Operations)
-
-Layer 2 (depends on Layer 1):
-  - Prompt Generator (needs: Plan Parser output, Worktree Manager for paths)
-  - Task Scheduler (needs: Plan Parser output for dependency graph)
-
-Layer 3 (depends on Layer 2):
-  - Ralph Launcher (needs: Worktree Manager, Prompt Generator, Event Bus)
-  - Status Monitor (needs: State Manager, Event Bus)
-
-Layer 4 (depends on Layer 3):
-  - Merge Orchestrator (needs: Git Operations, Status Monitor, Worktree Manager)
-  - Notification System (needs: Event Bus)
-
-Layer 5 (depends on everything):
-  - CLI Entry Point (thin shell dispatching to commands)
-  - Individual Command Handlers (compose components per subcommand)
+                    lib/safety.sh (no deps)
+                         |
+                         v
+          lib/cleanup/registry.sh (uses safety.sh)
+                         |
+                         v
+          lib/commands/cleanup.sh (uses safety.sh + registry.sh)
+                         |
+    +--------------------+--------------------+
+    |                                         |
+    v                                         v
+lib/git_remote.sh (no deps)          lib/guidance.sh (no deps)
+    |                                         |
+    v                                         v
+lib/commands/execute.sh               All command files
+lib/commands/merge.sh                 (add guidance calls)
+lib/commands/init.sh
+    |
+    v
+merge UX: auto-switch + stash
+(in lib/commands/merge.sh, uses git_remote.sh)
 ```
 
-**Build order rationale:**
+**Recommended build order:**
 
-1. **Layer 0 first** because these are pure utilities with no dependencies. They can be fully tested in isolation with unit tests. The Git Operations abstraction is the foundation everything else builds on -- getting this right (with proper error handling and dry-run support) prevents cascading issues.
+| Order | Component | Rationale |
+|-------|-----------|-----------|
+| 1 | `lib/safety.sh` + cleanup bug fix | Fixes critical data-loss bug. No dependencies on other new code. Highest priority. |
+| 2 | `lib/cleanup/registry.sh` safety guard | Prevents root registration. Pairs with safety.sh. |
+| 3 | `lib/git_remote.sh` | Independent module. No dependencies on safety or guidance. |
+| 4 | Merge UX (auto-switch + stash) | Depends on nothing new, but changes the most complex command. Benefits from git_remote.sh being ready for auto-push integration. |
+| 5 | Auto-push integration | Wires git_remote.sh into execute.sh and merge.sh. Straightforward once git_remote.sh exists. |
+| 6 | `lib/guidance.sh` + all command integration | Touches every command file but is pure output -- no logic changes. Best done last when all other behavior is finalized, so guidance text is accurate. |
 
-2. **Layer 1 next** because the Plan Parser and Worktree Manager are the two "edge" components that interface with external systems (filesystem and git). Testing them early surfaces integration issues with the real world.
+**Build order rationale:** Safety first (fixes real data loss), then independent new capabilities (remote, merge UX), then cross-cutting concerns last (guidance touches everything so it should be added when behavior is stable).
 
-3. **Layer 2 follows** because the Prompt Generator and Scheduler are pure transformations -- they take structured input and produce structured output. Easy to test, easy to get right once inputs are well-defined.
+## Testing Strategy
 
-4. **Layer 3 is where complexity lives.** The Ralph Launcher manages child processes, and the Status Monitor tracks async state. These are the hardest components to test and debug. By this point, all their dependencies are stable.
-
-5. **Layer 4 last (before CLI)** because merging and notifications are "convergence" operations that only make sense when execution is working.
-
-6. **CLI Entry Point last** because it is a thin routing layer. Building it last means all the logic it dispatches to is already tested and working.
-
-## Suggested Directory Structure
-
-```
-src/
-  index.ts                    # CLI entry point
-  commands/
-    init.ts                   # Initialize session from plan
-    execute.ts                # Run tasks in worktrees
-    status.ts                 # Show current progress
-    merge.ts                  # Merge completed branches
-    cleanup.ts                # Remove worktrees and state
-    types.ts                  # Command interface
-  core/
-    event-bus.ts              # Typed event emitter
-    state-manager.ts          # Session state persistence
-    scheduler.ts              # Dependency-aware task scheduling
-  git/
-    operations.ts             # Git abstraction interface
-    git-cli.ts                # Implementation via git CLI
-  plan/
-    parser.ts                 # GSD plan parser
-    types.ts                  # TaskGraph, Task, etc.
-    naming.ts                 # Dual naming convention handler
-  worktree/
-    manager.ts                # Worktree lifecycle
-    types.ts                  # Worktree types
-  prompt/
-    generator.ts              # Prompt file generator
-    templates/                # Template files
-      PROMPT.md.hbs
-      fix_plan.md.hbs
-      ralphrc.hbs
-  ralph/
-    launcher.ts               # Process spawning
-    types.ts                  # Ralph config types
-  monitor/
-    status.ts                 # Status aggregation
-    types.ts                  # Status types
-  merge/
-    orchestrator.ts           # Merge logic
-    conflict-detector.ts      # Pre-merge dry run
-  notify/
-    terminal.ts               # Terminal bell + messages
-    types.ts                  # Notification types
-```
-
-## Scalability Considerations
-
-| Concern | At 5 tasks | At 20 tasks | At 50+ tasks |
-|---------|------------|-------------|-------------|
-| **Worktree disk usage** | Negligible (~5 copies) | Noticeable (worktrees share objects via git, so mostly just working trees) | May need explicit disk checks before creating; stagger creation |
-| **Process management** | Simple concurrent spawns | Need concurrency limit (4-8 parallel) to avoid CPU/memory exhaustion | Queue-based scheduling; may need process priority |
-| **Merge conflicts** | Rare if tasks are well-scoped | Likely between related tasks; dependency ordering critical | Need merge ordering strategy; possibly staged merge (merge group A, then group B on top) |
-| **State file contention** | No issues | Infrequent writes, no contention | Consider SQLite or structured state if JSON becomes bottleneck |
-| **Git operations** | Fast | Some git commands slow with many worktrees (e.g., `git worktree list`) | Cache worktree list; batch git operations |
-| **User cognitive load** | Status fits in terminal | Need summary view + detail drill-down | Need filtering, grouping by phase, progress bars |
-
-## Key Architecture Decisions
-
-### Decision 1: Single Process Orchestrator, Not Distributed
-
-gsd-ralph should be a **single Node.js process** that spawns Ralph as child processes. Not a daemon, not a server, not a distributed system. Reasons:
-
-- The user runs it from their terminal. Terminal lifecycle = orchestrator lifecycle.
-- State recovery via JSON file handles crashes.
-- No need for IPC complexity -- child process stdout/stderr is sufficient.
-- The concurrency model is "a few parallel processes" not "a fleet of workers."
-
-### Decision 2: Worktrees Over Clones
-
-Git worktrees share the object store, so they are fast to create and space-efficient. Each worktree gets its own working tree and index, so agents cannot interfere with each other. This is the correct isolation primitive -- not Docker containers, not separate clones, not branch switching in a single worktree.
-
-### Decision 3: File-Based Communication With Ralph
-
-Ralph expects PROMPT.md and .ralphrc in the working directory. gsd-ralph communicates intent to Ralph by writing these files, not by passing CLI arguments or environment variables. This means:
-
-- The Prompt Generator is a critical component (not just a convenience).
-- Template quality directly impacts execution quality.
-- gsd-ralph does not need to understand Ralph's internal API -- just its file conventions.
-
-### Decision 4: Pull-Based Status Monitoring
-
-Rather than Ralph "reporting back" to gsd-ralph (which would require modifying Ralph), the Status Monitor polls:
-
-1. Is the process still alive? (PID check)
-2. Has the worktree changed? (git status in worktree)
-3. Did the process exit? (exit code)
-
-This keeps gsd-ralph and Ralph decoupled. Ralph does not need to know it is being orchestrated.
+| Component | Test Approach |
+|-----------|---------------|
+| `lib/safety.sh` | Unit tests: assert_safe_to_remove with git toplevel, home, root, valid worktree, non-worktree |
+| `lib/cleanup/registry.sh` | Unit test: register_worktree skips when path == toplevel |
+| `lib/commands/cleanup.sh` | Integration test: verify rm-rf fallback is gone; verify worktree removal uses safety checks |
+| `lib/git_remote.sh` | Unit tests: has_push_remote with/without remote; push_branch with mock git |
+| Merge auto-switch | Integration test: start on phase branch, run merge, verify it switches to main |
+| Merge stash/unstash | Integration test: dirty worktree, run merge, verify stash created and popped |
+| Auto-push | Integration test with a local bare remote: verify push after execute and merge |
+| Guidance | Snapshot tests: verify each command prints expected guidance text |
 
 ## Sources
 
-- Git worktree documentation: `git-worktree(1)` man page -- worktrees share objects, each has own HEAD and index
-- Node.js `child_process` module -- spawn for async process management, stdio pipe options
-- Commander.js / yargs patterns for CLI subcommand routing
-- General orchestration patterns from CI/CD pipeline architectures (Jenkins, GitHub Actions) where parallel job management and artifact merging are well-studied problems
-- Process management patterns from tools like PM2, concurrently, and npm-run-all
+- Direct code reading of v1.0 codebase (all files listed above)
+- STATE.md pending todos documenting the cleanup data-loss bug, merge UX friction, auto-push requirement, and CLI guidance requirement
+- PROJECT.md v1.1 milestone description
+- Git documentation: `git stash push -m`, `git worktree remove`, `git remote`
 
-**Confidence note:** Architecture patterns are drawn from training data knowledge of CLI tools, process orchestrators, and git internals. No live verification was possible this session. The patterns described (event bus, command pattern, topological scheduling, git worktree isolation) are well-established and HIGH confidence individually. Their specific composition for this exact use case is MEDIUM confidence -- the integration points (especially Ralph process monitoring and merge ordering) will need validation during implementation.
+---
+*Architecture research for: gsd-ralph v1.1 safety and UX integration*
+*Researched: 2026-02-20*
