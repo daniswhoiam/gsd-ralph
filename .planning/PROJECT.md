@@ -27,7 +27,16 @@ One command takes a GSD-planned phase and produces merged, working code — no m
 
 ### Active
 
-(None yet — define with `/gsd:new-milestone`)
+#### Current Milestone: v1.1 Stability & Safety
+
+**Goal:** Make gsd-ralph safe and smooth for developers trying it out for the first time.
+
+**Target features:**
+- Fix critical cleanup data-loss bug
+- Improve merge command UX (auto-switch, dirty worktree handling)
+- Add auto-push to remote for data loss prevention
+- Better CLI guidance (each step tells user what to do next)
+- Security guardrails review and hardening
 
 ### Out of Scope
 
@@ -74,4 +83,4 @@ Known v2 candidates from deferred requirements: status monitoring (STAT-01-04), 
 | EXIT trap for failure notification | Bell fires after significant work, not on trivial validation errors | ✓ Good — right granularity |
 
 ---
-*Last updated: 2026-02-19 after v1.0 milestone*
+*Last updated: 2026-02-20 after v1.1 milestone start*
