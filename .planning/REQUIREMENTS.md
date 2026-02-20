@@ -64,25 +64,25 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SAFE-01 | — | Pending |
-| SAFE-02 | — | Pending |
-| SAFE-03 | — | Pending |
-| SAFE-04 | — | Pending |
-| PUSH-01 | — | Pending |
-| PUSH-02 | — | Pending |
-| PUSH-03 | — | Pending |
-| PUSH-04 | — | Pending |
-| MRGX-01 | — | Pending |
-| MRGX-02 | — | Pending |
-| MRGX-03 | — | Pending |
-| GUID-01 | — | Pending |
-| GUID-02 | — | Pending |
+| SAFE-01 | Phase 7 | Pending |
+| SAFE-02 | Phase 7 | Pending |
+| SAFE-03 | Phase 7 | Pending |
+| SAFE-04 | Phase 7 | Pending |
+| PUSH-01 | Phase 8 | Pending |
+| PUSH-02 | Phase 8 | Pending |
+| PUSH-03 | Phase 8 | Pending |
+| PUSH-04 | Phase 8 | Pending |
+| MRGX-01 | Phase 8 | Pending |
+| MRGX-02 | Phase 8 | Pending |
+| MRGX-03 | Phase 8 | Pending |
+| GUID-01 | Phase 9 | Pending |
+| GUID-02 | Phase 9 | Pending |
 
 **Coverage:**
-- v1.1 requirements: 14 total
-- Mapped to phases: 0
-- Unmapped: 14
+- v1.1 requirements: 13 total
+- Mapped to phases: 13
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-20*
-*Last updated: 2026-02-20 after initial definition*
+*Last updated: 2026-02-20 after roadmap creation*
