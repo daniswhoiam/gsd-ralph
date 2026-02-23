@@ -126,9 +126,11 @@ cmd_cleanup() {
                 done
                 git worktree prune >/dev/null 2>&1
                 print_info "Deleted $del_count unregistered branch(es)."
+                print_guidance "Phase $phase_num fully cleaned up"
                 return 0
             else
                 print_info "Use --force to clean these up."
+                print_guidance "Use --force to clean: gsd-ralph cleanup $phase_num --force"
                 return 0
             fi
         fi
@@ -261,6 +263,12 @@ cmd_cleanup() {
         print_warning "Branches skipped:  $br_skipped (unmerged, use --force)"
     fi
     print_success "Phase $phase_num cleanup complete"
+
+    if [[ $br_skipped -gt 0 ]]; then
+        print_guidance "Merge or force-delete remaining branches: gsd-ralph cleanup $phase_num --force"
+    else
+        print_guidance "Phase $phase_num fully cleaned up"
+    fi
 
     return 0
 }

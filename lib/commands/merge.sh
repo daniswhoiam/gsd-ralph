@@ -235,6 +235,7 @@ cmd_merge() {
     # Discover branches to merge
     if ! discover_merge_branches "$phase_num"; then
         print_info "No unmerged branches found for phase $phase_num."
+        print_guidance "Run: gsd-ralph execute $phase_num  (if not yet executed)"
         _restore_merge_stash
         return 0
     fi
@@ -293,8 +294,10 @@ cmd_merge() {
     if [[ "$dry_run" == true ]]; then
         _restore_merge_stash
         if [[ ${#conflict_branches[@]} -gt 0 ]]; then
+            print_guidance "Resolve conflicts before merging"
             return 1
         fi
+        print_guidance "Ready to merge: gsd-ralph merge $phase_num"
         return 0
     fi
 
@@ -307,6 +310,7 @@ cmd_merge() {
             print_conflict_guidance "$branch" "${conflict_files_map[$idx]}"
             idx=$((idx + 1))
         done
+        print_guidance "Resolve conflicts manually, then re-run: gsd-ralph merge $phase_num"
         _restore_merge_stash
         return 1
     fi
@@ -386,6 +390,7 @@ cmd_merge() {
             test_failed=true
             print_error "New test regressions detected after merge."
             print_info "To undo the merge: gsd-ralph merge $phase_num --rollback"
+            print_guidance "To undo: gsd-ralph merge $phase_num --rollback"
         fi
     fi
 
@@ -420,6 +425,7 @@ cmd_merge() {
         local conflict_branch_count=${#conflict_branches[@]}
         if [[ $skip_count -eq 0 ]] && [[ $conflict_branch_count -eq 0 ]]; then
             signal_phase_complete "$phase_num"
+            print_guidance "Run: gsd-ralph cleanup $phase_num"
         else
             print_info "Some branches not merged. Phase $phase_num not yet complete."
             if [[ $skip_count -gt 0 ]]; then
@@ -428,6 +434,7 @@ cmd_merge() {
             if [[ $conflict_branch_count -gt 0 ]]; then
                 print_info "  Conflicts: $conflict_branch_count branch(es) detected in dry-run"
             fi
+            print_guidance "Resolve remaining conflicts, then re-run: gsd-ralph merge $phase_num"
         fi
 
         # Push main to remote after successful merge

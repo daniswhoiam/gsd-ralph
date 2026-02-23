@@ -94,6 +94,7 @@ rollback_merge() {
         fi
     fi
 
+    print_guidance "Fix the issue, then re-run: gsd-ralph merge $phase_num"
     return 0
 }
 
