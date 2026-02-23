@@ -1,4 +1,7 @@
 #!/bin/bash
+# DEPRECATED: This is a legacy ad-hoc script from pre-v1.0.
+# Use 'gsd-ralph execute N' instead. This script may be removed in a future version.
+#
 # ralph-execute - Orchestrates Ralph phase execution
 #
 # This script guides you through the entire execution workflow:
@@ -192,7 +195,10 @@ if [ "$EXISTING_WORKTREES" -gt 0 ]; then
         for wt in "$PARENT_DIR"/${REPO_NAME}-p${PHASE_NUM}-*; do
             if [ -d "$wt" ]; then
                 BRANCH=$(git -C "$wt" branch --show-current 2>/dev/null || echo "")
-                git worktree remove "$wt" --force 2>/dev/null || rm -rf "$wt"
+                if ! git worktree remove "$wt" --force 2>/dev/null; then
+                    echo -e "${YELLOW}  Failed to remove worktree: $wt${NC}"
+                    echo "  Manual cleanup: git worktree remove --force '$wt'"
+                fi
                 if [ -n "$BRANCH" ]; then
                     git branch -D "$BRANCH" 2>/dev/null || true
                 fi

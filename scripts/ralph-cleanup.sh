@@ -1,4 +1,7 @@
 #!/bin/bash
+# DEPRECATED: This is a legacy ad-hoc script from pre-v1.0.
+# Use 'gsd-ralph cleanup N' instead. This script may be removed in a future version.
+#
 # ralph-cleanup.sh - Remove worktrees and branches for a completed phase
 #
 # Usage: ./scripts/ralph-cleanup.sh <phase_number>
@@ -50,8 +53,10 @@ for wt in "$PARENT_DIR"/${REPO_NAME}-p${PHASE_NUM}-*; do
         echo -e "${GREEN}▶ Removing $NAME...${NC}"
 
         # Remove worktree
-        git worktree remove "$wt" --force 2>/dev/null || rm -rf "$wt"
-        echo "  Worktree removed"
+        if ! git worktree remove "$wt" --force 2>/dev/null; then
+            echo -e "${YELLOW}  Failed to remove worktree: $wt${NC}"
+            echo "  Manual cleanup: git worktree remove --force '$wt'"
+        fi
 
         # Delete branch (if merged)
         if [ -n "$BRANCH" ]; then

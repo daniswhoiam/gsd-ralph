@@ -5,6 +5,9 @@
 # Rollback scope is phase-level: resets to the SHA captured before any
 # merges for the phase began.
 
+# shellcheck source=/dev/null
+source "$GSD_RALPH_HOME/lib/safety.sh"
+
 # Rollback state file location
 ROLLBACK_FILE=".ralph/merge-rollback.json"
 
@@ -75,7 +78,7 @@ rollback_merge() {
 
     print_warning "Rollback is only possible before pushing merged changes."
     git reset --hard "$saved_sha" >/dev/null 2>&1
-    rm -f "$ROLLBACK_FILE"
+    safe_remove "$ROLLBACK_FILE" "file"
     print_success "Rolled back to pre-merge state: ${saved_sha}"
     return 0
 }

@@ -1,6 +1,9 @@
 #!/bin/bash
 # lib/prompt.sh -- PROMPT.md and fix_plan.md generation pipeline
 
+# shellcheck source=/dev/null
+source "$GSD_RALPH_HOME/lib/safety.sh"
+
 # Extract tasks from GSD plan XML into fix_plan.md checklist.
 # Uses python3 regex for reliable multiline XML parsing.
 # Args: plan_file, output_file
@@ -250,7 +253,7 @@ generate_combined_fix_plan() {
         if [[ -s "$temp_tasks" ]]; then
             cat "$temp_tasks" >> "$output_path"
         fi
-        rm -f "$temp_tasks"
+        safe_remove "$temp_tasks" "file"
 
         # Add summary creation task
         echo "- [ ] Create ${phase_slug}/${plan_id}-SUMMARY.md" >> "$output_path"
