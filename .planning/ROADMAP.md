@@ -62,7 +62,12 @@ Plans:
   3. Running `gsd-ralph merge N` from a phase branch automatically switches to main and completes the merge without manual intervention
   4. Running `gsd-ralph merge N` with uncommitted changes auto-stashes before merge and restores the stash after completion (success or rollback)
   5. Auto-push can be disabled via .ralphrc configuration, and when disabled, no push attempts are made
-**Plans**: TBD
+**Plans:** 3 plans
+
+Plans:
+- [ ] 08-01-PLAN.md -- Push infrastructure: lib/push.sh module and .ralphrc config loading
+- [ ] 08-02-PLAN.md -- Merge UX: auto-switch to main and auto-stash/restore dirty working tree
+- [ ] 08-03-PLAN.md -- Wire auto-push into execute and merge, add tests for all Phase 8 features
 
 ### Phase 9: CLI Guidance
 **Goal**: Every command tells the user what to do next
@@ -87,5 +92,5 @@ Phases execute in numeric order: 7 -> 8 -> 9
 | 5. Cleanup | v1.0 | 2/2 | Complete | 2026-02-19 |
 | 6. v1 Gap Closure | v1.0 | 2/2 | Complete | 2026-02-19 |
 | 7. Safety Guardrails | v1.1 | 0/3 | Planned | - |
-| 8. Auto-Push & Merge UX | v1.1 | 0/TBD | Not started | - |
+| 8. Auto-Push & Merge UX | v1.1 | 0/3 | Planned | - |
 | 9. CLI Guidance | v1.1 | 0/TBD | Not started | - |
