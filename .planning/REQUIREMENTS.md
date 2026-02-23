@@ -29,8 +29,8 @@ Requirements for v1.1 Stability & Safety. Each maps to roadmap phases.
 
 ### CLI Guidance
 
-- [ ] **GUID-01**: Every command outputs a next-step suggestion after completion
-- [ ] **GUID-02**: Guidance is context-sensitive (accounts for current state, available next actions)
+- [x] **GUID-01**: Every command outputs a next-step suggestion after completion
+- [x] **GUID-02**: Guidance is context-sensitive (accounts for current state, available next actions)
 
 ## Future Requirements
 
@@ -75,8 +75,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MRGX-01 | Phase 8 | Complete |
 | MRGX-02 | Phase 8 | Complete |
 | MRGX-03 | Phase 8 | Complete |
-| GUID-01 | Phase 9 | Pending |
-| GUID-02 | Phase 9 | Pending |
+| GUID-01 | Phase 9 | Complete |
+| GUID-02 | Phase 9 | Complete |
 
 **Coverage:**
 - v1.1 requirements: 13 total
