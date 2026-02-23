@@ -153,6 +153,7 @@ print(len(tasks))
         print_info ""
         print_info "Strategy analysis:"
         print_phase_structure "$PHASE_DIR"
+        print_guidance "To execute for real: gsd-ralph execute $phase_num"
         return 0
     fi
 
@@ -251,8 +252,7 @@ EOF
     print_info ""
 
     # Step 13: Print launch instructions
-    printf "\n"
-    print_success "Run 'ralph' to start execution"
+    print_guidance "Run 'ralph' to start autonomous execution"
     ring_bell
     trap - EXIT
 }

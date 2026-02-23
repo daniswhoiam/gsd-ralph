@@ -155,4 +155,5 @@ STATUSEOF
     print_info "Plans processed: $PLAN_COUNT"
     print_info "Output directory: $output_dir"
     print_info "Files per plan: PROMPT.md, fix_plan.md, AGENT.md, .ralphrc, status.json"
+    print_guidance "Review generated files in $output_dir"
 }

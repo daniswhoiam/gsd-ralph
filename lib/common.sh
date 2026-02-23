@@ -49,6 +49,14 @@ ring_bell() {
     printf '\a'
 }
 
+# Print a next-step guidance message after command completion.
+# Visually distinct from status output — helps user see what to do next.
+# Args: message (the guidance text)
+# Do NOT call after die() — the error message is the guidance for fatal errors.
+print_guidance() {
+    printf "\n${GREEN}  Next:${NC} %s\n" "$1"
+}
+
 # ISO 8601 timestamp that works on both macOS and Linux
 iso_timestamp() {
     date -u +%Y-%m-%dT%H:%M:%SZ

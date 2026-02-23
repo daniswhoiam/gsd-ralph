@@ -44,6 +44,7 @@ cmd_init() {
     # Step 3: Check if already initialized
     if [[ -d ".ralph" ]] && [[ "$force" != "true" ]]; then
         print_warning ".ralph/ directory already exists. Use --force to reinitialize."
+        print_guidance "To reinitialize: gsd-ralph init --force"
         exit 0
     fi
 
@@ -97,8 +98,5 @@ cmd_init() {
     print_header "Initialization complete"
     print_success "Created .ralph/ configuration directory"
     print_success "Created .ralphrc with project settings"
-    print_info "Next steps:"
-    printf "  1. Review .ralphrc configuration\n"
-    printf "  2. Plan your first phase with GSD\n"
-    printf "  3. Run: gsd-ralph execute 1\n"
+    print_guidance "Review .ralphrc, then run: gsd-ralph execute <phase>"
 }
