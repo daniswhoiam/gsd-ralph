@@ -44,12 +44,13 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. If `git worktree remove` fails, the cleanup command reports the error and exits without attempting `rm -rf` as fallback
   3. Running `gsd-ralph execute N` in sequential mode does not register the main working tree as a removable worktree in the registry
   4. Every file/directory deletion in the codebase routes through a safe_remove guard that refuses to remove HOME, /, or the git toplevel
-**Plans:** 3 plans
+**Plans:** 4 plans
 
 Plans:
 - [ ] 07-01-PLAN.md -- Safety foundation: safe_remove() guard and registry main-worktree guard
 - [ ] 07-02-PLAN.md -- Remove rm-rf fallback, route all rm calls through safe_remove(), fix legacy scripts
 - [ ] 07-03-PLAN.md -- Comprehensive tests for all safety guardrails
+- [ ] 07-04-PLAN.md -- Gap closure: fix GSD_RALPH_HOME export in test helpers (24 test regressions)
 
 ### Phase 8: Auto-Push & Merge UX
 **Goal**: Branches are automatically backed up to remote and merge works from any branch state
