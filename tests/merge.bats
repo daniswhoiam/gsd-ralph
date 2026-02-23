@@ -102,12 +102,14 @@ PLAN
     assert_output --partial "init"
 }
 
-@test "merge fails with dirty working tree" {
+@test "merge auto-stashes dirty working tree" {
     setup_merge_branch
     echo "uncommitted" > dirty-file.txt
     run gsd-ralph merge 3
-    assert_failure
-    assert_output --partial "not clean"
+    assert_success
+    assert_output --partial "auto-stash"
+    # Dirty file should be restored after merge
+    assert_file_exists "dirty-file.txt"
 }
 
 # ---------------------------------------------------------------------------
@@ -658,4 +660,114 @@ TESTSCRIPT
     assert_success
     # BEL character (ASCII 0x07) should be in output from ring_bell
     [[ "$output" == *$'\a'* ]]
+}
+
+# ---------------------------------------------------------------------------
+# Auto-switch and auto-stash (Plan 08-03 tests)
+# ---------------------------------------------------------------------------
+
+@test "merge auto-switches to main from phase branch" {
+    setup_merge_branch
+
+    # Detect the main branch name (main or master)
+    local main_branch
+    if git show-ref --verify --quiet refs/heads/main 2>/dev/null; then
+        main_branch="main"
+    else
+        main_branch="master"
+    fi
+
+    # Switch to the phase branch
+    git checkout "phase-3/phase-execution" >/dev/null 2>&1
+
+    run gsd-ralph merge 3
+    assert_success
+
+    # Verify we are now on main/master
+    local current_branch
+    current_branch=$(git symbolic-ref --short HEAD 2>/dev/null)
+    [[ "$current_branch" == "$main_branch" ]]
+
+    # Verify output mentions switching
+    assert_output --partial "Switched to $main_branch"
+}
+
+@test "merge auto-stashes and restores from non-main branch" {
+    setup_merge_branch
+
+    # Detect the main branch name (main or master)
+    local main_branch
+    if git show-ref --verify --quiet refs/heads/main 2>/dev/null; then
+        main_branch="main"
+    else
+        main_branch="master"
+    fi
+
+    # Switch to phase branch and create dirty changes
+    git checkout "phase-3/phase-execution" >/dev/null 2>&1
+    echo "dirty work" > unsaved-work.txt
+
+    run gsd-ralph merge 3
+    assert_success
+
+    # Verify on main/master branch
+    local current_branch
+    current_branch=$(git symbolic-ref --short HEAD 2>/dev/null)
+    [[ "$current_branch" == "$main_branch" ]]
+
+    # Verify stashed changes were restored
+    assert_output --partial "auto-stash"
+    assert_output --partial "restored"
+}
+
+# ---------------------------------------------------------------------------
+# Auto-push for merge (Plan 08-03 tests)
+# ---------------------------------------------------------------------------
+
+@test "merge pushes main to remote after successful merge" {
+    setup_merge_branch
+
+    # Set up a bare remote repo and push initial main
+    git init --bare "$BATS_TEST_TMPDIR/remote.git" >/dev/null 2>&1
+    git remote add origin "$BATS_TEST_TMPDIR/remote.git"
+    git push -u origin main >/dev/null 2>&1 || git push -u origin master >/dev/null 2>&1
+
+    # Record remote main SHA before merge
+    local remote_sha_before
+    remote_sha_before=$(git -C "$BATS_TEST_TMPDIR/remote.git" rev-parse HEAD)
+
+    run gsd-ralph merge 3
+    assert_success
+    assert_output --partial "Pushed"
+
+    # Verify remote main has advanced (merge commit pushed)
+    local remote_sha_after
+    remote_sha_after=$(git -C "$BATS_TEST_TMPDIR/remote.git" rev-parse HEAD)
+    [[ "$remote_sha_before" != "$remote_sha_after" ]]
+}
+
+@test "merge skips push when AUTO_PUSH=false" {
+    setup_merge_branch
+
+    # Set up a bare remote repo and push initial main
+    git init --bare "$BATS_TEST_TMPDIR/remote.git" >/dev/null 2>&1
+    git remote add origin "$BATS_TEST_TMPDIR/remote.git"
+    git push -u origin main >/dev/null 2>&1 || git push -u origin master >/dev/null 2>&1
+
+    # Record remote main SHA before merge
+    local remote_sha_before
+    remote_sha_before=$(git -C "$BATS_TEST_TMPDIR/remote.git" rev-parse HEAD)
+
+    # Disable auto-push via .ralphrc
+    echo 'AUTO_PUSH=false' > .ralphrc
+    git add .ralphrc >/dev/null 2>&1
+    git commit -m "Disable auto-push" >/dev/null 2>&1
+
+    run gsd-ralph merge 3
+    assert_success
+
+    # Verify remote main SHA is unchanged (push was skipped)
+    local remote_sha_after
+    remote_sha_after=$(git -C "$BATS_TEST_TMPDIR/remote.git" rev-parse HEAD)
+    [[ "$remote_sha_before" == "$remote_sha_after" ]]
 }

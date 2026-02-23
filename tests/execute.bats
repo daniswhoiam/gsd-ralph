@@ -273,3 +273,55 @@ PLAN
     # BEL character (ASCII 0x07) should be in output from ring_bell
     [[ "$output" == *$'\a'* ]]
 }
+
+# --- Auto-push tests (Plan 08-03) ---
+
+@test "execute pushes branch to remote when origin exists" {
+    setup_sequential_phase
+
+    # Set up a bare repo as remote
+    git init --bare "$BATS_TEST_TMPDIR/remote.git" >/dev/null 2>&1
+    git remote add origin "$BATS_TEST_TMPDIR/remote.git"
+    # Push initial commit so remote has a ref
+    git push -u origin main >/dev/null 2>&1 || git push -u origin master >/dev/null 2>&1
+
+    run gsd-ralph execute 3
+    assert_success
+    assert_output --partial "Pushed"
+
+    # Verify the branch exists on the remote
+    run git -C "$BATS_TEST_TMPDIR/remote.git" branch -l
+    assert_output --partial "phase-3/phase-execution"
+}
+
+@test "execute skips push when no remote" {
+    setup_sequential_phase
+
+    # No remote configured
+    run gsd-ralph execute 3
+    assert_success
+
+    # Output should NOT contain "Pushed" (verbose msg about skip is not shown by default)
+    refute_output --partial "Pushed"
+}
+
+@test "execute skips push when AUTO_PUSH=false" {
+    setup_sequential_phase
+
+    # Set up a bare repo as remote
+    git init --bare "$BATS_TEST_TMPDIR/remote.git" >/dev/null 2>&1
+    git remote add origin "$BATS_TEST_TMPDIR/remote.git"
+    git push -u origin main >/dev/null 2>&1 || git push -u origin master >/dev/null 2>&1
+
+    # Disable auto-push via .ralphrc
+    echo 'AUTO_PUSH=false' > .ralphrc
+    git add .ralphrc >/dev/null 2>&1
+    git commit -m "Disable auto-push" >/dev/null 2>&1
+
+    run gsd-ralph execute 3
+    assert_success
+
+    # Verify the branch does NOT exist on the remote
+    run git -C "$BATS_TEST_TMPDIR/remote.git" branch -l
+    refute_output --partial "phase-3/phase-execution"
+}
