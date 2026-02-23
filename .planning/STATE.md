@@ -11,11 +11,11 @@ See: .planning/PROJECT.md (updated 2026-02-20)
 
 Milestone: v1.1 Stability & Safety
 Phase: 9 of 9 (CLI Guidance)
-Plan: 1 of 2 in current phase
-Status: Executing
-Last activity: 2026-02-23 -- Completed 09-01 (print_guidance helper and wiring)
+Plan: 2 of 2 in current phase
+Status: Complete
+Last activity: 2026-02-23 -- Completed 09-02 (guidance output testing)
 
-Progress: [█████████░] 50%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -26,7 +26,7 @@ Progress: [█████████░] 50%
 - Codebase: 3,695 LOC Bash + 2,533 LOC Bats tests
 
 **v1.1 Velocity:**
-- Total plans completed: 8
+- Total plans completed: 9
 - Started: 2026-02-20
 
 | Phase | Plan | Duration | Tasks | Files |
@@ -39,6 +39,7 @@ Progress: [█████████░] 50%
 | 08    | 02   | 7min     | 2     | 2     |
 | 08    | 03   | 12min    | 2     | 5     |
 | 09    | 01   | 4min     | 2     | 7     |
+| 09    | 02   | 3min     | 2     | 1     |
 
 ## Accumulated Context
 
@@ -64,6 +65,8 @@ See PROJECT.md Key Decisions table for full list with outcomes.
 - **09-01:** No guidance after die() or --help -- error messages and usage text are self-explanatory
 - **09-01:** No guidance at abort or nothing-to-clean cleanup exits -- user chose to stop
 - **09-01:** Conditional guidance in cleanup for skipped branches vs full cleanup
+- **09-02:** Used refute_output for negative assertions (cleanup nothing-to-clean has no guidance)
+- **09-02:** Context-sensitivity test compares init vs generate guidance lines, not just presence
 
 ### Pending Todos
 
@@ -76,5 +79,5 @@ See PROJECT.md Key Decisions table for full list with outcomes.
 ## Session Continuity
 
 Last session: 2026-02-23
-Stopped at: Completed 09-01-PLAN.md (print_guidance helper and wiring into all commands)
-Next step: Continue with 09-02-PLAN.md (guidance output testing).
+Stopped at: Completed 09-02-PLAN.md (guidance output testing)
+Next step: All v1.1 phases complete. Review and release.
