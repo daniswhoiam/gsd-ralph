@@ -26,6 +26,23 @@ source "$GSD_RALPH_HOME/lib/merge/test_runner.sh"
 # shellcheck source=/dev/null
 source "$GSD_RALPH_HOME/lib/config.sh"
 
+# Restore auto-stashed changes if stash was performed.
+# Uses apply+drop (not pop) so failed apply preserves the stash entry.
+# Args: none (uses global _MERGE_DID_STASH)
+# Returns: 0 always
+_restore_merge_stash() {
+    if [[ "${_MERGE_DID_STASH:-false}" == true ]]; then
+        print_info "Restoring auto-stashed changes..."
+        if git stash apply >/dev/null 2>&1; then
+            git stash drop >/dev/null 2>&1
+            print_success "Stashed changes restored"
+        else
+            print_warning "Stash conflicts with merged changes. Your changes are safe in: git stash list"
+            print_warning "Resolve with: git stash pop"
+        fi
+    fi
+}
+
 merge_usage() {
     cat <<EOF
 Merge completed phase branches back into main
@@ -153,6 +170,11 @@ cmd_merge() {
         die "Not initialized. Run 'gsd-ralph init' first."
     fi
 
+    # Track auto-stash state (file-scoped so _restore_merge_stash can access it)
+    _MERGE_DID_STASH=false
+    # shellcheck disable=SC2034
+    local original_branch=""
+
     # Handle --rollback early
     if [[ "$do_rollback" == true ]]; then
         rollback_merge "$phase_num"
@@ -164,28 +186,51 @@ cmd_merge() {
         die "Phase $phase_num not found. Check .planning/phases/ for available phases."
     fi
 
-    # Ensure on main branch
+    # Detect main branch name
     local current_branch
     current_branch=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
+    # shellcheck disable=SC2034
+    original_branch="$current_branch"
+
     local main_branch=""
-    if [[ "$current_branch" == "main" ]]; then
+    if git show-ref --verify --quiet "refs/heads/main" 2>/dev/null; then
         main_branch="main"
-    elif [[ "$current_branch" == "master" ]]; then
+    elif git show-ref --verify --quiet "refs/heads/master" 2>/dev/null; then
         main_branch="master"
     else
-        die "Not on main branch (currently on '$current_branch'). Switch to main first: git checkout main"
+        die "Cannot find main or master branch"
     fi
 
-    # Verify clean working tree
+    # Auto-stash dirty working tree
     local porcelain
     porcelain=$(git status --porcelain 2>/dev/null)
     if [[ -n "$porcelain" ]]; then
-        die "Working tree is not clean. Commit or stash changes before merging."
+        print_info "Uncommitted changes detected, auto-stashing..."
+        if git stash push --include-untracked -m "gsd-ralph-merge-autostash" >/dev/null 2>&1; then
+            _MERGE_DID_STASH=true
+            print_success "Changes stashed"
+        else
+            die "Failed to stash uncommitted changes. Commit or discard them manually."
+        fi
+    fi
+
+    # Switch to main if not already on it
+    if [[ "$current_branch" != "$main_branch" ]]; then
+        print_info "Currently on '$current_branch', switching to $main_branch..."
+        if ! git checkout "$main_branch" >/dev/null 2>&1; then
+            # Restore stash before dying
+            if [[ "$_MERGE_DID_STASH" == true ]]; then
+                git stash apply >/dev/null 2>&1 && git stash drop >/dev/null 2>&1
+            fi
+            die "Failed to switch to $main_branch"
+        fi
+        print_success "Switched to $main_branch"
     fi
 
     # Discover branches to merge
     if ! discover_merge_branches "$phase_num"; then
         print_info "No unmerged branches found for phase $phase_num."
+        _restore_merge_stash
         return 0
     fi
 
@@ -241,6 +286,7 @@ cmd_merge() {
 
     # Dry-run mode: show report and return without merging
     if [[ "$dry_run" == true ]]; then
+        _restore_merge_stash
         if [[ ${#conflict_branches[@]} -gt 0 ]]; then
             return 1
         fi
@@ -256,6 +302,7 @@ cmd_merge() {
             print_conflict_guidance "$branch" "${conflict_files_map[$idx]}"
             idx=$((idx + 1))
         done
+        _restore_merge_stash
         return 1
     fi
 
@@ -410,6 +457,9 @@ cmd_merge() {
     if [[ "$do_review" == true ]]; then
         print_merge_review "$phase_num"
     fi
+
+    # Restore auto-stashed changes before returning
+    _restore_merge_stash
 
     # Return non-zero if any branches were skipped, had dry-run conflicts, or tests failed
     local conflict_branch_count=${#conflict_branches[@]}
