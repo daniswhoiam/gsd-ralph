@@ -80,6 +80,20 @@ rollback_merge() {
     git reset --hard "$saved_sha" >/dev/null 2>&1
     safe_remove "$ROLLBACK_FILE" "file"
     print_success "Rolled back to pre-merge state: ${saved_sha}"
+
+    # Restore auto-stash if cmd_merge stashed before merge
+    # _MERGE_DID_STASH is set by cmd_merge in merge.sh
+    if [[ "${_MERGE_DID_STASH:-false}" == true ]]; then
+        print_info "Restoring auto-stashed changes..."
+        if git stash apply >/dev/null 2>&1; then
+            git stash drop >/dev/null 2>&1
+            print_success "Stashed changes restored after rollback"
+        else
+            print_warning "Stash conflicts after rollback. Your changes are safe in: git stash list"
+            print_warning "Resolve with: git stash pop"
+        fi
+    fi
+
     return 0
 }
 
