@@ -76,7 +76,11 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. After every command completes, the terminal output includes a clear next-step suggestion (e.g., "Next: gsd-ralph merge 3")
   2. The guidance is context-sensitive -- different suggestions appear based on command outcome (e.g., merge success vs rollback suggest different next steps)
-**Plans**: TBD
+**Plans:** 2 plans
+
+Plans:
+- [ ] 09-01-PLAN.md -- Add print_guidance() helper and wire into all command exit points
+- [ ] 09-02-PLAN.md -- Comprehensive test coverage for guidance output
 
 ## Progress
 
@@ -93,4 +97,4 @@ Phases execute in numeric order: 7 -> 8 -> 9
 | 6. v1 Gap Closure | v1.0 | 2/2 | Complete | 2026-02-19 |
 | 7. Safety Guardrails | v1.1 | 4/4 | Complete | 2026-02-20 |
 | 8. Auto-Push & Merge UX | v1.1 | 3/3 | Complete | 2026-02-23 |
-| 9. CLI Guidance | v1.1 | 0/TBD | Not started | - |
+| 9. CLI Guidance | v1.1 | 0/2 | Not started | - |
