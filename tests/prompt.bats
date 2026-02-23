@@ -7,6 +7,7 @@ setup() {
 
     # Source dependencies
     VERBOSE=false
+    export GSD_RALPH_HOME="$PROJECT_ROOT"
     source "$PROJECT_ROOT/lib/common.sh"
     source "$PROJECT_ROOT/lib/templates.sh"
     source "$PROJECT_ROOT/lib/prompt.sh"

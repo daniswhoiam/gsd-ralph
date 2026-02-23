@@ -36,6 +36,7 @@ register_test_branch() {
     local phase_num="$1"
     local worktree_path="$2"
     local branch_name="$3"
+    export GSD_RALPH_HOME="$PROJECT_ROOT"
     source "$PROJECT_ROOT/lib/common.sh"
     source "$PROJECT_ROOT/lib/cleanup/registry.sh"
     register_worktree "$phase_num" "$worktree_path" "$branch_name"

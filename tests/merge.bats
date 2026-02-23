@@ -162,6 +162,7 @@ PLAN
 # ---------------------------------------------------------------------------
 
 @test "rollback saves and restores" {
+    export GSD_RALPH_HOME="$PROJECT_ROOT"
     source "$PROJECT_ROOT/lib/common.sh"
     source "$PROJECT_ROOT/lib/merge/rollback.sh"
 
