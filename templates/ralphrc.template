@@ -56,6 +56,14 @@ CB_COOLDOWN_MINUTES=30
 CB_AUTO_RESET=false
 
 # =============================================================================
+# AUTO-PUSH SETTINGS
+# =============================================================================
+
+# Automatically push branches to remote after execute and merge.
+# Set to "false" to disable. Requires a configured 'origin' remote.
+AUTO_PUSH=true
+
+# =============================================================================
 # CUSTOM FILE LOCATIONS
 # =============================================================================
 # Ralph prepends ".ralph/" to these by default.

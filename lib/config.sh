@@ -127,3 +127,22 @@ detect_project_type() {
     # shellcheck disable=SC2034
     DETECTED_PKG_MANAGER="${pkg_manager:-}"
 }
+
+# Load project .ralphrc configuration into shell variables.
+# Sources .ralphrc if it exists and passes bash -n syntax validation.
+# Sets AUTO_PUSH default to "true" if not defined after loading.
+# Returns: 0 always
+load_ralphrc() {
+    local ralphrc_path=".ralphrc"
+    if [[ -f "$ralphrc_path" ]]; then
+        if bash -n "$ralphrc_path" 2>/dev/null; then
+            # shellcheck source=/dev/null
+            source "$ralphrc_path"
+        else
+            print_warning ".ralphrc has syntax errors, using defaults"
+        fi
+    fi
+    # Set defaults for any missing values
+    AUTO_PUSH="${AUTO_PUSH:-true}"
+    return 0
+}
