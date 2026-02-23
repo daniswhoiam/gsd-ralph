@@ -10,6 +10,8 @@
 source "$GSD_RALPH_HOME/lib/cleanup/registry.sh"
 # shellcheck source=/dev/null
 source "$GSD_RALPH_HOME/lib/discovery.sh"
+# shellcheck source=/dev/null
+source "$GSD_RALPH_HOME/lib/safety.sh"
 
 cleanup_usage() {
     cat <<EOF
@@ -161,6 +163,7 @@ cmd_cleanup() {
 
     # Remove worktrees and branches
     local wt_removed=0
+    local wt_failed=0
     local br_deleted=0
     local br_skipped=0
 
@@ -170,22 +173,39 @@ cmd_cleanup() {
         wt_path=$(printf '%s' "$registry_json" | jq -r ".[$i].worktree_path")
         br_name=$(printf '%s' "$registry_json" | jq -r ".[$i].branch")
 
-        # Remove worktree
-        if [[ -d "$wt_path" ]]; then
-            if git worktree remove --force "$wt_path" 2>/dev/null; then
-                print_verbose "Removed worktree: $wt_path"
-                wt_removed=$((wt_removed + 1))
-            else
-                # Fallback: force remove directory
-                rm -rf "$wt_path" 2>/dev/null || true
-                print_verbose "Force-removed worktree directory: $wt_path"
-                wt_removed=$((wt_removed + 1))
-            fi
-        else
-            print_verbose "Worktree already removed: $wt_path"
+        # Validate registry path before any operation
+        if ! validate_registry_path "$wt_path"; then
+            print_warning "Skipping invalid registry entry: $wt_path"
+            i=$((i + 1))
+            continue
         fi
 
-        # Delete branch
+        # Handle main worktree sentinel -- branch-only cleanup
+        if [[ "$wt_path" == "__MAIN_WORKTREE__" ]]; then
+            print_verbose "Skipping worktree removal for main working tree (sequential mode)"
+        else
+            # Defense-in-depth: also check if path resolves to git toplevel
+            # (handles pre-v1.0 registry entries that stored $(pwd))
+            local git_toplevel
+            git_toplevel=$(git rev-parse --show-toplevel 2>/dev/null) || true
+            if [[ -n "$git_toplevel" ]] && [[ -d "$wt_path" ]] && [[ "$wt_path" -ef "$git_toplevel" ]]; then
+                print_warning "Registry entry points to project root -- skipping worktree removal (likely pre-v1.0 entry)"
+            elif [[ -d "$wt_path" ]]; then
+                # SAFE-01: No rm -rf fallback. If git worktree remove fails, report and skip.
+                if git worktree remove --force "$wt_path" 2>/dev/null; then
+                    print_verbose "Removed worktree: $wt_path"
+                    wt_removed=$((wt_removed + 1))
+                else
+                    print_warning "Failed to remove worktree: $wt_path"
+                    print_warning "Manual cleanup may be needed: git worktree remove --force '$wt_path'"
+                    wt_failed=$((wt_failed + 1))
+                fi
+            else
+                print_verbose "Worktree already removed: $wt_path"
+            fi
+        fi
+
+        # Delete branch (unchanged from current logic)
         if git show-ref --verify --quiet "refs/heads/$br_name" 2>/dev/null; then
             if git branch -d "$br_name" 2>/dev/null; then
                 print_verbose "Deleted branch: $br_name"
@@ -212,15 +232,17 @@ cmd_cleanup() {
     # Prune stale worktree references
     git worktree prune 2>/dev/null
 
-    # Clean up signal files
-    rm -f ".ralph/merge-signals/phase-${phase_num}-"* 2>/dev/null
+    # Clean up signal files using safe_remove for consistency
+    for signal_file in ".ralph/merge-signals/phase-${phase_num}-"*; do
+        [[ -f "$signal_file" ]] && safe_remove "$signal_file" "file"
+    done
 
     # Clean up rollback file if it matches this phase
     if [[ -f ".ralph/merge-rollback.json" ]]; then
         local rollback_phase
         rollback_phase=$(jq -r '.phase' ".ralph/merge-rollback.json" 2>/dev/null)
         if [[ "$rollback_phase" == "$phase_num" ]]; then
-            rm -f ".ralph/merge-rollback.json"
+            safe_remove ".ralph/merge-rollback.json" "file"
             print_verbose "Removed rollback file for phase $phase_num"
         fi
     fi
@@ -232,6 +254,9 @@ cmd_cleanup() {
     print_header "Cleanup Summary"
     print_info "Worktrees removed: $wt_removed"
     print_info "Branches deleted:  $br_deleted"
+    if [[ $wt_failed -gt 0 ]]; then
+        print_warning "Worktrees failed:  $wt_failed (manual cleanup needed)"
+    fi
     if [[ $br_skipped -gt 0 ]]; then
         print_warning "Branches skipped:  $br_skipped (unmerged, use --force)"
     fi
