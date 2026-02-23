@@ -1,6 +1,9 @@
 #!/bin/bash
 # lib/commands/init.sh -- Initialize gsd-ralph in a GSD project
 
+# shellcheck source=/dev/null
+source "$GSD_RALPH_HOME/lib/push.sh"
+
 init_usage() {
     cat <<EOF
 Initialize gsd-ralph in a GSD project
@@ -63,6 +66,13 @@ cmd_init() {
     fi
     if [[ -n "$DETECTED_PKG_MANAGER" ]]; then
         print_success "Package manager: ${DETECTED_PKG_MANAGER}"
+    fi
+
+    # Step 5.5: Detect remote
+    if has_remote; then
+        print_success "Remote: origin configured"
+    else
+        print_info "Remote: no origin remote (auto-push will be skipped)"
     fi
 
     # Step 6: Derive project name from git root directory

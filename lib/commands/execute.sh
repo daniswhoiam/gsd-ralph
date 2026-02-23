@@ -14,6 +14,10 @@ source "$GSD_RALPH_HOME/lib/frontmatter.sh"
 source "$GSD_RALPH_HOME/lib/strategy.sh"
 # shellcheck source=/dev/null
 source "$GSD_RALPH_HOME/lib/cleanup/registry.sh"
+# shellcheck source=/dev/null
+source "$GSD_RALPH_HOME/lib/push.sh"
+# shellcheck source=/dev/null
+source "$GSD_RALPH_HOME/lib/config.sh"
 
 execute_usage() {
     cat <<EOF
@@ -76,6 +80,9 @@ cmd_execute() {
     if [[ ! -d ".ralph" ]]; then
         die "Not initialized. Run 'gsd-ralph init' first."
     fi
+
+    # Load .ralphrc configuration (for AUTO_PUSH setting)
+    load_ralphrc
 
     # Step 2: Find phase directory and discover plans
     if ! find_phase_dir "$phase_num"; then
@@ -226,6 +233,9 @@ EOF
     git add .ralph/PROMPT.md .ralph/fix_plan.md .ralph/logs/execution-log.md .planning/STATE.md >/dev/null 2>&1
     git commit -m "chore(phase-${phase_num}): set up execution environment for ${slug_part}" >/dev/null 2>&1
     print_success "Committed execution environment setup"
+
+    # Step 11.5: Push branch to remote (non-fatal)
+    push_branch_to_remote "$branch_name"
 
     # Step 12: Print summary
     print_header "Execution Environment Ready"

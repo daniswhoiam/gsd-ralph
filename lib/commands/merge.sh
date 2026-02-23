@@ -25,6 +25,8 @@ source "$GSD_RALPH_HOME/lib/merge/signals.sh"
 source "$GSD_RALPH_HOME/lib/merge/test_runner.sh"
 # shellcheck source=/dev/null
 source "$GSD_RALPH_HOME/lib/config.sh"
+# shellcheck source=/dev/null
+source "$GSD_RALPH_HOME/lib/push.sh"
 
 # Restore auto-stashed changes if stash was performed.
 # Uses apply+drop (not pop) so failed apply preserves the stash entry.
@@ -158,6 +160,9 @@ cmd_merge() {
         merge_usage
         exit 1
     fi
+
+    # Load .ralphrc configuration (for AUTO_PUSH setting)
+    load_ralphrc
 
     # Validate environment
     if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -424,6 +429,9 @@ cmd_merge() {
                 print_info "  Conflicts: $conflict_branch_count branch(es) detected in dry-run"
             fi
         fi
+
+        # Push main to remote after successful merge
+        push_branch_to_remote "$main_branch"
     fi
 
     # ── Phase 6: Store results and print summary ──
