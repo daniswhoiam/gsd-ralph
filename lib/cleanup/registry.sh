@@ -5,6 +5,10 @@
 # registry file at .ralph/worktree-registry.json. The registry is keyed by phase
 # number and stores arrays of {worktree_path, branch, created_at} entries.
 
+# Source safety guards
+# shellcheck disable=SC1091
+source "$GSD_RALPH_HOME/lib/safety.sh"
+
 # Registry file location
 WORKTREE_REGISTRY=".ralph/worktree-registry.json"
 
@@ -38,6 +42,14 @@ register_worktree() {
     local branch_name="$3"
     local timestamp
     timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    # SAFETY (SAFE-03): Never register the main working tree as removable
+    local git_toplevel
+    git_toplevel=$(git rev-parse --show-toplevel 2>/dev/null) || true
+    if [[ -n "$git_toplevel" ]] && [[ "$worktree_path" -ef "$git_toplevel" ]]; then
+        print_verbose "Main working tree detected; registering as non-removable (sequential mode)"
+        worktree_path="__MAIN_WORKTREE__"
+    fi
 
     init_registry
 
