@@ -81,6 +81,20 @@ analyze_phase_strategy() {
     return 0
 }
 
+# Normalize a dependency reference to a plan-only ID.
+# Handles both plan-only ("01") and phase-prefixed ("09-01") formats.
+# Args: dep_ref
+# Output: plan-only ID (e.g., "01")
+_normalize_dep_ref() {
+    local dep="$1"
+    # If dep matches NN-MM (phase-prefixed), extract just MM (the plan ID)
+    if [[ "$dep" =~ ^[0-9][0-9]-([0-9][0-9])$ ]]; then
+        echo "${BASH_REMATCH[1]}"
+    else
+        echo "$dep"
+    fi
+}
+
 # Validate phase dependencies (no circular refs, no missing deps).
 # Args: phase_dir
 # Returns: 0 if valid, 1 if invalid (prints error message)
@@ -102,7 +116,21 @@ validate_phase_dependencies() {
         plan_ids+=("$plan_id")
 
         parse_plan_frontmatter "$plan_file"
-        plan_deps+=("${FM_DEPENDS_ON:-}")
+        # Normalize dependency references to plan-only IDs
+        # (handles both "01" and "09-01" formats)
+        local raw_deps="${FM_DEPENDS_ON:-}"
+        local normalized_deps=""
+        local raw_dep
+        for raw_dep in $raw_deps; do
+            local norm_dep
+            norm_dep=$(_normalize_dep_ref "$raw_dep")
+            if [[ -n "$normalized_deps" ]]; then
+                normalized_deps="$normalized_deps $norm_dep"
+            else
+                normalized_deps="$norm_dep"
+            fi
+        done
+        plan_deps+=("$normalized_deps")
     done
 
     # Check for missing dependency references

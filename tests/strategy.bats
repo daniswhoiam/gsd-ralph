@@ -221,6 +221,91 @@ EOF
     assert_success
 }
 
+@test "validate_phase_dependencies passes with phase-prefixed depends_on" {
+    local dir="$TEST_TEMP_DIR/phase"
+    mkdir -p "$dir"
+    cat > "$dir/09-01-PLAN.md" << 'EOF'
+---
+phase: 09-frontend-evolution
+plan: 01
+wave: 1
+depends_on: []
+---
+<tasks></tasks>
+EOF
+    cat > "$dir/09-02-PLAN.md" << 'EOF'
+---
+phase: 09-frontend-evolution
+plan: 02
+wave: 2
+depends_on: [09-01]
+---
+<tasks></tasks>
+EOF
+    cat > "$dir/09-03-PLAN.md" << 'EOF'
+---
+phase: 09-frontend-evolution
+plan: 03
+wave: 3
+depends_on: [09-02]
+---
+<tasks></tasks>
+EOF
+    run validate_phase_dependencies "$dir"
+    assert_success
+}
+
+@test "validate_phase_dependencies passes with phase-prefixed multi-dep" {
+    local dir="$TEST_TEMP_DIR/phase"
+    mkdir -p "$dir"
+    cat > "$dir/09-01-PLAN.md" << 'EOF'
+---
+phase: test
+plan: 01
+wave: 1
+depends_on: []
+---
+<tasks></tasks>
+EOF
+    cat > "$dir/09-02-PLAN.md" << 'EOF'
+---
+phase: test
+plan: 02
+wave: 1
+depends_on: []
+---
+<tasks></tasks>
+EOF
+    cat > "$dir/09-03-PLAN.md" << 'EOF'
+---
+phase: test
+plan: 03
+wave: 2
+depends_on: [09-01, 09-02]
+---
+<tasks></tasks>
+EOF
+    run validate_phase_dependencies "$dir"
+    assert_success
+}
+
+@test "validate_phase_dependencies detects missing dep with phase-prefixed format" {
+    local dir="$TEST_TEMP_DIR/phase"
+    mkdir -p "$dir"
+    cat > "$dir/09-01-PLAN.md" << 'EOF'
+---
+phase: test
+plan: 01
+wave: 2
+depends_on: [09-99]
+---
+<tasks></tasks>
+EOF
+    run validate_phase_dependencies "$dir"
+    assert_failure
+    assert_output --partial "does not exist"
+}
+
 # --- print_phase_structure ---
 
 @test "print_phase_structure reports strategy mode" {
