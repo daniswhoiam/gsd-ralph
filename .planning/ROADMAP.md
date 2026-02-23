@@ -29,8 +29,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Milestone Goal:** Make gsd-ralph safe and smooth for developers trying it out for the first time.
 
-- [ ] **Phase 7: Safety Guardrails** - Eliminate the data-loss bug and harden all deletion paths
-- [ ] **Phase 8: Auto-Push & Merge UX** - Back up branches to remote automatically and make merge work from any branch state
+- [x] **Phase 7: Safety Guardrails** - Eliminate the data-loss bug and harden all deletion paths
+- [x] **Phase 8: Auto-Push & Merge UX** - Back up branches to remote automatically and make merge work from any branch state
 - [ ] **Phase 9: CLI Guidance** - Every command tells the user what to do next
 
 ## Phase Details
@@ -47,10 +47,10 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans:** 4 plans
 
 Plans:
-- [ ] 07-01-PLAN.md -- Safety foundation: safe_remove() guard and registry main-worktree guard
-- [ ] 07-02-PLAN.md -- Remove rm-rf fallback, route all rm calls through safe_remove(), fix legacy scripts
-- [ ] 07-03-PLAN.md -- Comprehensive tests for all safety guardrails
-- [ ] 07-04-PLAN.md -- Gap closure: fix GSD_RALPH_HOME export in test helpers (24 test regressions)
+- [x] 07-01-PLAN.md -- Safety foundation: safe_remove() guard and registry main-worktree guard
+- [x] 07-02-PLAN.md -- Remove rm-rf fallback, route all rm calls through safe_remove(), fix legacy scripts
+- [x] 07-03-PLAN.md -- Comprehensive tests for all safety guardrails
+- [x] 07-04-PLAN.md -- Gap closure: fix GSD_RALPH_HOME export in test helpers (24 test regressions)
 
 ### Phase 8: Auto-Push & Merge UX
 **Goal**: Branches are automatically backed up to remote and merge works from any branch state
@@ -65,9 +65,9 @@ Plans:
 **Plans:** 3 plans
 
 Plans:
-- [ ] 08-01-PLAN.md -- Push infrastructure: lib/push.sh module and .ralphrc config loading
-- [ ] 08-02-PLAN.md -- Merge UX: auto-switch to main and auto-stash/restore dirty working tree
-- [ ] 08-03-PLAN.md -- Wire auto-push into execute and merge, add tests for all Phase 8 features
+- [x] 08-01-PLAN.md -- Push infrastructure: lib/push.sh module and .ralphrc config loading
+- [x] 08-02-PLAN.md -- Merge UX: auto-switch to main and auto-stash/restore dirty working tree
+- [x] 08-03-PLAN.md -- Wire auto-push into execute and merge, add tests for all Phase 8 features
 
 ### Phase 9: CLI Guidance
 **Goal**: Every command tells the user what to do next
@@ -91,6 +91,6 @@ Phases execute in numeric order: 7 -> 8 -> 9
 | 4. Merge Orchestration | v1.0 | 3/3 | Complete | 2026-02-19 |
 | 5. Cleanup | v1.0 | 2/2 | Complete | 2026-02-19 |
 | 6. v1 Gap Closure | v1.0 | 2/2 | Complete | 2026-02-19 |
-| 7. Safety Guardrails | v1.1 | 0/3 | Planned | - |
-| 8. Auto-Push & Merge UX | v1.1 | 0/3 | Planned | - |
+| 7. Safety Guardrails | v1.1 | 4/4 | Complete | 2026-02-20 |
+| 8. Auto-Push & Merge UX | v1.1 | 3/3 | Complete | 2026-02-23 |
 | 9. CLI Guidance | v1.1 | 0/TBD | Not started | - |

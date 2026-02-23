@@ -11,11 +11,11 @@ See: .planning/PROJECT.md (updated 2026-02-20)
 
 Milestone: v1.1 Stability & Safety
 Phase: 8 of 9 (Auto-Push & Merge UX)
-Plan: 2 of 3 in current phase
-Status: In Progress
-Last activity: 2026-02-23 -- Completed 08-02 (auto-switch and auto-stash for merge)
+Plan: 3 of 3 in current phase
+Status: Phase Complete
+Last activity: 2026-02-23 -- Completed 08-03 (execute/merge push wiring and tests)
 
-Progress: [██████----] 67%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -26,7 +26,7 @@ Progress: [██████----] 67%
 - Codebase: 3,695 LOC Bash + 2,533 LOC Bats tests
 
 **v1.1 Velocity:**
-- Total plans completed: 6
+- Total plans completed: 7
 - Started: 2026-02-20
 
 | Phase | Plan | Duration | Tasks | Files |
@@ -37,6 +37,7 @@ Progress: [██████----] 67%
 | 07    | 04   | 2min     | 1     | 3     |
 | 08    | 01   | 3min     | 2     | 3     |
 | 08    | 02   | 7min     | 2     | 2     |
+| 08    | 03   | 12min    | 2     | 5     |
 
 ## Accumulated Context
 
@@ -56,6 +57,9 @@ See PROJECT.md Key Decisions table for full list with outcomes.
 - **08-02:** File-scoped _MERGE_DID_STASH variable for cross-function stash tracking (Bash has no local closures)
 - **08-02:** apply+drop pattern over pop to preserve stash entry on conflict failure
 - **08-02:** git show-ref --verify for main branch detection instead of current branch name check
+- **08-03:** Push placed after commit in execute (Step 11.5) and inside success+tests block in merge
+- **08-03:** Init remote detection is informational only -- real push gate is has_remote() at push time
+- **08-03:** Tests use git init --bare for remote simulation and detect main/master dynamically
 
 ### Pending Todos
 
@@ -68,5 +72,5 @@ See PROJECT.md Key Decisions table for full list with outcomes.
 ## Session Continuity
 
 Last session: 2026-02-23
-Stopped at: Completed 08-02-PLAN.md (auto-switch and auto-stash for merge)
-Next step: Execute 08-03-PLAN.md
+Stopped at: Completed 08-03-PLAN.md (execute/merge push wiring and full test coverage)
+Next step: Phase 8 complete. Ready for Phase 9.
