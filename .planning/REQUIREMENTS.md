@@ -16,10 +16,10 @@ Requirements for v1.1 Stability & Safety. Each maps to roadmap phases.
 
 ### Auto-Push
 
-- [ ] **PUSH-01**: Init detects whether a remote exists and records the result for downstream commands
+- [x] **PUSH-01**: Init detects whether a remote exists and records the result for downstream commands
 - [ ] **PUSH-02**: Execute pushes the phase branch to remote after creation (non-fatal on failure)
 - [ ] **PUSH-03**: Merge pushes main to remote after successful merge (non-fatal on failure)
-- [ ] **PUSH-04**: Auto-push can be disabled via .ralphrc configuration
+- [x] **PUSH-04**: Auto-push can be disabled via .ralphrc configuration
 
 ### Merge UX
 
@@ -68,10 +68,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SAFE-02 | Phase 7 | Complete |
 | SAFE-03 | Phase 7 | Complete |
 | SAFE-04 | Phase 7 | Complete |
-| PUSH-01 | Phase 8 | Pending |
+| PUSH-01 | Phase 8 | Complete |
 | PUSH-02 | Phase 8 | Pending |
 | PUSH-03 | Phase 8 | Pending |
-| PUSH-04 | Phase 8 | Pending |
+| PUSH-04 | Phase 8 | Complete |
 | MRGX-01 | Phase 8 | Pending |
 | MRGX-02 | Phase 8 | Pending |
 | MRGX-03 | Phase 8 | Pending |
