@@ -11,11 +11,11 @@ See: .planning/PROJECT.md (updated 2026-02-20)
 
 Milestone: v1.1 Stability & Safety
 Phase: 8 of 9 (Auto-Push & Merge UX)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: In Progress
-Last activity: 2026-02-23 -- Completed 08-01 (push module and config infrastructure)
+Last activity: 2026-02-23 -- Completed 08-02 (auto-switch and auto-stash for merge)
 
-Progress: [███-------] 33%
+Progress: [██████----] 67%
 
 ## Performance Metrics
 
@@ -26,7 +26,7 @@ Progress: [███-------] 33%
 - Codebase: 3,695 LOC Bash + 2,533 LOC Bats tests
 
 **v1.1 Velocity:**
-- Total plans completed: 5
+- Total plans completed: 6
 - Started: 2026-02-20
 
 | Phase | Plan | Duration | Tasks | Files |
@@ -36,6 +36,7 @@ Progress: [███-------] 33%
 | 07    | 03   | 4min     | 2     | 1     |
 | 07    | 04   | 2min     | 1     | 3     |
 | 08    | 01   | 3min     | 2     | 3     |
+| 08    | 02   | 7min     | 2     | 2     |
 
 ## Accumulated Context
 
@@ -52,6 +53,9 @@ See PROJECT.md Key Decisions table for full list with outcomes.
 - **07-04:** Followed safety.bats line 10 pattern exactly for GSD_RALPH_HOME export placement
 - **08-01:** No sourcing of common.sh or safety.sh in push.sh -- output helpers loaded by entry point
 - **08-01:** Push failures always return 0 -- push is convenience, never crash
+- **08-02:** File-scoped _MERGE_DID_STASH variable for cross-function stash tracking (Bash has no local closures)
+- **08-02:** apply+drop pattern over pop to preserve stash entry on conflict failure
+- **08-02:** git show-ref --verify for main branch detection instead of current branch name check
 
 ### Pending Todos
 
@@ -64,5 +68,5 @@ See PROJECT.md Key Decisions table for full list with outcomes.
 ## Session Continuity
 
 Last session: 2026-02-23
-Stopped at: Completed 08-01-PLAN.md (push module and config infrastructure)
-Next step: Execute 08-02-PLAN.md (wire push into execute.sh)
+Stopped at: Completed 08-02-PLAN.md (auto-switch and auto-stash for merge)
+Next step: Execute 08-03-PLAN.md

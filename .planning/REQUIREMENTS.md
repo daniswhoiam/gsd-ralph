@@ -23,9 +23,9 @@ Requirements for v1.1 Stability & Safety. Each maps to roadmap phases.
 
 ### Merge UX
 
-- [ ] **MRGX-01**: Merge auto-detects the main branch and switches to it when run from a phase branch
-- [ ] **MRGX-02**: Merge auto-stashes dirty worktree state before branch switch using apply+drop pattern
-- [ ] **MRGX-03**: Auto-stash is restored after merge completes (success or rollback)
+- [x] **MRGX-01**: Merge auto-detects the main branch and switches to it when run from a phase branch
+- [x] **MRGX-02**: Merge auto-stashes dirty worktree state before branch switch using apply+drop pattern
+- [x] **MRGX-03**: Auto-stash is restored after merge completes (success or rollback)
 
 ### CLI Guidance
 
@@ -72,9 +72,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PUSH-02 | Phase 8 | Pending |
 | PUSH-03 | Phase 8 | Pending |
 | PUSH-04 | Phase 8 | Complete |
-| MRGX-01 | Phase 8 | Pending |
-| MRGX-02 | Phase 8 | Pending |
-| MRGX-03 | Phase 8 | Pending |
+| MRGX-01 | Phase 8 | Complete |
+| MRGX-02 | Phase 8 | Complete |
+| MRGX-03 | Phase 8 | Complete |
 | GUID-01 | Phase 9 | Pending |
 | GUID-02 | Phase 9 | Pending |
 
