@@ -10,8 +10,8 @@ Requirements for v1.1 Stability & Safety. Each maps to roadmap phases.
 ### Safety Guardrails
 
 - [ ] **SAFE-01**: Cleanup command never uses rm -rf as fallback for failed worktree removal
-- [ ] **SAFE-02**: All file/directory deletions go through a safe_remove() guard that refuses to remove git toplevel, HOME, or /
-- [ ] **SAFE-03**: Registry distinguishes worktree-mode vs in-place execution, preventing main working tree from being registered as removable
+- [x] **SAFE-02**: All file/directory deletions go through a safe_remove() guard that refuses to remove git toplevel, HOME, or /
+- [x] **SAFE-03**: Registry distinguishes worktree-mode vs in-place execution, preventing main working tree from being registered as removable
 - [ ] **SAFE-04**: All existing rm calls across the codebase are audited and routed through safe_remove()
 
 ### Auto-Push
@@ -65,8 +65,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | SAFE-01 | Phase 7 | Pending |
-| SAFE-02 | Phase 7 | Pending |
-| SAFE-03 | Phase 7 | Pending |
+| SAFE-02 | Phase 7 | Complete |
+| SAFE-03 | Phase 7 | Complete |
 | SAFE-04 | Phase 7 | Pending |
 | PUSH-01 | Phase 8 | Pending |
 | PUSH-02 | Phase 8 | Pending |
