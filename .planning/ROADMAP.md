@@ -39,7 +39,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Milestone Goal:** Complete rewrite from standalone CLI to thin GSD autopilot layer (~200-400 LOC). Add `--ralph` to any GSD command and walk away.
 
-- [ ] **Phase 10: Core Architecture and Autonomous Behavior** - Foundational artifacts that define what gsd-ralph does vs. what GSD/Claude Code do
+- [x] **Phase 10: Core Architecture and Autonomous Behavior** - Foundational artifacts that define what gsd-ralph does vs. what GSD/Claude Code do (completed 2026-03-09)
 - [ ] **Phase 11: Shell Launcher and Headless Invocation** - The working autopilot: `--ralph` flag, loop execution, permission tiers, worktree isolation
 - [ ] **Phase 12: Defense-in-Depth and Observability** - Hardening with circuit breakers, AskUserQuestion denial hook, progress monitoring, audit logging
 
@@ -54,7 +54,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. The config schema in `.planning/config.json` includes Ralph-specific fields (enabled, allowed_tools, max_turns) that the launcher will read
   3. GSD context assembly logic exists that collects PROJECT.md, STATE.md, and phase plan content into a format suitable for `--append-system-prompt` or `@file` injection
   4. The architectural boundary is documented: gsd-ralph NEVER parses `.planning/` files directly or replicates GSD logic
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 10-01-PLAN.md -- SKILL.md autonomous behavior rules + config schema extension with validation
@@ -99,6 +99,6 @@ Phases execute in numeric order: 10 -> 11 -> 12
 | 7. Safety Guardrails | v1.1 | 4/4 | Complete | 2026-02-23 |
 | 8. Auto-Push & Merge UX | v1.1 | 3/3 | Complete | 2026-02-23 |
 | 9. CLI Guidance | v1.1 | 2/2 | Complete | 2026-02-23 |
-| 10. Core Architecture and Autonomous Behavior | v2.0 | 0/2 | Planning | - |
+| 10. Core Architecture and Autonomous Behavior | 2/2 | Complete   | 2026-03-09 | - |
 | 11. Shell Launcher and Headless Invocation | v2.0 | 0/TBD | Not started | - |
 | 12. Defense-in-Depth and Observability | v2.0 | 0/TBD | Not started | - |

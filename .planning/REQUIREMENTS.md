@@ -11,7 +11,7 @@ Requirements for the Autopilot Core rewrite. Each maps to roadmap phases.
 
 - [ ] **AUTO-01**: User can add `--ralph` to any GSD command to run it autonomously
 - [ ] **AUTO-02**: System loops fresh Claude Code instances (Ralph pattern), each picking up incomplete work from GSD state on disk
-- [ ] **AUTO-03**: System assembles GSD context (PROJECT.md, STATE.md, phase plans) into each iteration's prompt
+- [x] **AUTO-03**: System assembles GSD context (PROJECT.md, STATE.md, phase plans) into each iteration's prompt
 - [ ] **AUTO-04**: System injects autonomous behavior prompt that prevents AskUserQuestion and auto-approves checkpoints
 - [ ] **AUTO-05**: User can run `--dry-run` to preview the command without executing
 
@@ -71,7 +71,7 @@ Deferred to v2.1+. Tracked but not in current roadmap.
 |-------------|-------|--------|
 | AUTO-01 | Phase 11 | Pending |
 | AUTO-02 | Phase 11 | Pending |
-| AUTO-03 | Phase 10 | Pending |
+| AUTO-03 | Phase 10 | Complete |
 | AUTO-04 | Phase 10 | Pending |
 | AUTO-05 | Phase 11 | Pending |
 | PERM-01 | Phase 11 | Pending |
