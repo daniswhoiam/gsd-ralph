@@ -4,16 +4,18 @@
 
 See: .planning/PROJECT.md (updated 2026-03-09)
 
-**Core value:** Add `--ralph` to any GSD command and walk away — Ralph drives, GSD works, code ships.
-**Current focus:** v2.0 Autopilot Core — defining requirements
+**Core value:** Add `--ralph` to any GSD command and walk away -- Ralph drives, GSD works, code ships.
+**Current focus:** Phase 10 - Core Architecture and Autonomous Behavior
 
 ## Current Position
 
 Milestone: v2.0 Autopilot Core
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-03-09 — Milestone v2.0 started
+Phase: 10 of 12 (Core Architecture and Autonomous Behavior)
+Plan: 0 of TBD in current phase
+Status: Ready to plan
+Last activity: 2026-03-09 -- Roadmap created for v2.0 Autopilot Core (3 phases, 16 requirements)
+
+Progress: [######################..] 90% (v1.0 + v1.1 complete; v2.0 0/3 phases)
 
 ## Performance Metrics
 
@@ -29,11 +31,21 @@ Last activity: 2026-03-09 — Milestone v2.0 started
 - Commits: 37
 - Codebase: 9,693 LOC total, 211 tests
 
+**v2.0 Velocity:**
+- Total plans completed: 0
+- Target: ~200-400 LOC (thin integration layer)
+
 ## Accumulated Context
 
 ### Decisions
 
 See PROJECT.md Key Decisions table for full list with outcomes.
+
+Recent decisions affecting current work:
+- v2.0: Complete rewrite, not salvage from v1.x (clean break from 9,693 LOC)
+- v2.0: Thin integration layer via `--ralph` flag, not standalone CLI
+- v2.0: Leverage Claude Code native features (headless mode, worktree isolation, custom agents)
+- v2.0: Three permission tiers (--allowedTools, --auto-mode, --yolo)
 
 ### Pending Todos
 
@@ -41,10 +53,12 @@ See PROJECT.md Key Decisions table for full list with outcomes.
 
 ### Blockers/Concerns
 
-(none)
+- Research flag: Validate that `claude -p "/gsd:execute-phase N"` triggers GSD skills in headless mode (Phase 10 planning)
+- Research flag: Validate `--allowedTools` inheritance by subagents (Phase 11 planning)
+- Research flag: Validate PreToolUse hook behavior for AskUserQuestion in headless mode (Phase 12 planning)
 
 ## Session Continuity
 
 Last session: 2026-03-09
-Stopped at: Defining v2.0 milestone requirements
-Next step: Complete requirements and roadmap
+Stopped at: v2.0 roadmap created, ready for Phase 10 planning
+Next step: `/gsd:plan-phase 10`

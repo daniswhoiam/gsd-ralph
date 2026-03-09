@@ -1,7 +1,7 @@
 # Requirements: gsd-ralph
 
 **Defined:** 2026-03-09
-**Core Value:** Add `--ralph` to any GSD command and walk away — Ralph drives, GSD works, code ships.
+**Core Value:** Add `--ralph` to any GSD command and walk away -- Ralph drives, GSD works, code ships.
 
 ## v2.0 Requirements
 
@@ -69,28 +69,28 @@ Deferred to v2.1+. Tracked but not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTO-01 | — | Pending |
-| AUTO-02 | — | Pending |
-| AUTO-03 | — | Pending |
-| AUTO-04 | — | Pending |
-| AUTO-05 | — | Pending |
-| PERM-01 | — | Pending |
-| PERM-02 | — | Pending |
-| PERM-03 | — | Pending |
-| SAFE-01 | — | Pending |
-| SAFE-02 | — | Pending |
-| SAFE-03 | — | Pending |
-| SAFE-04 | — | Pending |
-| OBSV-01 | — | Pending |
-| OBSV-02 | — | Pending |
-| OBSV-03 | — | Pending |
-| OBSV-04 | — | Pending |
+| AUTO-01 | Phase 11 | Pending |
+| AUTO-02 | Phase 11 | Pending |
+| AUTO-03 | Phase 10 | Pending |
+| AUTO-04 | Phase 10 | Pending |
+| AUTO-05 | Phase 11 | Pending |
+| PERM-01 | Phase 11 | Pending |
+| PERM-02 | Phase 11 | Pending |
+| PERM-03 | Phase 11 | Pending |
+| SAFE-01 | Phase 11 | Pending |
+| SAFE-02 | Phase 11 | Pending |
+| SAFE-03 | Phase 12 | Pending |
+| SAFE-04 | Phase 12 | Pending |
+| OBSV-01 | Phase 11 | Pending |
+| OBSV-02 | Phase 11 | Pending |
+| OBSV-03 | Phase 12 | Pending |
+| OBSV-04 | Phase 12 | Pending |
 
 **Coverage:**
 - v2.0 requirements: 16 total
-- Mapped to phases: 0
-- Unmapped: 16 ⚠️
+- Mapped to phases: 16
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-09*
-*Last updated: 2026-03-09 after initial definition*
+*Last updated: 2026-03-09 after roadmap creation*
