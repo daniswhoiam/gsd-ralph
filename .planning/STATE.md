@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Autopilot Core
 status: executing
-stopped_at: Completed 10-02-PLAN.md
-last_updated: "2026-03-09T19:03:37.213Z"
+stopped_at: Completed 10-01-PLAN.md
+last_updated: "2026-03-09T19:04:07.456Z"
 last_activity: 2026-03-09 -- Completed 10-02 context assembly and architecture docs
 progress:
   total_phases: 3
@@ -63,6 +63,8 @@ Recent decisions affecting current work:
 - v2.0: Leverage Claude Code native features (headless mode, worktree isolation, custom agents)
 - v2.0: Three permission tiers (--allowedTools, --auto-mode, --yolo)
 - [Phase 10]: Context assembly reads only STATE.md + active phase plans (focused context)
+- [Phase 10]: SKILL.md kept as separate persistent file for independent evolution
+- [Phase 10]: Config validation strict-with-warnings: unknown keys warn, missing ralph key is not an error
 
 ### Pending Todos
 
@@ -76,6 +78,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-03-09T19:03:23.595Z
-Stopped at: Completed 10-02-PLAN.md
+Last session: 2026-03-09T19:04:07.454Z
+Stopped at: Completed 10-01-PLAN.md
 Next step: `/gsd:plan-phase 10`
