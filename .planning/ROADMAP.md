@@ -99,6 +99,6 @@ Phases execute in numeric order: 10 -> 11 -> 12
 | 7. Safety Guardrails | v1.1 | 4/4 | Complete | 2026-02-23 |
 | 8. Auto-Push & Merge UX | v1.1 | 3/3 | Complete | 2026-02-23 |
 | 9. CLI Guidance | v1.1 | 2/2 | Complete | 2026-02-23 |
-| 10. Core Architecture and Autonomous Behavior | 2/2 | Complete   | 2026-03-09 | - |
+| 10. Core Architecture and Autonomous Behavior | 2/2 | Complete    | 2026-03-09 | - |
 | 11. Shell Launcher and Headless Invocation | v2.0 | 0/TBD | Not started | - |
 | 12. Defense-in-Depth and Observability | v2.0 | 0/TBD | Not started | - |
