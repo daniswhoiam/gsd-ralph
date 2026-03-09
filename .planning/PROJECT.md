@@ -2,11 +2,21 @@
 
 ## What This Is
 
-A standalone Bash CLI tool that bridges GSD structured planning with Ralph autonomous execution. Provides a complete lifecycle (init, generate, execute, merge, cleanup) for turning GSD-planned phases into working, merged code — with branch isolation, protocol-driven prompts, wave-aware merging, registry-driven cleanup, safety guardrails, auto-push, and context-sensitive CLI guidance.
+A thin integration layer that enables any GSD command to run autonomously via Ralph. Instead of a standalone CLI with its own lifecycle, gsd-ralph acts as an autopilot mode for GSD — adding `--ralph` to any GSD command makes Ralph handle all user input, permissions, and decisions automatically. Leverages Claude Code's native worktree isolation and GSD's existing execution model.
 
 ## Core Value
 
-One command takes a GSD-planned phase and produces merged, working code — no manual worktree setup, no hand-crafted prompts, no babysitting.
+Add `--ralph` to any GSD command and walk away — Ralph drives, GSD works, code ships.
+
+## Current Milestone: v2.0 Autopilot Core
+
+**Goal:** Complete rewrite from standalone CLI to thin GSD autopilot layer
+
+**Target features:**
+- `--ralph` flag on any GSD command for autonomous execution
+- Auto-response to GSD's AskUserQuestion checkpoints
+- Auto-permission for Claude Code tool calls
+- Uses Claude Code's native worktree isolation (no custom worktree management)
 
 ## Requirements
 
@@ -32,65 +42,47 @@ One command takes a GSD-planned phase and produces merged, working code — no m
 
 ### Active
 
-(No active milestone — ready for next milestone planning)
+- [ ] `--ralph` flag enables autonomous execution of any GSD command
+- [ ] Auto-respond to AskUserQuestion checkpoints during GSD workflows
+- [ ] Auto-permit Claude Code tool calls in Ralph mode
+- [ ] Use Claude Code's native worktree isolation instead of custom worktree management
 
 ### Out of Scope
 
-- GSD plugin integration — standalone tool first, integration later
-- GUI or web dashboard — CLI only, target users are terminal-native
-- OS-level notifications (macOS Notification Center) — terminal bell is sufficient
-- Custom notification channels (Slack, email) — terminal only for simplicity
+- Intelligent response strategies (context-aware checkpoint answers) — v2.1+
+- Parallel plan execution via multiple worktrees — v2.1+
 - Custom LLM provider support — coupled to Ralph + Claude Code intentionally
-- Interactive plan editing — GSD owns planning; gsd-ralph reads plans, doesn't edit them
-- Plugin/extension system — premature abstraction; build monolithically first
-- Git hosting integration (PR creation, CI triggers) — scope ends at local merge
+- GUI or web dashboard — CLI only, target users are terminal-native
 - Multi-repo support — single git repo only
-- Interactive conflict resolution — user should resolve manually with git tools
-- Force-push to remote — conflicts with safety-first philosophy
-- Auto-commit dirty changes — violates user intent
-- Auto-cleanup after merge — keep as explicit command
-- Multi-remote push — single origin is sufficient
-- Trash/quarantine instead of delete — simple refusal to delete is safer
-- Verbosity tiers (--quiet/--verbose) — premature; ship one good default first
+- v1.x standalone CLI features (init, generate, execute, merge, cleanup) — superseded by GSD native commands
 
 ## Context
 
-Shipped v1.1 with 9,693 LOC total (Bash + Bats tests), 211 tests.
-Tech stack: Bash 3.2, bats-core, ShellCheck, jq, python3.
-v1.0 built in 7 days across 6 phases with 13 plans (78 commits).
-v1.1 built in 1 day across 3 phases with 9 plans (37 commits).
-Extracted from bayesian-it where this workflow was developed as ad-hoc scripts.
+v2.0 is a complete rewrite. v1.x (9,693 LOC Bash, 211 tests) archived — it was a standalone CLI with its own lifecycle commands. The architectural insight: GSD already handles planning/execution/verification; Ralph already handles autonomous coding. gsd-ralph just needs to bridge the gap by making Ralph act as the "user" for GSD commands.
 
-Known v2 candidates from deferred requirements: status monitoring (STAT-01-04), peer visibility (PEER-01-02), enhanced execution (EEXC-01-03), enhanced merge (EMRG-01-02), advanced orchestration (ADVO-01-06). See `milestones/v1.0-REQUIREMENTS.md` for full list.
+Reference implementations: gsd-skill-creator (Tibsfox) shows how to extend GSD via skills/hooks/agents without duplicating logic.
+
+Claude Code capabilities that make v1.x architecture obsolete:
+- Native worktree isolation (`--worktree`, `isolation: "worktree"` on subagents)
+- Headless mode (`claude -p` with `--allowedTools` for auto-approval)
+- Built-in GSD skill/hook/command extension points
 
 ## Constraints
 
-- **Bash 3.2**: macOS system bash — no associative arrays, no readarray, no nameref
+- **Thin layer**: Must not replicate logic that lives in GSD or Ralph
+- **GSD-compatible**: Updates to GSD should flow through without breaking gsd-ralph
 - **Portability**: Must work on macOS (primary dev environment)
 - **Non-invasive**: Works alongside existing GSD and Ralph installations
-- **GSD dual naming**: Handles both PLAN.md and NN-MM-PLAN.md conventions
-- **Git worktrees**: Relies on git worktree for isolation — requires git repo
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Standalone Bash CLI (not Node.js/plugin) | Keeps tool independent, simpler to develop and test, same ecosystem as GSD/Ralph | ✓ Good — 9,693 LOC Bash works well |
-| Auto-merge by default with review option | Optimizes for speed while preserving safety | ✓ Good — --review flag provides safety valve |
-| Terminal bell for notifications | Simplest approach, no extra deps, works everywhere | ✓ Good — printf '\a' is POSIX-standard |
-| Existing scripts as reference only | Clean architecture over incremental refactoring | ✓ Good — avoided legacy patterns |
-| Sequential execution default (not parallel) | Learned from Phase 1 merge conflicts; simpler mental model | ✓ Good — zero conflicts in Phases 3-6 |
-| Dependency-graph execution model | Maximizes parallelism when opted in; later-wave plans launch when specific deps merge | ✓ Good — architecture ready for parallel when needed |
-| Later-wave worktrees from post-merge main | Simpler than speculative execution with mid-flight rebase | ✓ Good — eliminates entire class of merge conflicts |
-| git merge-tree --write-tree for dry-run | Zero-risk conflict detection without touching working tree | ✓ Good — works with Git 2.38+ fallback |
-| Registry-driven cleanup | Only removes what it created; prevents orphans | ✓ Good — fire-and-forget registration pattern |
-| EXIT trap for failure notification | Bell fires after significant work, not on trivial validation errors | ✓ Good — right granularity |
-| cd+pwd -P for path resolution | No readlink -f for Bash 3.2 compat | ✓ Good — portable across macOS |
-| Inode-level [[ -ef ]] for path comparison | Handles symlinks correctly in safety guards | ✓ Good — catches all path equivalences |
-| Failed worktree removals as warnings | Not rm -rf escalation; safety over convenience | ✓ Good — eliminated data-loss vector |
-| Push failures always return 0 | Push is convenience, never crashes the command | ✓ Good — non-blocking UX |
-| apply+drop stash pattern | Preserves stash entry on conflict failure (pop would lose it) | ✓ Good — safer than pop |
-| No guidance after die() or --help | Error messages and usage text are self-explanatory | ✓ Good — avoids noise |
+| v1.x: Standalone Bash CLI | Kept tool independent during exploration phase | ⚠️ Revisit — v2.0 pivots to thin integration layer |
+| v2.0: Rewrite as GSD integration layer | GSD + Claude Code now handle what v1.x built manually (worktrees, execution, merging) | — Pending |
+| v2.0: `--ralph` flag model | User mental model: same GSD commands, just add `--ralph` for autopilot | — Pending |
+| v2.0: Leverage Claude Code headless mode | `claude -p` + `--allowedTools` provides auto-permission foundation | — Pending |
+| v2.0: Archive v1.x, don't salvage | Clean break avoids legacy patterns dragging into new architecture | — Pending |
 
 ---
-*Last updated: 2026-02-23 after v1.1 milestone*
+*Last updated: 2026-03-09 after v2.0 milestone start*

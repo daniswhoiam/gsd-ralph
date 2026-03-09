@@ -2,16 +2,18 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-23)
+See: .planning/PROJECT.md (updated 2026-03-09)
 
-**Core value:** One command takes a GSD-planned phase and produces merged, working code
-**Current focus:** Planning next milestone
+**Core value:** Add `--ralph` to any GSD command and walk away — Ralph drives, GSD works, code ships.
+**Current focus:** v2.0 Autopilot Core — defining requirements
 
 ## Current Position
 
-Milestone: (none active — v1.1 shipped)
-Status: Between milestones
-Last activity: 2026-02-23 -- Completed v1.1 Stability & Safety milestone
+Milestone: v2.0 Autopilot Core
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-09 — Milestone v2.0 started
 
 ## Performance Metrics
 
@@ -26,18 +28,6 @@ Last activity: 2026-02-23 -- Completed v1.1 Stability & Safety milestone
 - Timeline: 1 day (Feb 23, 2026)
 - Commits: 37
 - Codebase: 9,693 LOC total, 211 tests
-
-| Phase | Plan | Duration | Tasks | Files |
-|-------|------|----------|-------|-------|
-| 07    | 01   | 2min     | 2     | 2     |
-| 07    | 02   | 3min     | 2     | 5     |
-| 07    | 03   | 4min     | 2     | 1     |
-| 07    | 04   | 2min     | 1     | 3     |
-| 08    | 01   | 3min     | 2     | 3     |
-| 08    | 02   | 7min     | 2     | 2     |
-| 08    | 03   | 12min    | 2     | 5     |
-| 09    | 01   | 4min     | 2     | 7     |
-| 09    | 02   | 3min     | 2     | 1     |
 
 ## Accumulated Context
 
@@ -55,6 +45,6 @@ See PROJECT.md Key Decisions table for full list with outcomes.
 
 ## Session Continuity
 
-Last session: 2026-02-23
-Stopped at: Completed v1.1 milestone archival and tagging
-Next step: /gsd:new-milestone for next version
+Last session: 2026-03-09
+Stopped at: Defining v2.0 milestone requirements
+Next step: Complete requirements and roadmap
