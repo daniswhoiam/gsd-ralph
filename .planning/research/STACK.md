@@ -1,274 +1,317 @@
-# Stack Research: v1.1 Stability & Safety
+# Stack Research: v2.0 Autopilot Integration Layer
 
-**Domain:** Bash CLI tool safety hardening, UX improvements
-**Researched:** 2026-02-20
+**Domain:** Claude Code integration layer for autonomous GSD execution
+**Researched:** 2026-03-09
 **Confidence:** HIGH
 
-**Scope:** This document covers ONLY the stack additions/changes needed for v1.1 features. The existing v1.0 stack (Bash 3.2, git, jq, python3, bats-core, ShellCheck) is validated and unchanged. See `milestones/v1.0-REQUIREMENTS.md` and the git history for v1.0 stack decisions.
+**Scope:** This document covers ONLY the stack needed to build a thin integration layer that intercepts GSD's user interaction points and auto-responds via Ralph. The v1.x Bash CLI stack (9,693 LOC) is archived -- this is a complete architectural pivot. See `.planning/PROJECT.md` for rationale.
 
-## Core Finding: No New Dependencies Required
+## Executive Summary
 
-All v1.1 features can be implemented using **existing tools already in the stack** (Bash 3.2 builtins, git, jq). No new binaries, libraries, or runtime dependencies are needed. This is the correct outcome for a stability milestone -- adding dependencies to a stability release would be contradictory.
+The v2.0 autopilot layer needs **zero new runtime dependencies** beyond what GSD and Claude Code already provide. The entire integration is achievable through three native Claude Code mechanisms: (1) a `PermissionRequest` hook to auto-allow tool calls, (2) a custom subagent with `permissionMode: "bypassPermissions"` for headless execution, and (3) the `--allowedTools` CLI flag for `-p` mode invocations. GSD's existing checkpoint system already supports auto-mode via `workflow.auto_advance` config. The integration is approximately 200-400 lines of code, not 9,693.
 
-## Feature-by-Feature Stack Requirements
+## Core Finding: Three Mechanism Layers
 
-### 1. Safety Guardrails (Cleanup Data-Loss Bug)
+The integration layer operates at three distinct levels. Each handles a different type of user interaction that GSD currently requires.
 
-**The bug:** `execute.sh` line 160 calls `register_worktree "$phase_num" "$(pwd)" "$branch_name"` in sequential mode. In sequential mode, `$(pwd)` is the project root (not a worktree). When cleanup runs, `git worktree remove` fails on the main working tree, and the `rm -rf` fallback on line 180 of `cleanup.sh` deletes the entire project directory.
+### Layer 1: Tool Permission Auto-Approval
 
-**Stack needed:** Pure Bash builtins only.
+**Problem:** When GSD spawns executor subagents, those agents request permission for Bash, Write, Edit, etc. In interactive mode, the user clicks "Allow." In Ralph mode, nobody is there to click.
 
-| Technique | Purpose | Why | Confidence |
-|-----------|---------|-----|------------|
-| `git rev-parse --show-toplevel` | Get canonical project root path | Already used elsewhere in the codebase. Returns the absolute path of the repo root | HIGH |
-| `git rev-parse --git-dir` vs `--git-common-dir` | Detect main worktree vs linked worktree | If both return the same value, you are in the main worktree. If they differ, you are in a linked worktree. Available in git 2.13+ | HIGH |
-| `[[ "$path1" -ef "$path2" ]]` | Inode-level path comparison | Compares filesystem inodes, ignoring symlinks, trailing slashes, and relative vs absolute differences. Works in Bash 3.2 on macOS. Verified on darwin24/arm64 | HIGH |
-| `cd "$dir" && pwd -P` | Resolve symlinks to canonical path | Pure Bash builtin, no external tools. `-P` flag resolves symlinks. Use for path normalization before string comparison | HIGH |
+**Solution:** Claude Code's `--allowedTools` flag (for `-p` mode) or `permissionMode: "bypassPermissions"` (for subagent definitions).
 
-**What NOT to use:**
-
-| Avoid | Why | Use Instead |
-|-------|-----|-------------|
-| `realpath` | Not available on macOS by default (requires coreutils from Homebrew) | `cd "$dir" && pwd -P` or `[[ -ef ]]` |
-| `readlink -f` | BSD `readlink` on macOS does not support `-f` flag | `cd "$dir" && pwd -P` for resolution |
-| `rm -rf` as fallback for worktree removal | This is the root cause of the critical bug. Never use rm -rf on paths from a registry | `git worktree remove --force` only; if that fails, error out instead of falling back to rm -rf |
-
-**Implementation pattern -- safe deletion guard:**
+**Verified mechanism (Claude Code v2.1.71, official docs):**
 
 ```bash
-# Guard: refuse to remove the git toplevel directory
-is_project_root() {
-    local target_path="$1"
-    local toplevel
-    toplevel=$(git rev-parse --show-toplevel 2>/dev/null) || return 1
-    [[ "$target_path" -ef "$toplevel" ]]
-}
+# Headless mode: auto-approve all tools
+claude -p "Execute phase 3" \
+  --allowedTools "Bash,Read,Write,Edit,Grep,Glob,Agent" \
+  --model opus
+```
 
-# In cleanup: replace rm -rf fallback
-if is_project_root "$wt_path"; then
-    print_error "SAFETY: Refusing to remove project root directory: $wt_path"
-    print_error "This entry was incorrectly registered. Skipping."
-    continue
+Or in a custom agent definition (`.claude/agents/ralph-executor.md`):
+
+```yaml
+---
+name: ralph-executor
+description: Autonomous GSD executor. Runs phases without user interaction.
+permissionMode: bypassPermissions
+model: inherit
+---
+```
+
+**Why `--allowedTools` over `--dangerously-skip-permissions`:** The `--allowedTools` flag provides granular control -- you can allow `Bash(git *)` but not `Bash(rm -rf *)`. The `--dangerously-skip-permissions` flag is a nuclear option that bypasses ALL permission checks including safety guardrails. For an automation layer, controlled auto-approval is safer.
+
+**Why `permissionMode: bypassPermissions` is acceptable for the agent:** The subagent definition is scoped -- it only applies when Ralph is explicitly invoked. The user's interactive GSD sessions retain normal permission behavior. This matches the "add `--ralph` and walk away" mental model.
+
+### Layer 2: GSD Checkpoint Auto-Response
+
+**Problem:** GSD plans contain three checkpoint types that pause execution waiting for user input: `checkpoint:human-verify` (90%), `checkpoint:decision` (9%), `checkpoint:human-action` (1%).
+
+**Solution:** GSD already has auto-advance built in. The `workflow.auto_advance` config flag causes:
+- `human-verify` checkpoints to auto-approve
+- `decision` checkpoints to auto-select the first option
+- `human-action` checkpoints to still stop (auth gates cannot be automated)
+
+**Verified mechanism (GSD checkpoints.md, execute-phase.md):**
+
+```bash
+# Set auto-advance in project config
+node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" config-set workflow.auto_advance true
+```
+
+Or via the ephemeral chain flag:
+
+```bash
+# Pass --auto flag to execute-phase
+# This sets workflow._auto_chain_active = true
+```
+
+**What gsd-ralph v2.0 needs to do:** When `--ralph` is active, ensure `workflow.auto_advance` is `true` before launching GSD commands. Restore it after completion if the user had a different preference.
+
+### Layer 3: Headless Invocation Wrapper
+
+**Problem:** The user types `/gsd:execute-phase 3 --ralph` in interactive mode, or `gsd-ralph execute-phase 3` from the shell. Both need to translate into a headless Claude Code session that runs the GSD workflow autonomously.
+
+**Solution:** A thin wrapper (Bash script or custom Claude Code agent) that:
+1. Sets `workflow.auto_advance = true`
+2. Launches `claude -p` with the GSD workflow prompt and `--allowedTools`
+3. Monitors completion
+4. Restores config
+
+**Two implementation paths (choose one):**
+
+| Approach | Mechanism | Pros | Cons |
+|----------|-----------|------|------|
+| **Bash wrapper** | Shell script calling `claude -p` | Simple, testable with bats-core, familiar from v1.x | External to Claude Code, requires parsing JSON output |
+| **Custom agent** | `.claude/agents/ralph-autopilot.md` with `permissionMode: bypassPermissions` | Native integration, inherits project context, GSD skills auto-loaded | Less testable, new paradigm |
+
+**Recommendation: Custom agent approach** because:
+- The agent inherits the project's CLAUDE.md, skills, and MCP servers automatically
+- `permissionMode: bypassPermissions` handles ALL tool permissions natively
+- The agent can spawn GSD executor subagents directly (they inherit bypass permissions from parent if parent uses bypassPermissions)
+- No JSON output parsing needed
+- The user invokes it via `claude --agent ralph-autopilot` or `claude -p --agent ralph-autopilot "execute phase 3"`
+
+## Recommended Stack
+
+### Core Technologies
+
+| Technology | Version | Purpose | Why Recommended |
+|------------|---------|---------|-----------------|
+| Claude Code CLI | 2.1.71+ | Runtime environment | IS the runtime. Everything runs inside Claude Code sessions. `-p` flag for headless, `--agent` for custom agent, `--allowedTools` for permission control |
+| Claude Code Hooks | v2.0.10+ (hookSpecificOutput) | PermissionRequest auto-allow | The `PermissionRequest` hook fires when a permission dialog appears. Return `{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}` to auto-approve. Matcher filters by tool name |
+| Claude Code Custom Agents | v2.1.63+ (Agent tool rename) | Ralph autopilot agent definition | `.claude/agents/ralph-autopilot.md` with `permissionMode: bypassPermissions`. Frontmatter controls tools, model, skills, hooks, and isolation |
+| GSD config system | Current | Auto-advance toggle | `workflow.auto_advance` flag in `.planning/config.json`. Already implemented in GSD's checkpoint handling. No code needed |
+| Bash 3.2 | 3.2+ | Wrapper scripts, hook scripts | macOS system Bash. Hook scripts must be Bash-compatible. Wrapper script (if needed) for CLI entry point |
+| jq | 1.6+ | Hook JSON parsing | Hooks receive JSON on stdin. `jq` is the standard way to parse and emit JSON in shell hooks |
+
+### Supporting Libraries
+
+| Library | Version | Purpose | When to Use |
+|---------|---------|---------|-------------|
+| bats-core | 1.10+ | Testing hook scripts and wrapper | Test that hooks emit correct JSON, that the wrapper sets/restores config correctly |
+| ShellCheck | 0.9+ | Linting hook scripts | All `.sh` files should pass ShellCheck. Existing dev dependency |
+| GSD skills system | Current | Inject GSD workflow knowledge into Ralph agent | The `skills` frontmatter field in agent definitions loads skill content at startup. Ralph agent should load `gsd-executor-workflow` |
+
+### Development Tools
+
+| Tool | Purpose | Notes |
+|------|---------|-------|
+| `claude --agent ralph-autopilot` | Test the custom agent interactively | Run the agent manually to verify it handles GSD workflows correctly |
+| `claude -p --agent ralph-autopilot --output-format json` | Test headless agent execution | Verify the agent runs to completion and produces expected output |
+| `echo '{"hook_event_name":"PermissionRequest",...}' \| bash hook.sh` | Test hook scripts manually | Verify hooks return correct JSON. See claude-code-hooks skill for patterns |
+
+## Key Integration Points
+
+### What gsd-ralph v2.0 Builds
+
+| Component | Type | Lines (est.) | What It Does |
+|-----------|------|------------|--------------|
+| `.claude/agents/ralph-autopilot.md` | Custom agent | ~50 | Agent definition with `permissionMode: bypassPermissions`, system prompt for autonomous GSD execution |
+| `.claude/hooks/ralph-auto-permit.sh` | Hook script | ~30 | `PermissionRequest` hook that auto-allows when invoked in Ralph context (checks `RALPH_MODE` env var or agent_type) |
+| `bin/gsd-ralph` | Bash wrapper | ~100 | CLI entry point: `gsd-ralph execute-phase 3` translates to `claude -p --agent ralph-autopilot "execute phase 3"` |
+| `.claude/settings.json` (hooks section) | Config | ~15 | Register the PermissionRequest hook |
+
+**Total: ~200 lines of code.** Compare to v1.x: 9,693 lines.
+
+### What GSD Already Handles (DO NOT BUILD)
+
+| Capability | Where It Lives | Why Not Rebuild |
+|------------|---------------|-----------------|
+| Phase/plan discovery | `gsd-tools.cjs init execute-phase` | Reads ROADMAP.md, finds plans, groups waves |
+| Checkpoint auto-advance | `execute-phase.md` step `checkpoint_handling` | Already reads `workflow.auto_advance` and auto-approves/auto-selects |
+| Subagent spawning | `execute-phase.md` step `execute_waves` | Spawns `gsd-executor` subagents per plan |
+| Worktree isolation | `isolation: worktree` in agent frontmatter | Claude Code creates/manages/cleans worktrees natively |
+| Branch management | `execute-phase.md` step `handle_branching` | Creates phase branches, handles merging |
+| Verification | `execute-phase.md` step `verify_phase_goal` | Spawns `gsd-verifier` subagent |
+| State tracking | STATE.md, ROADMAP.md updates | `gsd-tools.cjs` handles all state mutations |
+| SUMMARY.md creation | `execute-plan.md` | Executor subagent creates per-plan summaries |
+| Progress reporting | `gsd-tools.cjs phase complete` | Marks phases complete, advances state |
+
+### What Claude Code Already Handles (DO NOT BUILD)
+
+| Capability | Mechanism | Notes |
+|------------|-----------|-------|
+| Tool permission prompts | `--allowedTools` or `permissionMode` | Replaces v1.x's `ALLOWED_TOOLS` in `.ralphrc` |
+| Session management | `--continue`, `--resume` | Replaces v1.x's `SESSION_CONTINUITY` config |
+| Worktree creation/cleanup | `--worktree` flag, `isolation: worktree` | Replaces v1.x's 487-line `merge.sh` and 274-line `cleanup.sh` |
+| Model selection | `--model` flag or agent `model` field | Replaces v1.x's executor model config |
+| Context management | Auto-compaction, subagent context isolation | Replaces v1.x's prompt size management |
+| Circuit breaker (partial) | `--max-turns`, `--max-budget-usd` | Replaces v1.x's `CB_NO_PROGRESS_THRESHOLD` etc. |
+
+## Implementation Architecture
+
+### The PermissionRequest Hook (Detail)
+
+The hook fires when Claude Code is about to show a permission dialog. In Ralph mode, it auto-allows everything.
+
+```bash
+#!/bin/bash
+# .claude/hooks/ralph-auto-permit.sh
+set -euo pipefail
+
+INPUT="$(cat)"
+EVENT=$(echo "$INPUT" | jq -r '.hook_event_name')
+AGENT_TYPE=$(echo "$INPUT" | jq -r '.agent_type // empty')
+
+# Only auto-permit in Ralph autopilot context
+if [[ "$AGENT_TYPE" == "ralph-autopilot" ]] || [[ "${RALPH_MODE:-}" == "true" ]]; then
+  jq -cn '{
+    hookSpecificOutput: {
+      hookEventName: "PermissionRequest",
+      decision: {
+        behavior: "allow"
+      }
+    }
+  }'
+  exit 0
 fi
-# If git worktree remove fails and it's NOT the project root,
-# still do NOT rm -rf. Just report the failure.
+
+# Not in Ralph mode -- pass through to normal permission handling
+exit 0
 ```
 
-**Registration fix -- don't register main worktree:**
+**Key detail:** The hook checks `agent_type` from the JSON input (available since v2.1.63). When the session is running as the `ralph-autopilot` agent, it auto-allows. Otherwise, normal interactive permission prompts appear. This means the hook is always installed but only activates in Ralph context.
+
+**Known issue (2025-2026):** GitHub issue #19298 reports that `PermissionRequest` hook cannot deny permissions -- the interactive prompt still appears regardless. However, the `allow` behavior works correctly. For Ralph's use case (auto-allow, not deny), this bug does not apply. If the allow path also has issues, fall back to `permissionMode: bypassPermissions` on the agent definition, which is the recommended primary mechanism anyway.
+
+### The Custom Agent (Detail)
+
+```markdown
+---
+name: ralph-autopilot
+description: Autonomous GSD phase executor. Runs complete phase workflows without user interaction. Use when the user wants autopilot mode for GSD commands.
+permissionMode: bypassPermissions
+model: inherit
+skills:
+  - gsd-executor-workflow
+---
+
+You are Ralph, an autonomous coding agent executing GSD workflows.
+
+When invoked, you run GSD commands to completion without stopping for user input.
+
+## Rules
+
+1. Set `workflow.auto_advance` to `true` before starting execution
+2. Execute the requested GSD workflow (execute-phase, execute-plan, etc.)
+3. Handle all checkpoints autonomously (verify -> approve, decision -> first option)
+4. Do NOT stop for human-action checkpoints -- log them and skip
+5. Report completion status when done
+6. Restore `workflow.auto_advance` to its previous value
+```
+
+### The CLI Wrapper (Detail)
 
 ```bash
-# In execute.sh: only register if we actually created a worktree
-# Sequential mode creates a branch in the main worktree, not a separate worktree
-local git_toplevel
-git_toplevel=$(git rev-parse --show-toplevel)
-if [[ "$(pwd)" -ef "$git_toplevel" ]]; then
-    # Sequential mode: register with a sentinel value or skip registration
-    register_worktree "$phase_num" "__MAIN_WORKTREE__" "$branch_name"
-else
-    register_worktree "$phase_num" "$(pwd)" "$branch_name"
-fi
+#!/bin/bash
+# bin/gsd-ralph
+# Thin wrapper: translates gsd-ralph commands to claude --agent invocations
+set -euo pipefail
+
+COMMAND="${1:-}"
+shift || true
+
+case "$COMMAND" in
+  execute-phase)
+    PHASE="${1:?Usage: gsd-ralph execute-phase <phase>}"
+    exec claude -p \
+      --agent ralph-autopilot \
+      --allowedTools "Bash,Read,Write,Edit,Grep,Glob,Agent" \
+      --output-format json \
+      "Execute phase $PHASE using /gsd:execute-phase $PHASE"
+    ;;
+  *)
+    echo "Usage: gsd-ralph execute-phase <N>"
+    exit 1
+    ;;
+esac
 ```
-
-### 2. Auto-Push to Remote
-
-**Stack needed:** git only (already in stack).
-
-| Technique | Purpose | Why | Confidence |
-|-----------|---------|-----|------------|
-| `git remote` | Detect if a remote exists | Returns 0 with output if remotes configured, empty output if none. Already a standard git command | HIGH |
-| `git push -u origin <branch>` | Push branch and set upstream | The `-u` flag sets up tracking. Available in all supported git versions. Use explicit remote name ("origin") rather than relying on config | HIGH |
-| `git push origin <main-branch>` | Push merged results | Push after successful merge. Use the detected main branch name (main/master) | HIGH |
-| `git config --get remote.origin.url` | Verify remote is reachable | Check remote URL exists before attempting push. Avoids cryptic errors | HIGH |
-
-**What NOT to use:**
-
-| Avoid | Why | Use Instead |
-|-------|-----|-------------|
-| `push.autoSetupRemote` config | Requires git 2.37+; modifying user's git config is invasive. The tool should not alter global or even local git configuration | Explicit `git push -u origin <branch>` with the branch name |
-| `git push --all` | Pushes ALL local branches, not just the one we created. Dangerous side effect | Push only the specific branch by name |
-| `git push --force` | Never force-push in an automation tool. Risk of data loss on remote | Standard `git push`; if it fails, report and let user resolve |
-
-**Implementation pattern:**
-
-```bash
-has_remote() {
-    local remote_count
-    remote_count=$(git remote 2>/dev/null | wc -l | tr -d ' ')
-    [[ "$remote_count" -gt 0 ]]
-}
-
-auto_push_branch() {
-    local branch="$1"
-    if ! has_remote; then
-        print_verbose "No remote configured, skipping push"
-        return 0
-    fi
-    if git push -u origin "$branch" 2>/dev/null; then
-        print_success "Pushed $branch to origin"
-    else
-        print_warning "Failed to push $branch to origin (non-fatal)"
-        # Non-fatal: push failure should not block local workflow
-    fi
-}
-```
-
-**Key design decision:** Push failures are **warnings, not errors**. The tool must work fully offline. Push is a convenience/safety-net feature, not a requirement. If the remote is unreachable, the user sees a warning but their local workflow proceeds uninterrupted.
-
-### 3. Improved Merge UX (Auto-Switch, Stash Handling)
-
-**Stack needed:** git only (already in stack).
-
-| Technique | Purpose | Why | Confidence |
-|-----------|---------|-----|------------|
-| `git symbolic-ref --short HEAD` | Detect current branch | Already used in merge.sh line 169. Returns current branch name or fails if detached | HIGH |
-| `git checkout <main-branch>` | Auto-switch to main | Replace the `die` on line 176 of merge.sh with an automatic checkout. Simple, well-understood | HIGH |
-| `git status --porcelain` | Detect dirty working tree | Already used in merge.sh line 181. Returns non-empty if there are uncommitted changes | HIGH |
-| `git stash push -m "gsd-ralph: auto-stash before merge"` | Auto-stash dirty changes | `git stash push -m` available since git 2.13+. The message makes the stash identifiable. Use `push` not deprecated `save` | HIGH |
-| `git stash pop` | Restore stashed changes after merge | Restores the auto-stashed changes. If merge fails and we roll back, the stash is still available | HIGH |
-
-**Stash strategy -- use `apply` + `drop`, not `pop`:**
-
-Per best practices for scripted automation, prefer `git stash apply` followed by `git stash drop` over `git stash pop`. If `apply` fails (conflicts with merge results), the stash is preserved and the user can manually resolve. With `pop`, a conflict would leave the stash in a weird state.
-
-```bash
-auto_stash_if_dirty() {
-    local porcelain
-    porcelain=$(git status --porcelain 2>/dev/null)
-    if [[ -z "$porcelain" ]]; then
-        MERGE_AUTO_STASHED=false
-        return 0
-    fi
-    print_info "Dirty working tree detected. Auto-stashing changes..."
-    if git stash push -u -m "gsd-ralph: auto-stash before merge phase $1" >/dev/null 2>&1; then
-        MERGE_AUTO_STASHED=true
-        print_success "Changes stashed"
-    else
-        die "Failed to stash changes. Please commit or stash manually before merging."
-    fi
-}
-
-auto_unstash_if_needed() {
-    if [[ "${MERGE_AUTO_STASHED:-false}" != true ]]; then
-        return 0
-    fi
-    print_info "Restoring auto-stashed changes..."
-    if git stash apply >/dev/null 2>&1; then
-        git stash drop >/dev/null 2>&1
-        print_success "Stashed changes restored"
-    else
-        print_warning "Could not cleanly restore stashed changes."
-        print_info "Your changes are preserved in: git stash list"
-        print_info "Restore manually with: git stash pop"
-    fi
-}
-```
-
-**What NOT to use:**
-
-| Avoid | Why | Use Instead |
-|-------|-----|-------------|
-| `git stash pop` | On conflict, leaves stash in ambiguous state; harder to recover in scripts | `git stash apply` then `git stash drop` on success |
-| `git stash save` | Deprecated since git 2.16 in favor of `git stash push` | `git stash push -m "message"` |
-| `git checkout -f` | Force-checkout discards uncommitted changes silently | `git stash push` first, then `git checkout` |
-| `git reset --merge` after failed stash pop | Destructive; could lose merge results | Let user resolve manually; their stash is preserved |
-
-### 4. CLI Guidance (Next-Step Instructions)
-
-**Stack needed:** Pure Bash builtins only (printf, the existing color functions in common.sh).
-
-| Technique | Purpose | Why | Confidence |
-|-----------|---------|-----|------------|
-| `print_info` / `print_success` (existing) | Output guidance messages | Already defined in lib/common.sh. Consistent styling | HIGH |
-| Here-doc or multi-line printf | Print structured guidance blocks | Standard Bash. No new dependencies | HIGH |
-
-**Implementation pattern -- guidance helper:**
-
-```bash
-# Add to lib/common.sh
-print_next_step() {
-    printf "\n${GREEN}Next step:${NC} %s\n" "$1"
-}
-
-print_guidance() {
-    printf "\n${BLUE}%s${NC}\n" "---"
-    local line
-    for line in "$@"; do
-        printf "  %s\n" "$line"
-    done
-    printf "${BLUE}%s${NC}\n" "---"
-}
-```
-
-**Where to add guidance (by command):**
-
-| Command | Current Ending | Add |
-|---------|---------------|-----|
-| `init` | "Initialized successfully" | "Next step: gsd-ralph execute <N>" |
-| `execute` | "Run 'ralph' to start execution" | Keep, but also add "After Ralph finishes: gsd-ralph merge <N>" |
-| `merge` | Summary table | "Next step: gsd-ralph cleanup <N>" or "Fix conflicts, then re-run merge" |
-| `cleanup` | "Phase N cleanup complete" | "Phase N is fully cleaned up. Ready for next phase." |
-| `status` | Status table | Contextual: if complete, suggest merge; if in-progress, suggest waiting |
-
-No new tools needed. This is purely adding `printf` statements at the end of each command.
-
-## Version Compatibility Matrix
-
-All techniques above are verified against the project's minimum requirements:
-
-| Requirement | Minimum | Verified | Notes |
-|-------------|---------|----------|-------|
-| Bash | 3.2 | 3.2.57 on darwin24 | `[[ -ef ]]`, `pwd -P`, `local`, arrays all work |
-| Git | 2.20+ | 2.53.0 on test system | `git stash push -m` (2.13+), `rev-parse --git-common-dir` (2.13+), `worktree` (2.15+) all well within range |
-| jq | 1.6+ | (existing) | No new jq usage needed for v1.1 features |
-| python3 | 3.8+ | (existing) | Not needed for any v1.1 features |
-
-**Git version floor remains 2.20+.** The newest git feature used across v1.0 and v1.1 is `git merge-tree --write-tree` (git 2.38+, with fallback). The stash and rev-parse features needed for v1.1 are available since git 2.13+, well within range.
 
 ## Alternatives Considered
 
-| Category | Recommended | Alternative | Why Not |
-|----------|-------------|-------------|---------|
-| Path comparison | `[[ -ef ]]` operator | String comparison of resolved paths | `-ef` handles symlinks, mount points, and trailing slashes automatically at the inode level. More robust than any string comparison |
-| Path resolution | `cd "$dir" && pwd -P` | `realpath` / `readlink -f` | `realpath` not on macOS by default; `readlink -f` not on BSD. `pwd -P` is a Bash builtin, zero dependencies |
-| Auto-stash | `git stash push -m` + `apply`/`drop` | Require clean worktree (current behavior) | Current behavior is hostile UX. Auto-stash is standard in tools like `git rebase` and `git pull`. Safe with `apply`+`drop` pattern |
-| Auto-push | Explicit `git push -u origin <branch>` | Set `push.autoSetupRemote` in git config | Modifying user's git config is invasive. Explicit push is transparent and predictable |
-| Cleanup safety | Remove `rm -rf` fallback entirely | Add path guards but keep `rm -rf` | The `rm -rf` fallback is the root cause of the data loss. Removing it entirely is the correct fix. If `git worktree remove` fails, the correct response is to report the error, not to escalate to a more destructive operation |
+| Recommended | Alternative | Why Not |
+|-------------|-------------|---------|
+| Custom agent (`ralph-autopilot.md`) | Bash wrapper calling `claude -p` only | Agent inherits project context, skills, CLAUDE.md automatically. Wrapper would need to manually construct the full prompt with all GSD workflow context |
+| `permissionMode: bypassPermissions` | `PermissionRequest` hook alone | The hook is a defense-in-depth layer. `bypassPermissions` on the agent is the primary mechanism -- it guarantees no permission prompts. The hook handles edge cases where the agent spawns subagents that might not inherit the mode |
+| `--allowedTools` for `-p` mode | `--dangerously-skip-permissions` | `--allowedTools` lets you be specific. `--dangerously-skip-permissions` skips ALL checks including safety hooks. In practice, `bypassPermissions` on the agent achieves the same result more safely |
+| GSD's `workflow.auto_advance` | Custom checkpoint interception | GSD already built this. Setting a config flag is 1 line vs building custom checkpoint detection/response logic |
+| Single agent file | Multiple hooks + scripts + wrappers | Minimize surface area. One agent definition replaces most of v1.x's architecture |
+| `model: inherit` on agent | Hardcoded model | User controls model via `--model` flag or Claude Code settings. Ralph should not force a model |
 
-## What NOT to Add for v1.1
+## What NOT to Use
 
-| Technology | Why Not |
-|------------|---------|
-| **safe-rm** (npm/pip package) | External dependency for a problem solvable with 5 lines of Bash. Over-engineering |
-| **trash-cli** / **trash** | macOS Trash integration is overkill for worktree cleanup. We should not rm -rf at all |
-| **bashup/realpaths** (external Bash library) | Nice library but adds a vendored dependency. `[[ -ef ]]` and `pwd -P` are builtins that solve the same problem |
-| **GNU coreutils** (for realpath) | Requiring Homebrew coreutils for a single function is unacceptable dependency creep |
-| **Any git config modifications** | The tool should not alter the user's git configuration (global or local). All git behavior should be controlled via explicit flags in git commands |
-| **Interactive prompts beyond y/N** | Keep UX simple. No `select` menus, no multi-choice prompts. The existing y/N confirmation pattern in cleanup is sufficient |
-| **External logging frameworks** | printf to stdout/stderr with the existing color functions is sufficient for CLI guidance |
+| Avoid | Why | Use Instead |
+|-------|-----|-------------|
+| v1.x `.ralphrc` config system | Superseded by Claude Code agent frontmatter. Tool permissions, session management, circuit breaker thresholds all have native equivalents | Agent definition frontmatter (`permissionMode`, `maxTurns`, `model`) |
+| v1.x `execute.sh` (258 lines) | GSD's `execute-phase.md` workflow does everything this did, better | `/gsd:execute-phase` via the agent |
+| v1.x `merge.sh` (487 lines) | GSD handles merging natively. Claude Code worktrees auto-clean | No equivalent needed -- GSD manages it |
+| v1.x `cleanup.sh` (274 lines) | Claude Code `isolation: worktree` auto-cleans worktrees when agents finish | No equivalent needed |
+| v1.x `generate.sh` (159 lines) | GSD's `plan-phase` creates all plan artifacts | `/gsd:plan-phase` |
+| v1.x `init.sh` (102 lines) | GSD's `new-project` / `new-milestone` handles initialization | `/gsd:new-project` or `/gsd:new-milestone` |
+| Custom worktree management | Claude Code added native worktree support (`--worktree` flag, `isolation: worktree`). Auto-creates, auto-cleans | Native worktree support |
+| External process monitoring | v1.x polled Ralph processes for completion | Claude Code `-p` mode blocks until complete. `--output-format json` returns structured result |
+| Custom circuit breaker | v1.x had `CB_NO_PROGRESS_THRESHOLD`, `CB_SAME_ERROR_THRESHOLD` | `--max-turns` and `--max-budget-usd` flags on `claude -p`. For deeper circuit breaking, implement as a `Stop` hook |
+
+## Version Compatibility Matrix
+
+| Requirement | Minimum | Current | Notes |
+|-------------|---------|---------|-------|
+| Claude Code | 2.1.63+ | 2.1.71 | Agent tool renamed from Task in 2.1.63. `permissionMode` field available. `isolation: worktree` available |
+| Bash | 3.2+ | 3.2.57 | macOS system Bash. Hook scripts and wrapper only |
+| jq | 1.6+ | (existing) | Hook JSON parsing |
+| GSD | Current (Mar 2026) | Current | `workflow.auto_advance` config, `gsd-tools.cjs config-set/get`, execute-phase checkpoint handling |
+| Git | 2.20+ | 2.53.0 | Worktree support (2.15+), well within range |
+
+**No new dependencies to install.** Everything is already available in the development environment.
 
 ## Installation
 
-No changes to installation process. v1.1 uses the same dependencies as v1.0:
-
 ```bash
-# No new dependencies to install
-# Verify existing stack:
-git --version    # 2.20+ required
-jq --version     # 1.6+ required
-bash --version   # 3.2+ required (macOS default)
+# No new dependencies needed. Verify existing:
+claude --version    # 2.1.63+ required
+bash --version      # 3.2+ required
+jq --version        # 1.6+ required
+
+# The integration creates these files (no package installation):
+# .claude/agents/ralph-autopilot.md     (custom agent definition)
+# .claude/hooks/ralph-auto-permit.sh    (permission hook, optional)
+# bin/gsd-ralph                         (CLI wrapper, optional)
 ```
 
 ## Sources
 
-- Git official documentation: `git-stash` -- https://git-scm.com/docs/git-stash (verified `push -m` since 2.13+)
-- Git official documentation: `git-rev-parse` -- https://git-scm.com/docs/git-rev-parse (verified `--git-common-dir`, `--show-toplevel`)
-- Git official documentation: `git-push` -- https://git-scm.com/docs/git-push (verified `-u` flag behavior)
-- Git official documentation: `push.autoSetupRemote` -- introduced in git 2.37.0 (July 2022), https://github.com/git/git/commit/05d57750c66e4b58233787954c06b8f714bbee75
-- Bash 3.2 path comparison: `[[ -ef ]]` operator verified on macOS Bash 3.2.57 (arm64-apple-darwin24) -- HIGH confidence
-- Git stash scripting best practices: prefer `apply`+`drop` over `pop` in automation -- https://git-scm.com/book/en/v2/Git-Tools-Stashing-and-Cleaning, https://hostman.com/tutorials/best-practices-for-using-the-git-stash-command/
-- macOS path resolution without realpath: `cd && pwd -P` pattern -- https://www.baeldung.com/linux/bash-expand-relative-path
-- Codebase analysis: `lib/commands/cleanup.sh` line 180 (rm -rf fallback), `lib/commands/execute.sh` line 160 ($(pwd) registration), `lib/commands/merge.sh` lines 168-177 (branch check), lines 180-184 (clean tree check)
+- [Claude Code headless mode docs](https://code.claude.com/docs/en/headless) -- `-p` flag, `--allowedTools`, `--output-format` (verified 2026-03-09, HIGH confidence)
+- [Claude Code hooks reference](https://code.claude.com/docs/en/hooks) -- `PermissionRequest` event, `hookSpecificOutput` schema, decision control, exit codes (verified 2026-03-09, HIGH confidence)
+- [Claude Code subagents docs](https://code.claude.com/docs/en/sub-agents) -- Custom agent creation, `permissionMode`, `isolation: worktree`, `skills` field, `--agent` flag, `--agents` JSON flag (verified 2026-03-09, HIGH confidence)
+- [Claude Code CLI reference](https://code.claude.com/docs/en/cli-reference) -- All CLI flags including `--agent`, `--worktree`, `--permission-mode`, `--model`, `--max-turns`, `--max-budget-usd` (verified 2026-03-09, HIGH confidence)
+- [PermissionRequest hook bug #19298](https://github.com/anthropics/claude-code/issues/19298) -- `deny` behavior broken, `allow` works. Defense-in-depth only (verified 2026-03-09, MEDIUM confidence)
+- GSD execute-phase.md workflow -- checkpoint_handling step, auto-advance logic, `workflow.auto_advance` and `workflow._auto_chain_active` config keys (verified from local file, HIGH confidence)
+- GSD checkpoints.md reference -- checkpoint types (`human-verify`, `decision`, `human-action`), auto-mode bypass rules (verified from local file, HIGH confidence)
+- Claude Code hooks skill (`~/.agents/skills/claude-code-hooks/SKILL.md`) -- Hook templates, decision control JSON schema, security practices (verified from local file, HIGH confidence)
+- GSD executor agent (`~/.claude/agents/gsd-executor.md`) -- Agent frontmatter pattern, skill loading, tool specification (verified from local file, HIGH confidence)
 
 ---
-*Stack research for: gsd-ralph v1.1 Stability & Safety*
-*Researched: 2026-02-20*
+*Stack research for: gsd-ralph v2.0 Autopilot Integration Layer*
+*Researched: 2026-03-09*

@@ -1,16 +1,19 @@
-# Feature Research: v1.1 Stability & Safety
+# Feature Research: v2.0 Autopilot Core
 
-**Domain:** CLI safety guardrails, auto-push, merge UX, and post-command guidance for a Bash CLI developer tool
-**Researched:** 2026-02-20
+**Domain:** Autonomous CLI execution layer / autopilot integration for AI-driven development workflows
+**Researched:** 2026-03-09
 **Confidence:** HIGH
 
 ## Context
 
-This research covers the four feature areas targeted for v1.1 of gsd-ralph, a Bash CLI tool that orchestrates autonomous coding agents via git worktrees. v1.0 shipped with 3,695 LOC Bash and full init/execute/merge/cleanup lifecycle. v1.1 focuses on making the tool safe and smooth for developers trying it for the first time.
+This research covers the feature landscape for gsd-ralph v2.0 -- a complete rewrite from standalone Bash CLI (v1.x, 9,693 LOC, 211 tests) to a thin integration layer that adds `--ralph` to any GSD command for autonomous execution. The architectural insight: GSD already handles planning/execution/verification; Ralph already handles autonomous coding; Claude Code now provides native worktree isolation (`--worktree`), headless mode (`claude -p`), and tool auto-approval (`--allowedTools`). gsd-ralph v2.0 just needs to bridge the gap by making Ralph act as the "user" for GSD commands.
 
-**Existing features (already built):** init, generate, execute, merge, cleanup, status commands; git worktree isolation; wave-aware merge; registry-driven cleanup; terminal bell; dry-run conflict detection; review mode; rollback safety; auto-resolve of .planning/ conflicts.
-
-**v1.1 scope:** Fix critical cleanup data-loss bug, safety guardrails, auto-push to remote, merge UX improvements, CLI next-step guidance.
+**Key ecosystem facts informing this research:**
+- Claude Code Agent SDK provides `canUseTool` callbacks for programmatic tool approval and `AskUserQuestion` interception (Python/TypeScript)
+- Claude Code hooks system has 18 lifecycle events (PreToolUse, PostToolUse, Stop, Notification, SubagentStart, SessionEnd, etc.) with matcher-based filtering and JSON I/O
+- Claude Code skills system supports YAML frontmatter, `context: fork` for subagent isolation, `allowed-tools` restriction, and `disable-model-invocation` for user-only triggers
+- GitHub Copilot CLI shipped autopilot mode (GA Feb 2026) with `--max-autopilot-continues`, `--allow-all`, and permission prompts at mode entry
+- Ralph (frankbria/ralph-claude-code) uses a Bash loop invoking `claude -p` with `--resume` for session continuity, dual-condition exit detection, and circuit breakers
 
 ---
 
@@ -18,326 +21,257 @@ This research covers the four feature areas targeted for v1.1 of gsd-ralph, a Ba
 
 ### Table Stakes (Users Expect These)
 
-Features that must exist for v1.1 to be considered safe for first-time users.
+Features that must exist for v2.0 to be considered a working autopilot layer. Missing any of these means the tool cannot replace manual GSD command execution.
 
 | Feature | Why Expected | Complexity | Dependencies | Notes |
 |---------|--------------|------------|--------------|-------|
-| **Fix critical cleanup rm -rf bug** | Cleanup command currently registers `$(pwd)` (project root) as worktree_path in sequential mode. The `rm -rf` fallback on line 180 of cleanup.sh can delete the entire project. This caused real data loss (vibecheck project destroyed). | LOW | None -- standalone fix | Three-part fix: (1) Never use `rm -rf` as fallback for worktree removal. (2) Do not register the main working tree in the registry. (3) Add a safety check that refuses to remove any path matching `git rev-parse --show-toplevel`. Pattern from git itself: `git worktree remove` already refuses to remove the main worktree. Our tool should mirror this built-in safety. |
-| **Project root protection guard** | Any CLI tool that runs `rm -rf` on user-provided or computed paths MUST validate against deleting critical directories. This is a fundamental safety expectation -- tools like `safe-rm` and GNU coreutils `--preserve-root` exist specifically for this. | LOW | None | Implement a `safe_remove_path()` function that: (1) resolves the path to an absolute canonical form, (2) checks it against `git rev-parse --show-toplevel`, `$HOME`, and `/`, (3) refuses to proceed if it matches any of these. Apply this to every `rm -rf` call in the codebase. |
-| **Merge auto-switch to main** | Current merge command dies with "Not on main branch. Switch to main first: git checkout main" if user is on a phase branch. After `execute` puts the user on a phase branch and Ralph finishes, the very next command (`merge`) fails. This breaks the natural workflow. | LOW | None | Pattern from git ecosystem: `git switch` and `git checkout` handle branch transitions. The merge command should detect the current branch, and if it is a phase branch for the requested phase, automatically switch to main before merging. Print a clear message: "Switching from phase-3/feature to main before merge." |
-| **Merge dirty-worktree handling** | Current merge command dies with "Working tree is not clean. Commit or stash changes before merging." Users commonly have uncommitted changes (STATE.md edits, notes). Git itself offers `--autostash` for this pattern. | MEDIUM | Auto-switch (should stash before switching too) | Two approaches: (1) Auto-stash: `git stash push -m "gsd-ralph: auto-stash before merge"`, merge, then `git stash pop`. (2) WIP commit: commit changes with a WIP message, merge, then soft-reset. Auto-stash is the established pattern (git merge --autostash, git rebase --autostash). Use auto-stash with clear messaging: "Stashing 3 uncommitted changes before merge..." and "Restoring stashed changes after merge." Handle stash-pop conflicts gracefully (warn user, keep stash). |
-| **CLI next-step guidance** | After every command, users should know what to do next. Git itself does this ("hint: ..." messages). npm does it ("to start your app, run npm start"). GitHub CLI does it (progressive guidance through auth flow). First-time users of gsd-ralph currently get no workflow guidance. | LOW | None -- applies to all commands | Add a `print_next_step()` function called at the end of each command. Context-sensitive output: after `init` -> "Run: gsd-ralph execute 1"; after `execute N` -> "Ralph is ready. Run: ralph"; after merge -> "Run: gsd-ralph cleanup N"; after cleanup -> "Phase N complete. Run: gsd-ralph execute N+1". Use a distinct visual style (e.g., boxed or prefixed with "Next:") so it stands out from regular output. |
-| **Auto-push to remote** | If a remote exists, branches should be pushed after `execute` (backup the work) and merged main should be pushed after `merge` (keep remote in sync). This is a safety net against local data loss -- the same scenario that destroyed the vibecheck project. | MEDIUM | Remote detection on init | Detect remote on init: `git remote -v`. If origin exists, enable auto-push. After `execute`: push the phase branch (`git push -u origin $branch_name`). After `merge`: push main (`git push origin main`). After cleanup: push deleted branch refs. Always use non-force push. If push fails (no remote, auth issue, diverged), warn but do not block the local operation. Push is a safety net, not a gate. |
+| **`--ralph` flag parsing on GSD commands** | Core product promise. Without this, the tool has no entry point. Users expect to type `gsd execute-phase 3 --ralph` and walk away. | LOW | GSD command interception mechanism | Two implementation paths: (1) GSD skill/hook that detects `--ralph` and wraps execution, or (2) shell wrapper/alias that intercepts `gsd` commands and adds autopilot behavior. The skill approach is more native to the GSD ecosystem. The wrapper approach is simpler but fragile to GSD updates. Recommend: GSD skill that accepts the phase number as `$ARGUMENTS` and orchestrates the autonomous execution. |
+| **Auto-permission for Claude Code tool calls** | Autopilot mode that stops to ask "Allow Bash?" every 30 seconds is not autopilot. Users expect zero human interaction after launch. | LOW | Claude Code `--allowedTools` or `--dangerously-skip-permissions` | Claude Code's `-p` flag with `--allowedTools "Write,Read,Edit,Grep,Glob,Bash(*)"` handles this natively. No custom code needed -- just pass the right flags when invoking Claude. The `.ralphrc` already defines `ALLOWED_TOOLS`. For v2.0, read this config and pass it to `claude -p`. Do NOT use `--dangerously-skip-permissions` -- it removes all safety guardrails. `--allowedTools` is the correct pattern: explicit opt-in per tool. |
+| **Session invocation via `claude -p`** | The tool must actually launch Claude Code in headless mode with the right prompt, context, and permissions. This is the core execution mechanism. | LOW | `--ralph` flag, tool permissions config | Invoke `claude -p "$PROMPT" --allowedTools "$TOOLS" --output-format json --max-turns $MAX_TURNS`. Stream output with `--output-format stream-json` if progress monitoring is needed. Use `--append-system-prompt` to inject GSD-specific context without replacing Claude Code's default system prompt. |
+| **GSD context injection** | Claude needs to know about the project, the phase, the plans, and the GSD conventions. Without context, it produces generic code that does not follow GSD workflow. | MEDIUM | Phase/plan discovery, PROJECT.md, STATE.md | Assemble context from: `.planning/PROJECT.md` (always), `.planning/STATE.md` (current position), phase plans (the specific plans for this phase), and `.planning/ROADMAP.md` (dependency awareness). Inject via `--append-system-prompt` or by constructing the prompt with embedded context. The v1.x `generate_protocol_prompt_md` function did this -- v2.0 needs the same capability but lighter weight. |
+| **Worktree isolation via Claude Code native** | Each autonomous execution must be isolated from the main branch. Users expect that autopilot work does not interfere with their current working tree. | LOW | Git repo with remote | Use `claude --worktree phase-N-slug -p "$PROMPT"`. Claude Code handles worktree creation, branch management, and cleanup natively as of v2.1.49. No custom worktree management needed -- this is the entire reason v1.x is being replaced. Worktrees are created at `.claude/worktrees/`. |
+| **Execution completion detection** | The tool must know when the work is done. Users expect that the autopilot stops when the task is complete, not when it runs out of turns. | MEDIUM | Session output parsing | Two approaches: (1) Use `--max-turns N` as a hard limit and rely on Claude's own completion logic. (2) Parse `--output-format json` result for completion indicators. Claude Code already handles this internally -- when it determines the task is complete, it stops. The `--max-turns` flag is a safety net, not the primary mechanism. Ralph v1.x's dual-condition exit detection (heuristic + explicit signal) is overkill for v2.0 because Claude Code's agent loop already has completion logic. |
+| **Terminal notification on completion** | User walked away. They need to know when to come back. Bell, desktop notification, or both. | LOW | Completion detection | `tput bel` for terminal bell (already in v1.x). Can add `osascript -e 'display notification "Phase 3 complete" with title "gsd-ralph"'` on macOS. Trigger on both success and failure -- the user needs to know either way. |
 
 ### Differentiators (Competitive Advantage)
 
-Features that go beyond expectations and make v1.1 feel polished.
+Features that go beyond basic autopilot and make gsd-ralph the preferred way to run GSD autonomously. These are where the product competes with "just run `claude -p` yourself."
 
 | Feature | Value Proposition | Complexity | Dependencies | Notes |
 |---------|-------------------|------------|--------------|-------|
-| **Contextual next-step chain** | Not just "run X next" but awareness of the full workflow state. If phase N-1 is merged, suggest "execute N". If execute N is done but not merged, suggest "merge N". If cleanup is pending, suggest it. Scan the actual state rather than just echoing the command sequence. | MEDIUM | CLI guidance (basic), registry, merge signals | Query the worktree registry and merge signal files to determine actual state. This turns next-step guidance from a static script into an intelligent assistant. No other worktree orchestration tool does this. |
-| **Auto-push with opt-out** | Enable auto-push by default when a remote exists, with a config flag to disable it (`auto_push=false` in .ralphrc or .ralph/config.json). Most tools (gh, npm) make push explicit. gsd-ralph making it automatic-but-configurable is a differentiator for safety-first workflows. | LOW | Auto-push (basic) | Store config in .ralph/config.json (already have registry JSON precedent). Check `auto_push` setting before every push. Default: true if remote exists. |
-| **Stash restore failure recovery** | When auto-stash before merge results in conflicts on restore, provide clear recovery guidance: show the conflicted files, explain that the stash is preserved, and give the exact commands to resolve. Most tools that auto-stash leave users confused when pop fails. | LOW | Dirty-worktree handling | Git's own autostash reports "Applying autostash resulted in conflicts." We should go further: list the conflicted files, suggest `git stash show` to see what was stashed, and suggest `git checkout --theirs`/`--ours` patterns. |
-| **Safety audit trail** | Log every destructive operation (worktree removal, branch deletion, rm commands) to `.ralph/logs/safety-audit.log` with timestamps and paths. If something goes wrong, there is a forensic trail. | LOW | Project root protection | Append-only log file. Pattern: `[2026-02-20T12:00:00Z] REMOVE_WORKTREE path=/tmp/worktree-phase-3 branch=phase-3/feature status=success`. Trivial to implement, high value for debugging and trust-building. |
+| **Progress monitoring via hooks** | Unlike raw `claude -p`, gsd-ralph can show what Claude is doing: which files it is editing, which plan it is on, whether tests are passing. This is the difference between "fire and forget with anxiety" and "fire and forget with confidence." | MEDIUM | Claude Code hooks (PostToolUse, Stop), stream-json output | Two approaches: (1) Use `--output-format stream-json --verbose` and parse the stream for tool use events. (2) Register PostToolUse hooks that log activity to a file, and run a separate `tail -f` on that file. Approach (1) is simpler. Parse stream events for `tool_name`, `tool_input.file_path`, and `tool_result` to show a live activity feed. Copilot CLI shows "premium request consumption in real time" -- gsd-ralph should show task/plan progress. |
+| **Session resume on failure** | If Claude hits an error, times out, or the process is killed, resume from where it left off instead of starting over. This is a major time and cost saver. | MEDIUM | Session ID capture, `--resume` flag | Capture `session_id` from `--output-format json` response. On failure/timeout, re-invoke with `claude -p "Continue from where you left off" --resume $SESSION_ID`. Ralph v1.x does this with `SESSION_CONTINUITY=true` and `--resume`. For v2.0, this is simpler: just persist the session_id in a state file (`.ralph/session.json` or `.planning/STATE.md`) and use `--continue` or `--resume $ID` on re-run. |
+| **Circuit breaker / safety limits** | Prevent runaway execution that burns API credits or makes destructive changes in a loop. The user walked away -- the tool must be self-limiting. | MEDIUM | Session output monitoring, execution time tracking | Three layers: (1) `--max-turns N` as hard ceiling (Claude Code native). (2) Execution time limit via `timeout` command wrapping the claude invocation. (3) Post-execution check: if output indicates repeated failures or no progress, do not auto-retry. Ralph v1.x's circuit breaker (CB_NO_PROGRESS_THRESHOLD=3, CB_SAME_ERROR_THRESHOLD=5) is well-designed. Port the concept but simplify: track consecutive no-progress invocations, stop after threshold. |
+| **Dry-run / preview mode** | Show what the autopilot would do without actually doing it: what context it would inject, what tools it would allow, what branch it would create. Reduces launch anxiety. | LOW | GSD context assembly, flag parsing | Assemble the full prompt and print it. Show the `claude` command that would be executed. Show the worktree name. Do not invoke Claude. v1.x had `--dry-run` on execute -- same concept, simpler implementation. |
+| **Multi-phase orchestration** | Run multiple phases sequentially: "execute phase 3, merge, then execute phase 4." Not parallelism (that is v2.1+), but chaining. | HIGH | Completion detection, merge automation, phase ordering | This is where gsd-ralph transcends "just a wrapper." After phase N completes, auto-merge, auto-verify (run tests), and if passing, auto-launch phase N+1. Requires: reliable completion detection, merge conflict handling (at minimum, detect and stop), and test execution. Defer to v2.1+ unless completion detection is highly reliable. |
+| **Configurable response strategy** | When Claude asks a clarifying question (AskUserQuestion), provide a configurable default response strategy instead of just "approve everything." | HIGH | Agent SDK canUseTool callback or hook-based interception | PROJECT.md explicitly lists "Intelligent response strategies" as v2.1+ scope. For v2.0, the strategy is simple: auto-approve all tool calls, auto-respond "proceed with your best judgment" to any AskUserQuestion. The Agent SDK `canUseTool` callback is the proper mechanism for this, but requires TypeScript/Python -- not Bash. For a Bash-only v2.0, use `--allowedTools` for tool approval and rely on Claude not asking questions in `-p` mode (which is the observed behavior -- Claude rarely uses AskUserQuestion in headless mode). |
 
 ### Anti-Features (Commonly Requested, Often Problematic)
 
-Features that seem good but should NOT be built for v1.1.
+Features that seem good but create problems. Explicitly NOT building these.
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| **Force-push to remote** | "My remote is behind, just force push" | Force-push on main destroys shared history. gsd-ralph should never offer this because it targets the main branch specifically. Non-fast-forward failures should be surfaced to the user to resolve manually. | Warn on push failure. Suggest `git pull --rebase origin main` before retrying. Never offer `--force`. |
-| **Auto-commit dirty changes before merge** | "Just commit my stuff so merge can proceed" | Creating junk commits ("WIP", "temp") pollutes git history. These commits end up on main after merge and are hard to clean up. | Auto-stash is the correct pattern. Changes are preserved without creating commits. If the user wants to commit, they should do so explicitly with a meaningful message. |
-| **Interactive conflict resolution during merge** | "Let me fix conflicts inline" | gsd-ralph's merge is designed to be automated (auto-resolve known patterns, skip unresolvable). Adding interactive resolution makes the tool require human babysitting, which defeats the autonomous purpose. | Report conflicts clearly with guidance, let the user resolve manually using their preferred editor/tool, then re-run merge. |
-| **Auto-cleanup after merge** | "Just clean up automatically when merge succeeds" | Users may want to inspect merged results, check tests, or review the branches before they disappear. Auto-cleanup removes the safety net. | Print next-step guidance: "Merge complete. Run: gsd-ralph cleanup N when ready." Let the user control when cleanup happens. |
-| **Push to non-origin remotes** | "I have multiple remotes, push to all of them" | Multi-remote push adds complexity (which remotes? in what order? what if one fails?). The common case is a single origin. | Push to origin only. If users need multi-remote, they can configure git push mirrors or run manual pushes. |
-| **Automatic branch protection rules** | "Set up branch protection on the remote" | Requires GitHub/GitLab API integration, auth tokens, and hosting-specific logic. Way out of scope. | Document recommended branch protection settings in README. Keep the tool local-only. |
+| **Custom worktree management** | v1.x had a full worktree registry, custom creation/cleanup, and branch naming. Users may expect this pattern to continue. | Claude Code's `--worktree` flag handles creation, isolation, and cleanup natively. Custom management duplicates logic, creates conflicts with Claude Code's worktree tracking, and breaks when Claude Code changes its worktree implementation. This is THE reason v1.x is being replaced. | Use `claude --worktree <name>` exclusively. Let Claude Code own the worktree lifecycle. |
+| **Standalone init/generate/execute/merge/cleanup commands** | v1.x users know this command structure. It maps to a familiar lifecycle. | These commands duplicate GSD's native lifecycle (plan-phase, execute-phase, verify-work). The v2.0 insight is that GSD already has these commands -- gsd-ralph should not reimplement them. Maintaining parallel command sets means double the maintenance and inevitable divergence. | One entry point: `--ralph` flag on existing GSD commands. GSD handles lifecycle; gsd-ralph handles autonomy. |
+| **Real-time AskUserQuestion interception in Bash** | Users want the autopilot to handle any question Claude asks, not just tool permissions. | AskUserQuestion interception requires the Agent SDK (Python/TypeScript) with `canUseTool` callbacks. Building this in Bash would require parsing stream-json output for tool_use events, detecting AskUserQuestion tool calls, and somehow injecting responses -- which is architecturally fragile and races against Claude's execution. Claude Code in `-p` mode with `--allowedTools` rarely triggers AskUserQuestion because there is no interactive user to ask. | For v2.0: rely on `-p` mode's non-interactive behavior. For v2.1+: if AskUserQuestion interception is needed, build a thin TypeScript/Python wrapper using the Agent SDK. |
+| **GUI dashboard or web interface** | "I want to see progress in a browser" or "show me a terminal UI with panels." | Target users are terminal-native developers. A GUI adds a runtime dependency (Node server, electron, etc.), deployment complexity, and maintenance burden for a niche audience. Copilot CLI and Claude Code are both terminal-first for a reason. | Terminal output with `--verbose` streaming. Optional `tail -f` on a log file for a second terminal pane. Desktop notifications for completion. |
+| **Multi-repo support** | "I have a monorepo setup" or "I want to orchestrate across repos." | GSD operates within a single git repo. Claude Code's worktree isolation operates within a single repo. Multi-repo adds coordination complexity (cross-repo dependencies, merge ordering, divergent branch states) that is out of scope for a thin integration layer. | Single repo only. For multi-repo projects, run gsd-ralph separately in each repo. |
+| **Custom LLM provider support** | "I want to use GPT-4 or Gemini instead of Claude." | gsd-ralph is specifically the bridge between GSD and Ralph/Claude Code. Claude Code only supports Anthropic models. Adding provider abstraction defeats the purpose and complicates the tool for zero real-world usage. | Coupled to Claude Code intentionally. If someone wants a different LLM, they need a different tool. |
+| **Parallel plan execution within a phase** | "Run all plans in a wave simultaneously." | Parallel execution requires merge conflict management, resource coordination (API rate limits across N concurrent sessions), and progress aggregation across multiple worktrees. This is a significant complexity multiplier. v1.x attempted parallel worktrees and it was the primary source of merge conflicts. | Sequential execution for v2.0. Parallel execution is explicitly scoped to v2.1+ in PROJECT.md. Claude Code's agent teams feature may be a better foundation than custom parallel orchestration. |
 
 ---
 
 ## Feature Dependencies
 
 ```
-[Fix cleanup rm -rf bug]
+[--ralph flag parsing]
     |
-    +--requires--> [Project root protection guard]
-    |                  (the guard is the fix's core mechanism)
+    +--requires--> [GSD context injection]
+    |                  (flag triggers context assembly before Claude launch)
     |
-    +--enables---> [Auto-push to remote]
-                       (safe to push only after cleanup is safe)
+    +--requires--> [Auto-permission config]
+    |                  (reads .ralphrc or skill config for ALLOWED_TOOLS)
+    |
+    +--enables---> [Session invocation via claude -p]
+                       (assembled context + permissions = launchable command)
 
-[Merge auto-switch to main]
+[Session invocation via claude -p]
     |
-    +--enhances--> [Merge dirty-worktree handling]
-    |                  (switch may also need stash if tree is dirty)
+    +--requires--> [Worktree isolation via --worktree]
+    |                  (must isolate before execution starts)
     |
-    +--enhances--> [Auto-push to remote]
-                       (push main after merge, which now auto-switches)
+    +--enables---> [Execution completion detection]
+    |                  (session output provides completion signal)
+    |
+    +--enables---> [Progress monitoring via hooks/stream]
+                       (stream-json output feeds progress display)
 
-[CLI next-step guidance]
+[Execution completion detection]
     |
-    +--enhanced-by--> [Contextual next-step chain]
-                          (static hints first, then state-aware hints)
+    +--enables---> [Terminal notification]
+    |                  (fires on completion or failure)
+    |
+    +--enables---> [Session resume on failure]
+    |                  (completion vs failure determines resume action)
+    |
+    +--enables---> [Circuit breaker]
+    |                  (no-progress detection requires completion assessment)
+    |
+    +--enables---> [Multi-phase orchestration]
+                       (phase N completion triggers phase N+1)
 
-[Auto-push to remote]
-    |
-    +--enhanced-by--> [Auto-push with opt-out config]
-                          (basic push first, then configurable)
+[Dry-run / preview] --independent-- (no runtime dependencies, can ship in any order)
+
+[Configurable response strategy] --conflicts-- [Bash-only implementation]
+    (Agent SDK canUseTool requires TypeScript/Python runtime)
 ```
 
 ### Dependency Notes
 
-- **Project root protection guard is a prerequisite for the cleanup fix:** The cleanup fix IS the application of the protection guard to the specific buggy code path. Build the guard function first, then apply it.
-- **Auto-switch should handle dirty worktrees:** If the user is on a phase branch with uncommitted changes, the switch to main needs stash handling too. Build auto-switch first (it can fail-fast on dirty tree initially), then add stash handling to both switch and merge.
-- **CLI guidance is independent but compounds with everything:** Each feature that gets built should include its own next-step hint. Guidance is not a separate phase -- it is woven into every other feature.
-- **Auto-push depends on safe cleanup:** If cleanup can destroy the project, pushing beforehand does not help (push happens after merge, not after cleanup). But safe cleanup means push is the final safety net, not the only one.
+- **`--ralph` flag is the root dependency**: Everything flows from the entry point. Without flag parsing, nothing else can trigger. Build this first.
+- **GSD context injection is the most reusable piece**: The prompt assembly logic serves both the skill-based and wrapper-based approaches. It also serves dry-run mode. Build it early, test it independently.
+- **Worktree isolation is zero-cost**: Claude Code handles it. The "implementation" is adding `--worktree` to the claude invocation. No custom code needed.
+- **Completion detection gates all post-execution features**: Session resume, circuit breaker, multi-phase orchestration, and notifications all depend on knowing whether execution succeeded. Invest here.
+- **Progress monitoring is optional but high-value**: Can ship v2.0 without it and add in v2.0.x. The user can always check the worktree manually.
+- **Configurable response strategy conflicts with Bash**: If v2.0 stays Bash-only, this feature requires a TypeScript/Python companion. Defer to v2.1+ unless the team is willing to add a Node/Python runtime dependency.
 
 ---
 
-## v1.1 Build Priorities
+## MVP Definition
 
-### Must Have (P1) -- Ship-Blocking
+### Launch With (v2.0)
 
-These fix real safety issues or fundamental UX friction. Without these, v1.1 should not ship.
+Minimum viable autopilot -- what is needed to validate the concept of "add `--ralph` and walk away."
 
-- [x] **Fix cleanup rm -rf bug** -- Prevents data loss. Caused actual destruction.
-- [x] **Project root protection guard** -- Fundamental safety. The guard function applied everywhere.
-- [x] **Merge auto-switch to main** -- Without this, the workflow is broken after execute.
-- [x] **Merge dirty-worktree handling** -- Without this, users hit a wall after any incidental edit.
-- [x] **CLI next-step guidance (basic)** -- First-time users need to know what comes next.
+- [ ] **`--ralph` flag entry point** -- the single product entry point; without it, there is no product
+- [ ] **GSD context injection** -- assemble phase/plan context into a prompt Claude can execute against
+- [ ] **Auto-permission via `--allowedTools`** -- pass configured tool permissions to `claude -p` so execution is uninterrupted
+- [ ] **Session invocation (`claude -p`)** -- actually launch Claude Code in headless mode with the assembled prompt
+- [ ] **Worktree isolation (`--worktree`)** -- isolate autonomous work from the user's working tree; zero custom code, just pass the flag
+- [ ] **Completion detection (basic)** -- detect success vs failure from claude's exit code and `--output-format json` result field
+- [ ] **Terminal notification** -- bell on completion/failure so the user knows to come back
+- [ ] **Dry-run mode** -- show what would be launched without launching; builds confidence and aids debugging
 
-### Should Have (P2) -- High Value, Ship Without If Needed
+### Add After Validation (v2.0.x)
 
-These make v1.1 feel complete and trustworthy.
+Features to add once the core autopilot loop is working reliably.
 
-- [ ] **Auto-push to remote** -- Safety net against local data loss. Important but the tool works without it.
-- [ ] **Contextual next-step chain** -- Elevates guidance from static to intelligent. Depends on P1 guidance.
+- [ ] **Session resume on failure** -- capture session_id, re-invoke with `--resume` on timeout/crash; trigger: users report lost work due to mid-execution failures
+- [ ] **Circuit breaker** -- stop after N no-progress iterations; trigger: users report runaway API spend
+- [ ] **Progress monitoring** -- parse stream-json or use PostToolUse hooks to show activity; trigger: users report anxiety about what Claude is doing
+- [ ] **Max-turns configuration** -- expose `--max-turns` setting in .ralphrc for per-project tuning; trigger: users need different budgets for different project sizes
 
-### Nice to Have (P3) -- Polish
+### Future Consideration (v2.1+)
 
-- [ ] **Auto-push opt-out config** -- Only needed if auto-push is built.
-- [ ] **Stash restore failure recovery** -- Edge case handling for auto-stash.
-- [ ] **Safety audit trail** -- Trust-building forensics. Low effort, can be added anytime.
+Features to defer until v2.0 is proven and the team has usage data.
+
+- [ ] **Multi-phase orchestration** -- chain phase execution automatically; defer because it requires highly reliable completion detection and merge automation
+- [ ] **Configurable response strategies** -- context-aware answers to AskUserQuestion; defer because it requires Agent SDK (TypeScript/Python) and is a significant complexity jump
+- [ ] **Parallel plan execution** -- multiple worktrees within a phase; defer because it was the primary source of v1.x complexity and merge conflicts
+- [ ] **Agent teams integration** -- use Claude Code's agent teams for coordinated multi-agent work; defer because the feature is still experimental and disabled by default
 
 ---
 
 ## Feature Prioritization Matrix
 
-| Feature | User Value | Implementation Cost | Risk if Skipped | Priority |
-|---------|------------|---------------------|-----------------|----------|
-| Fix cleanup rm-rf bug | CRITICAL | LOW | Data loss (proven) | P1 |
-| Project root protection guard | CRITICAL | LOW | Data loss (systemic) | P1 |
-| Merge auto-switch to main | HIGH | LOW | Broken workflow | P1 |
-| Merge dirty-worktree handling | HIGH | MEDIUM | Blocked workflow | P1 |
-| CLI next-step guidance | HIGH | LOW | Poor first-time experience | P1 |
-| Auto-push to remote | MEDIUM | MEDIUM | No remote backup | P2 |
-| Contextual next-step chain | MEDIUM | MEDIUM | Static hints only | P2 |
-| Auto-push opt-out config | LOW | LOW | No customization | P3 |
-| Stash restore failure recovery | LOW | LOW | Confusing edge case | P3 |
-| Safety audit trail | LOW | LOW | No forensics | P3 |
+| Feature | User Value | Implementation Cost | Priority | Phase |
+|---------|------------|---------------------|----------|-------|
+| `--ralph` flag parsing | HIGH | LOW | P1 | v2.0 |
+| GSD context injection | HIGH | MEDIUM | P1 | v2.0 |
+| Auto-permission (`--allowedTools`) | HIGH | LOW | P1 | v2.0 |
+| Session invocation (`claude -p`) | HIGH | LOW | P1 | v2.0 |
+| Worktree isolation (`--worktree`) | HIGH | LOW | P1 | v2.0 |
+| Completion detection (basic) | HIGH | MEDIUM | P1 | v2.0 |
+| Terminal notification | MEDIUM | LOW | P1 | v2.0 |
+| Dry-run mode | MEDIUM | LOW | P1 | v2.0 |
+| Session resume | HIGH | MEDIUM | P2 | v2.0.x |
+| Circuit breaker | HIGH | MEDIUM | P2 | v2.0.x |
+| Progress monitoring | MEDIUM | MEDIUM | P2 | v2.0.x |
+| Max-turns config | LOW | LOW | P2 | v2.0.x |
+| Multi-phase orchestration | HIGH | HIGH | P3 | v2.1+ |
+| Response strategies | MEDIUM | HIGH | P3 | v2.1+ |
+| Parallel execution | HIGH | HIGH | P3 | v2.1+ |
+| Agent teams integration | MEDIUM | HIGH | P3 | v2.1+ |
+
+**Priority key:**
+- P1: Must have for v2.0 launch
+- P2: Should have, add when core is proven
+- P3: Nice to have, future consideration
 
 ---
 
-## Implementation Patterns (From Research)
+## Competitor / Reference Feature Analysis
 
-### Pattern: Project Root Protection Guard
+| Feature | Ralph (frankbria) | Copilot CLI Autopilot | Claude Code Headless | gsd-ralph v2.0 |
+|---------|-------------------|-----------------------|----------------------|-----------------|
+| **Entry point** | `ralph` command runs loop | `--autopilot` flag | `claude -p` flag | `--ralph` flag on GSD commands |
+| **Permission model** | `.ralphrc` ALLOWED_TOOLS | `--allow-all` at mode entry | `--allowedTools` explicit list | Read `.ralphrc`, pass to `--allowedTools` |
+| **Execution model** | Bash loop re-invoking `claude -p` with `--resume` | Agent continues N steps autonomously | Single invocation, agent loop internal | Single `claude -p` invocation per phase (not a re-invocation loop) |
+| **Completion detection** | Dual-condition: heuristic + EXIT_SIGNAL | Agent determines completion or `--max-autopilot-continues` | Agent determines completion or `--max-turns` | Claude Code's internal completion + exit code + `--max-turns` safety net |
+| **Worktree isolation** | None (works in current directory) | None | `--worktree` flag | `--worktree` flag (Claude Code native) |
+| **Progress monitoring** | `.ralph/fix_plan.md` checkbox tracking, `ralph_monitor.sh` dashboard | Premium request count display | `--output-format stream-json` | Stream-json parsing (v2.0.x) |
+| **Session resume** | `--resume $SESSION_ID` across loop iterations | Not documented | `--resume $SESSION_ID` or `--continue` | Capture session_id, `--resume` on re-run (v2.0.x) |
+| **Circuit breaker** | CB_NO_PROGRESS_THRESHOLD, CB_SAME_ERROR_THRESHOLD, cooldown | `--max-autopilot-continues` | `--max-turns` | `--max-turns` + post-execution no-progress check (v2.0.x) |
+| **Planning context** | `.ralph/PROMPT.md` + `.ralph/fix_plan.md` | User prompt + codebase analysis | User prompt + CLAUDE.md | GSD phase plans + PROJECT.md + STATE.md assembled into prompt |
+| **Notification** | Terminal bell on completion | Not documented | Not built-in | Terminal bell + macOS notification (v2.0) |
 
-Based on git's own worktree safety (refuses to remove main worktree) and `safe-rm` patterns. HIGH confidence.
+### Key Insight from Comparison
 
-```bash
-# Safety function: refuse to remove critical paths
-safe_remove_path() {
-    local target="$1"
+Ralph v1.x and gsd-ralph v1.x both built custom execution loops (Bash while-loops invoking `claude -p` repeatedly). Copilot CLI's autopilot and Claude Code's agent loop now handle this internally -- the agent continues autonomously for N turns without needing external re-invocation. The v2.0 architecture should NOT re-implement the execution loop. Instead, it should:
 
-    # Resolve to absolute path
-    local abs_target
-    abs_target=$(cd "$target" 2>/dev/null && pwd) || abs_target="$target"
+1. Assemble the right prompt with GSD context
+2. Launch `claude -p` once with proper flags (`--worktree`, `--allowedTools`, `--max-turns`)
+3. Wait for completion
+4. React to the result (notify, resume, chain)
 
-    # Get git toplevel
-    local git_root
-    git_root=$(git rev-parse --show-toplevel 2>/dev/null) || git_root=""
-
-    # Check against protected paths
-    if [[ "$abs_target" == "/" ]]; then
-        print_error "SAFETY: Refusing to remove root directory"
-        return 1
-    fi
-    if [[ -n "$git_root" && "$abs_target" == "$git_root" ]]; then
-        print_error "SAFETY: Refusing to remove git repository root: $abs_target"
-        return 1
-    fi
-    if [[ "$abs_target" == "$HOME" ]]; then
-        print_error "SAFETY: Refusing to remove home directory"
-        return 1
-    fi
-
-    return 0  # Safe to proceed
-}
-```
-
-### Pattern: Auto-Stash Before Merge
-
-Based on git's built-in `merge.autoStash` and `--autostash` flag. HIGH confidence.
-
-```bash
-# Stash if working tree is dirty, merge, then restore
-local did_stash=false
-local porcelain
-porcelain=$(git status --porcelain 2>/dev/null)
-if [[ -n "$porcelain" ]]; then
-    git stash push -m "gsd-ralph: auto-stash before merge (phase $phase_num)"
-    did_stash=true
-    print_info "Stashed uncommitted changes before merge"
-fi
-
-# ... perform merge ...
-
-if [[ "$did_stash" == true ]]; then
-    if git stash pop 2>/dev/null; then
-        print_info "Restored stashed changes"
-    else
-        print_warning "Could not restore stashed changes (conflicts)."
-        print_info "Your changes are preserved in: git stash list"
-        print_info "To restore manually: git stash pop"
-    fi
-fi
-```
-
-### Pattern: Auto-Switch to Main
-
-Based on git switch behavior and the established workflow pattern. HIGH confidence.
-
-```bash
-local current_branch
-current_branch=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
-local main_branch=""
-
-if [[ "$current_branch" == "main" ]]; then
-    main_branch="main"
-elif [[ "$current_branch" == "master" ]]; then
-    main_branch="master"
-else
-    # Check if current branch is a phase branch for the requested phase
-    if [[ "$current_branch" == phase-${phase_num}/* ]] || \
-       [[ "$current_branch" == phase/${phase_num}/* ]]; then
-        # Auto-switch to main
-        for candidate in main master; do
-            if git show-ref --verify --quiet "refs/heads/$candidate" 2>/dev/null; then
-                main_branch="$candidate"
-                break
-            fi
-        done
-        if [[ -z "$main_branch" ]]; then
-            die "Cannot find main or master branch to switch to."
-        fi
-        print_info "Switching from '$current_branch' to '$main_branch' before merge"
-        git checkout "$main_branch" 2>/dev/null || \
-            die "Failed to switch to $main_branch. Resolve any issues and retry."
-    else
-        die "Not on main branch (currently on '$current_branch'). Switch to main first: git checkout main"
-    fi
-fi
-```
-
-### Pattern: Next-Step Guidance
-
-Based on git hints, npm post-install messages, and GitHub CLI progressive disclosure. HIGH confidence.
-
-```bash
-print_next_step() {
-    local message="$1"
-    printf "\n${GREEN}Next:${NC} %s\n" "$message"
-}
-
-# After init:
-print_next_step "gsd-ralph execute 1"
-
-# After execute:
-print_next_step "Run 'ralph' to start autonomous execution"
-
-# After merge:
-print_next_step "gsd-ralph cleanup $phase_num"
-
-# After cleanup (check if next phase exists):
-if find_phase_dir "$((phase_num + 1))" 2>/dev/null; then
-    print_next_step "gsd-ralph execute $((phase_num + 1))"
-else
-    print_next_step "All phases complete. Push to remote: git push origin main"
-fi
-```
-
-### Pattern: Auto-Push to Remote
-
-Based on standard git push patterns and the principle that push is a safety net, not a gate. MEDIUM confidence (behavior when push fails needs testing).
-
-```bash
-auto_push_if_configured() {
-    local branch="$1"
-    local action="$2"  # "execute" or "merge" -- for logging
-
-    # Check if remote exists
-    if ! git remote get-url origin >/dev/null 2>&1; then
-        print_verbose "No remote 'origin' found, skipping auto-push"
-        return 0
-    fi
-
-    # Check config opt-out
-    if [[ -f ".ralph/config.json" ]]; then
-        local auto_push
-        auto_push=$(jq -r '.auto_push // true' ".ralph/config.json" 2>/dev/null)
-        if [[ "$auto_push" == "false" ]]; then
-            print_verbose "Auto-push disabled in config"
-            return 0
-        fi
-    fi
-
-    # Push (non-blocking on failure)
-    if git push origin "$branch" 2>/dev/null; then
-        print_success "Pushed $branch to origin"
-    else
-        print_warning "Could not push $branch to origin (non-fatal)"
-        print_info "Push manually when ready: git push origin $branch"
-    fi
-}
-```
+This is fundamentally simpler than v1.x's architecture and is the correct approach because Claude Code's internal agent loop handles iteration, tool use, and completion detection better than any external Bash wrapper can.
 
 ---
 
-## Competitor Feature Analysis
+## Implementation Approach Notes
 
-| Feature | git (native) | lazygit | gh CLI | gsd-ralph v1.1 Approach |
-|---------|-------------|---------|--------|-------------------------|
-| Root protection | `git worktree remove` refuses main worktree | N/A | N/A | `safe_remove_path()` guard on all rm operations |
-| Auto-stash | `--autostash` flag on merge/rebase | Auto-stash on branch switch | N/A | Auto-stash before auto-switch and merge |
-| Auto-push | Manual only | Single-key push (`P`) | `gh pr merge --auto` | Auto-push after execute and merge, configurable |
-| Branch auto-switch | Manual `git switch` | Single-key switch | N/A | Auto-detect phase branch, switch to main for merge |
-| Next-step hints | `hint:` messages since Git 2.28+ | Visual workflow (no hints needed) | Progressive auth flow guidance | `print_next_step()` after every command |
-| Dirty-tree handling | Error + message | Auto-stash + visual diff | N/A | Auto-stash with conflict recovery guidance |
+### GSD Skill vs. Shell Wrapper
+
+The `--ralph` flag can be implemented via two approaches:
+
+**Approach A: GSD Skill (Recommended)**
+Create `.claude/skills/ralph/SKILL.md` with:
+- `name: ralph`
+- `disable-model-invocation: true` (user-only trigger)
+- `context: fork` (runs in subagent for isolation)
+- Skill content: instructions for autonomous phase execution
+
+Pro: Native to GSD ecosystem, inherits GSD's context management, auto-discovered.
+Con: Skill system was designed for Claude's use, not for wrapping external commands.
+
+**Approach B: Shell Wrapper**
+A Bash script (or function) that:
+1. Parses `--ralph` from the GSD command arguments
+2. Assembles context from `.planning/`
+3. Invokes `claude --worktree <name> -p "$PROMPT" --allowedTools "$TOOLS"`
+
+Pro: Simple, testable, independent of GSD's internal skill system.
+Con: Not integrated into GSD's extension points, requires separate installation.
+
+**Approach C: GSD Hook (Hybrid)**
+Register hooks in `.claude/settings.json` that trigger on specific GSD events:
+- `PreToolUse` matcher on GSD skill invocations
+- `Stop` hook to handle post-execution
+
+Pro: Hooks are the official extension mechanism.
+Con: Hooks are reactive (fire on events), not proactive (cannot initiate execution).
+
+**Recommendation: Start with Approach B (Shell Wrapper) for v2.0 MVP.** It is the simplest to build, test, and debug. Migrate to Approach A (GSD Skill) once the core logic is proven. The shell wrapper can be encapsulated as a skill later without changing the core logic.
+
+### Prompt Assembly Strategy
+
+The prompt for `claude -p` must include:
+1. **Role**: "You are executing GSD phase N autonomously. Follow GSD conventions."
+2. **Project context**: PROJECT.md content (what the project is, constraints)
+3. **Phase plans**: The specific plan files for this phase, in dependency order
+4. **State**: Current STATE.md (what has been done, what remains)
+5. **Verification**: How to verify completion (test commands, build commands)
+6. **Conventions**: GSD commit format, branch naming, file organization
+
+This prompt replaces v1.x's `PROTOCOL-PROMPT.md.template` with a dynamically assembled equivalent. The key difference: v1.x generated a file that Ralph read; v2.0 passes the prompt directly to `claude -p`.
 
 ---
 
 ## Sources
 
-### Authoritative (HIGH confidence)
-- [Git worktree documentation](https://git-scm.com/docs/git-worktree) -- Main worktree cannot be removed (built-in safety)
-- [Git stash documentation](https://git-scm.com/docs/git-stash) -- Stash patterns and autostash behavior
-- [Git merge documentation](https://git-scm.com/docs/git-merge) -- `--autostash` flag behavior
-- [Git switch documentation](https://git-scm.com/docs/git-switch) -- Branch switching with `-m` flag for dirty worktrees
-- [Git push documentation](https://git-scm.com/docs/git-push) -- Push behavior, non-fast-forward rejection
-
-### Codebase Analysis (HIGH confidence)
-- `/Users/daniswhoiam/Projects/gsd-ralph/lib/commands/cleanup.sh` -- Lines 174-183: the rm -rf fallback bug
-- `/Users/daniswhoiam/Projects/gsd-ralph/lib/commands/merge.sh` -- Lines 167-177: the hard-coded main branch check
-- `/Users/daniswhoiam/Projects/gsd-ralph/lib/commands/merge.sh` -- Lines 180-184: the clean worktree requirement
-- `/Users/daniswhoiam/Projects/gsd-ralph/lib/commands/execute.sh` -- Line 160: `register_worktree` with `$(pwd)` as worktree_path
-- `/Users/daniswhoiam/Projects/gsd-ralph/lib/cleanup/registry.sh` -- Registry structure and worktree tracking
-
-### Web Research (MEDIUM confidence)
-- [safe-rm project](https://github.com/kaelzhang/shell-safe-rm) -- Drop-in rm replacement with path blacklisting
-- [Git autostash patterns](https://www.eficode.com/blog/git-autostash) -- Autostash configuration and behavior
-- [Git worktree gotchas](https://musteresel.github.io/posts/2018/01/git-worktree-gotcha-removed-directory.html) -- Worktree removal edge cases
-- [CLI UX progress patterns](https://evilmartians.com/chronicles/cli-ux-best-practices-3-patterns-for-improving-progress-displays) -- CLI UX best practices
+- [Claude Code headless mode documentation](https://code.claude.com/docs/en/headless) -- HIGH confidence, official docs
+- [Claude Code hooks reference](https://code.claude.com/docs/en/hooks) -- HIGH confidence, official docs
+- [Claude Code skills documentation](https://code.claude.com/docs/en/skills) -- HIGH confidence, official docs
+- [Claude Agent SDK: Handle approvals and user input](https://platform.claude.com/docs/en/agent-sdk/user-input) -- HIGH confidence, official docs
+- [Claude Code agent teams](https://code.claude.com/docs/en/agent-teams) -- HIGH confidence, official docs
+- [GitHub Copilot CLI autopilot documentation](https://docs.github.com/en/copilot/concepts/agents/copilot-cli/autopilot) -- HIGH confidence, official docs
+- [Ralph for Claude Code (frankbria/ralph-claude-code)](https://github.com/frankbria/ralph-claude-code) -- MEDIUM confidence, community project
+- [GSD (get-shit-done)](https://github.com/gsd-build/get-shit-done) -- MEDIUM confidence, project README
+- [gsd-skill-creator (Tibsfox)](https://github.com/Tibsfox/gsd-skill-creator) -- MEDIUM confidence, reference implementation
+- [ClaudeLog: What is --max-turns](https://claudelog.com/faqs/what-is-max-turns-in-claude-code/) -- MEDIUM confidence, community documentation
+- [ClaudeLog: AskUserQuestion tool](https://claudelog.com/faqs/what-is-ask-user-question-tool-in-claude-code/) -- MEDIUM confidence, community documentation
 
 ---
-*Feature research for: gsd-ralph v1.1 Stability & Safety*
-*Researched: 2026-02-20*
+*Feature research for: gsd-ralph v2.0 Autopilot Core*
+*Researched: 2026-03-09*

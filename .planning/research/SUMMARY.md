@@ -1,256 +1,172 @@
 # Project Research Summary
 
-**Project:** gsd-ralph v1.1 Stability & Safety
-**Domain:** Bash CLI tool safety hardening and UX improvements for a git worktree orchestration tool
-**Researched:** 2026-02-20
-**Confidence:** HIGH (grounded in direct codebase analysis, known production incident, and verified Git/Bash documentation)
+**Project:** gsd-ralph v2.0 Autopilot Integration Layer
+**Domain:** Autonomous CLI execution layer bridging GSD planning workflows with Claude Code headless execution
+**Researched:** 2026-03-09
+**Confidence:** HIGH
 
 ## Executive Summary
 
-gsd-ralph v1.1 is a stability and safety milestone, not a feature release. The research reveals a single confirmed critical bug (cleanup's `rm -rf` fallback deleted the vibecheck project directory in a real incident) and three UX friction points that block first-time users from completing the init-execute-merge-cleanup workflow without hitting walls. The recommended approach is to fix the data-loss bug first as a prerequisite, then add UX improvements in dependency order, and treat push as a non-blocking safety net throughout.
+gsd-ralph v2.0 is a complete architectural pivot from a standalone Bash CLI (v1.x, 9,693 LOC) to a thin integration layer (~200-400 LOC) that bridges GSD's interactive planning/execution workflows with Claude Code's headless automation capabilities. The core insight driving this rewrite: GSD already handles all planning, execution, verification, and state management; Claude Code now provides native worktree isolation, headless mode, and tool auto-approval. gsd-ralph v2.0 only needs to make Ralph act as the "user" for GSD commands -- auto-responding to checkpoints, auto-approving tool permissions, and orchestrating the `claude -p` invocation with the right context and flags.
 
-The critical insight from research: the cleanup bug is three separate problems compounding into one catastrophic outcome. In sequential mode, `execute.sh` registers `$(pwd)` (the project root) as a worktree path. When cleanup runs, `git worktree remove` fails on the main working tree. The `rm -rf` fallback then deletes the entire project directory. The fix requires patching all three root causes: stop registering the main worktree, remove the `rm -rf` fallback entirely (not just guard it), and add a centralized `assert_safe_to_remove()` guard that future code must route through. All v1.1 features are implementable with zero new dependencies -- the existing Bash 3.2, git, and jq stack is sufficient.
+The recommended approach uses three native mechanisms in a layered defense-in-depth pattern: (1) GSD's own `workflow.auto_advance` config to auto-approve checkpoints at the workflow level, (2) `claude -p` with `--allowedTools` for headless execution with scoped tool permissions, and (3) `--append-system-prompt` injection to prevent `AskUserQuestion` calls entirely. The implementation consists of a shell launcher script (`bin/gsd-ralph`), an autonomous behavior skill (`skills/ralph-mode/SKILL.md`), and an optional defense-in-depth hook for `AskUserQuestion` denial. No new runtime dependencies are required beyond what GSD and Claude Code already provide.
 
-The UX improvements address a broken first-time user flow: after `execute` puts the user on a phase branch, the `merge` command immediately dies because the user is not on main. If they have any uncommitted edits (common), it dies again on the clean worktree check. After finally merging, there is no guidance on what to do next. Each of these friction points is a one-to-ten line fix, but they compound to make the tool feel hostile to new users. The recommended build order (safety first, then independent capabilities, then cross-cutting UX) ensures that auto-push never creates a false sense of security before the cleanup destruction risk is eliminated.
+The primary risks are: (1) scope creep that reimplements GSD logic inside gsd-ralph, destroying the "thin layer" architecture, (2) agent nesting depth exceeding Claude Code's limits when gsd-ralph wraps `claude -p` around GSD workflows that themselves spawn subagents, and (3) runaway execution without circuit breakers burning API credits or making destructive changes while the user is away. All three are addressable through strict architectural boundaries, careful invocation design, and multi-layer safety limits implemented early in the build.
 
 ## Key Findings
 
 ### Recommended Stack
 
-All v1.1 features are implementable with the existing v1.0 stack. No new dependencies are required. This is the correct outcome for a stability milestone -- adding dependencies to a stability release would be contradictory. See STACK.md for complete feature-by-feature analysis.
+The v2.0 stack requires zero new dependencies. Everything runs on top of existing Claude Code CLI (2.1.63+), GSD tools (`gsd-tools.cjs`), Bash 3.2+, and jq 1.6+. The integration is built from four small components: a custom agent definition (~50 lines), a permission hook (~30 lines), a CLI wrapper (~100 lines), and hook registration config (~15 lines). See [STACK.md](./STACK.md) for full details.
 
-**Core technologies (unchanged from v1.0):**
-- **Bash 3.2+**: All safety patterns use builtins (`[[ -ef ]]`, `pwd -P`); no new external tools
-- **Git 2.20+**: Stash push (2.13+), `rev-parse --git-common-dir` (2.13+), worktree (2.15+) all well within range
-- **jq 1.6+**: Auto-push config opt-out reads `.ralph/config.json` via jq; no new jq features
+**Core technologies:**
+- **Claude Code CLI (`claude -p`):** Runtime environment for headless execution -- `-p` flag, `--allowedTools`, `--worktree`, `--max-turns`, `--output-format json`
+- **Claude Code Custom Agents:** `.claude/agents/ralph-autopilot.md` with `permissionMode: bypassPermissions` for the primary permission bypass mechanism
+- **GSD config system:** `workflow.auto_advance` flag already handles checkpoint auto-approval -- no custom checkpoint logic needed
+- **Bash 3.2 + jq:** Hook scripts and wrapper; macOS system Bash compatibility required
 
-**Key technique decisions:**
-- Use `[[ "$path" -ef "$toplevel" ]]` for inode-level path comparison (handles symlinks, mount points, trailing slashes) -- not string comparison
-- Use `cd "$dir" && pwd -P` for path resolution -- not `realpath` (not on macOS by default) or `readlink -f` (BSD does not support `-f`)
-- Use `git stash push -m` + `apply`/`drop` -- not `git stash pop` (pop leaves stash in ambiguous state on conflict in scripts)
-- Remove `rm -rf` fallback entirely -- not just guard it; if `git worktree remove` fails, report the error
-
-**What not to add:** No safe-rm, trash-cli, realpath, bashup/realpaths, GNU coreutils, or interactive prompts beyond y/N. All problems are solvable with existing builtins.
+**Critical version requirements:** Claude Code 2.1.63+ (custom agent support with `permissionMode`), jq 1.6+ (hook JSON parsing).
 
 ### Expected Features
 
-v1.1 targets two categories: critical safety fixes (P1, must ship) and UX improvements (P1-P2, should ship). See FEATURES.md for full prioritization matrix.
+See [FEATURES.md](./FEATURES.md) for full feature landscape and dependency graph.
 
-**Must have -- P1, ship-blocking:**
-- **Fix cleanup rm-rf bug** -- Caused confirmed data loss. Three-part fix: remove rm-rf fallback, skip main worktree registration, add safety guard. CRITICAL.
-- **Project root protection guard** -- Centralized `safe_remove_path()` applied to all rm operations. Prerequisite for the cleanup fix.
-- **Merge auto-switch to main** -- Without this, workflow is broken after `execute` leaves user on a phase branch.
-- **Merge dirty-worktree handling** -- Auto-stash before switch/merge, restore after. Without this, users hit a wall on any incidental edit.
-- **CLI next-step guidance** -- Static `print_next_step()` after each command. First-time users need to know what comes next.
+**Must have (table stakes -- v2.0 launch):**
+- `--ralph` flag entry point on GSD commands -- the single product promise
+- Auto-permission for Claude Code tool calls via `--allowedTools` -- zero human interaction after launch
+- Session invocation via `claude -p` with assembled GSD context
+- Worktree isolation via `claude --worktree` -- zero custom code, just pass the flag
+- Basic completion detection from exit code and JSON output
+- Terminal notification (bell + macOS notification) on completion/failure
+- Dry-run / preview mode showing the command that would be launched
 
-**Should have -- P2, high value:**
-- **Auto-push to remote** -- Safety net against local data loss (same scenario as vibecheck incident). Non-blocking on failure.
-- **Contextual next-step chain** -- State-aware guidance reading registry and merge signals, not just static strings.
+**Should have (v2.0.x after core validation):**
+- Session resume on failure via `--resume` with captured session_id
+- Circuit breaker (timeout, commit-count cap, no-progress detection)
+- Progress monitoring via stream-json parsing
+- Configurable `--max-turns` per project
 
-**Nice to have -- P3, polish:**
-- Auto-push opt-out config (`.ralph/config.json` flag)
-- Stash restore failure recovery guidance
-- Safety audit trail (`.ralph/logs/safety-audit.log`)
-
-**Anti-features (do not build):**
-- Force-push to remote (never automate; destroys shared history)
-- Auto-commit dirty changes before merge (pollutes git history)
-- Interactive conflict resolution during merge (defeats autonomous purpose)
-- Auto-cleanup after merge (removes the safety net before user can inspect)
+**Defer (v2.1+):**
+- Multi-phase orchestration (chain phase N completion into phase N+1)
+- Configurable response strategies for `AskUserQuestion` (requires Agent SDK, not Bash)
+- Parallel plan execution within a phase (primary source of v1.x complexity)
+- Agent teams integration (Claude Code feature still experimental)
 
 ### Architecture Approach
 
-v1.1 adds three new library modules to the existing command-dispatch architecture and modifies five existing files. The entry point (`bin/gsd-ralph`) is unchanged. See ARCHITECTURE.md for complete component designs with verified integration points.
+The architecture follows a "Headless Delegation" pattern: a thin shell launcher sets GSD config flags, constructs a `claude -p` invocation with scoped permissions and system prompt injection, launches it in a worktree, and parses the JSON result on completion. The launcher does NOT modify GSD workflow files, does NOT write to `.planning/` files, and does NOT manage worktrees -- those responsibilities stay with GSD and Claude Code respectively. See [ARCHITECTURE.md](./ARCHITECTURE.md) for full component analysis and data flow.
 
-**New components (new files):**
-1. **`lib/safety.sh`** -- Centralized path validation (`assert_safe_to_remove`, `validate_registry_path`). Stateless, pure validation. Highest priority -- fixes the data-loss bug.
-2. **`lib/git_remote.sh`** -- Remote detection and push helpers (`has_push_remote`, `push_branch`, `push_current_branch`). Push is advisory, not mandatory; failures warn but never die().
-3. **`lib/guidance.sh`** -- Context-aware next-step messaging after each command (`print_guidance` dispatching by command name + outcome).
-
-**Modified components (existing files):**
-4. **`lib/common.sh`** -- Add `print_next_step()` formatting helper for consistent styling
-5. **`lib/commands/cleanup.sh`** -- Remove rm-rf fallback, add `validate_registry_path` + `assert_safe_to_remove` before removal
-6. **`lib/cleanup/registry.sh`** -- Skip `register_worktree()` when path equals git toplevel (prevents root registration)
-7. **`lib/commands/execute.sh`** -- Push branch after commit; print guidance
-8. **`lib/commands/merge.sh`** -- Auto-switch to main, stash/unstash dirty worktree, push after merge, print guidance
-
-**Key data flow changes:**
-- v1.0 cleanup: `rm -rf "$wt_path"` fallback on worktree remove failure
-- v1.1 cleanup: `validate_registry_path` -> `assert_safe_to_remove` -> `git worktree remove` -> warn on failure (no rm fallback)
-- v1.0 merge: Die if not on main; die if dirty worktree
-- v1.1 merge: Detect main branch -> auto-switch -> stash if dirty -> merge -> push -> restore stash -> guidance
-
-**Anti-patterns to avoid:**
-- Conditional safety (bypass `assert_safe_to_remove` with `--force`): safety checks are unconditional
-- Push as a blocking prerequisite: push failures warn, never die()
-- Stash without pop on error paths: every die() after stashing must call `restore_stash()` first
+**Major components:**
+1. **`bin/gsd-ralph` (Shell Launcher):** Parses `--ralph` flag, sets `workflow.auto_advance`, constructs `claude -p` command with `--allowedTools` / `--worktree` / `--max-turns` / `--append-system-prompt`, launches headless session, parses JSON result
+2. **`skills/ralph-mode/SKILL.md` (Autonomous Behavior Prompt):** System prompt instructions telling Claude to never call `AskUserQuestion`, auto-approve `human-verify`, auto-select first option for `decision`, skip `human-action`, and follow GSD conventions
+3. **`hooks/deny-ask.sh` (Defense-in-Depth Hook):** Optional `PreToolUse` hook that denies `AskUserQuestion` with guidance feedback -- backup layer in case system prompt compliance fails
+4. **Config extension (`.planning/config.json`):** Ralph-specific config fields (`ralph.enabled`, `ralph.allowed_tools`, `ralph.max_turns`, `ralph.worktree_prefix`)
 
 ### Critical Pitfalls
 
-Research identified 6 critical pitfalls specific to v1.1's implementation scope. See PITFALLS.md for full analysis including moderate pitfalls, UX pitfalls, and recovery strategies.
+See [PITFALLS.md](./PITFALLS.md) for all 8 pitfalls with detailed prevention strategies.
 
-1. **Incomplete rm-rf guard creates new deletion vectors** -- Fixing only cleanup.sh:180 while leaving other raw `rm` calls unguarded perpetuates the systemic risk. Prevention: create a single `safe_remove()` function and audit the entire codebase for unguarded `rm` calls. Warning sign: any raw `rm -rf` outside `safe_remove()`.
-
-2. **Auto-push before safety fix creates false sense of security** -- Auto-push protects against missing remote backups but NOT against cleanup deleting the project directory. Prevention: safety guardrails must ship before or in the same phase as auto-push. Never ship auto-push alone.
-
-3. **Auto-push crashes workflow via set -euo pipefail** -- `bin/gsd-ralph` has `set -euo pipefail`. A bare `git push` failure propagates as a fatal error. Prevention: always wrap `git push` in `if git push ...; then ... else ... fi`. Push must be best-effort from the start, not retrofitted.
-
-4. **Auto-push force-overwrites remote branches** -- Rollback uses `git reset --hard` which rewrites local history; post-rollback push is non-fast-forward. Prevention: never use `git push --force` in auto-push. On non-fast-forward rejection, warn and let user resolve manually.
-
-5. **Merge auto-switch silently carries uncommitted work to main** -- Git allows checkout with a dirty worktree when changes do not conflict with the target branch. Prevention: always check `git status --porcelain` BEFORE switching branches; stash first.
-
-6. **Registry path mismatch after sequential/parallel mode fix** -- Old v1 registry entries from v1.0 users won't have the new `mode` field; new code could parse them incorrectly. Prevention: add a `mode` field (`"sequential"` or `"parallel"`) and implement registry migration (default to sequential = safe for unknown entries).
+1. **Reimplementing GSD logic** -- The strongest gravitational pull. gsd-ralph must call `gsd-tools.cjs` for ALL plan/phase/state data, never parse `.planning/` files directly. Verification: LOC stays under 500; `grep` for parse/discover/frontmatter patterns returns zero results.
+2. **Agent nesting depth** -- `claude -p` invoking GSD workflows that spawn `Task()` subagents can exceed Claude Code's nesting limit. gsd-ralph must be the TOP-LEVEL invoker and pass GSD workflow context via `--append-system-prompt` / `@file` references so the Claude instance IS the GSD orchestrator, not a wrapper around one.
+3. **Runaway execution without circuit breakers** -- No built-in token budget or timeout in `claude -p`. Implement multi-layer limits: `--max-turns` (hard ceiling), wall-clock `timeout` wrapper, and no-progress detection. Always use `--allowedTools` (not `--dangerously-skip-permissions`) and `--worktree` isolation.
+4. **GSD update breaks gsd-ralph silently** -- Minimize GSD API surface (CLI commands only, not internal file paths). Pin GSD version, check at startup, warn on mismatch. Run compatibility tests against real `gsd-tools.cjs`.
+5. **State corruption from concurrent access** -- gsd-ralph must NEVER write to `.planning/` files. Let GSD workflows handle all state mutations. Use worktree isolation so config changes are scoped.
 
 ## Implications for Roadmap
 
-The research strongly suggests a three-phase structure for v1.1, driven by dependency ordering (safety is prerequisite to everything), risk mitigation (data loss bug is confirmed, must fix first), and implementation complexity (guidance touches all files, so add last when behavior is stable).
+Based on combined research, here is the suggested phase structure. The ordering follows dependency chains from FEATURES.md and addresses pitfalls at the earliest possible point per PITFALLS.md.
 
-### Phase 1: Safety Guardrails and Cleanup Bug Fix
+### Phase 1: Core Architecture and Autonomous Behavior Prompt
+**Rationale:** Everything depends on the architectural boundary (what gsd-ralph does vs. what GSD does) and the autonomous behavior rules. PITFALLS.md identifies this boundary as "the single most important architectural decision" -- getting it wrong means a rewrite. The SKILL.md prompt is the "brain" that all other components reference.
+**Delivers:** `skills/ralph-mode/SKILL.md` with autonomous behavior rules; architectural boundary documentation; config schema extension for ralph-specific settings
+**Addresses:** GSD context injection (FEATURES), auto-response rules for each checkpoint type
+**Avoids:** Pitfall 1 (reimplementing GSD logic), Pitfall 5 (state corruption), Pitfall 7 (agent nesting)
 
-**Rationale:** This is the highest-priority work. The rm-rf data loss bug is a known production incident. The registry path mismatch is the root cause enabling the bug. All other v1.1 features depend on the cleanup path being safe. Building auto-push before this fix creates a false sense of security. This phase has no dependencies on other new v1.1 code.
+### Phase 2: Shell Launcher and Headless Invocation
+**Rationale:** The launcher is the entry point that users interact with. It depends on the SKILL.md from Phase 1 and the config schema. This phase delivers the core `claude -p` invocation with all flags wired up. It is where the `--ralph` flag, `--allowedTools`, `--worktree`, and `--max-turns` come together.
+**Delivers:** `bin/gsd-ralph` script with flag parsing, config reading, `claude -p` invocation, JSON output parsing, basic completion detection, terminal notification, dry-run mode
+**Addresses:** `--ralph` flag parsing, auto-permission, session invocation, worktree isolation, completion detection, terminal notification, dry-run (all table-stakes features from FEATURES.md)
+**Avoids:** Pitfall 3 (runaway execution -- `--max-turns` + `timeout`), Pitfall 6 (prompt injection -- `--allowedTools` + `--worktree`), Pitfall 8 (token waste -- `@file` references, not inline content)
 
-**Delivers:**
-- `lib/safety.sh` with `assert_safe_to_remove()` and `validate_registry_path()`
-- `lib/cleanup/registry.sh` updated to skip main worktree registration and add `mode` field
-- `lib/commands/cleanup.sh` with rm-rf fallback removed, safety guards added
-- Registry migration for existing v1 entries (default mode=sequential, no directory removal)
-- Full audit of all `rm` calls in the codebase; no raw rm-rf remaining
+### Phase 3: Defense-in-Depth Hooks and Safety
+**Rationale:** The hook layer is optional but critical for reliability. Phase 2 delivers a working autopilot; Phase 3 hardens it. Circuit breaker patterns, `AskUserQuestion` denial hooks, and GSD version compatibility checking all belong here. These are not needed for basic function but prevent the failure modes identified in PITFALLS.md.
+**Delivers:** `PreToolUse` hook for `AskUserQuestion` denial, GSD version compatibility check, circuit breaker wrapper (wall-clock timeout, no-progress detection), graceful stop mechanism (`.ralph/.stop` file), audit log of auto-approved decisions
+**Addresses:** Circuit breaker (FEATURES v2.0.x), safety limits
+**Avoids:** Pitfall 2 (blanket checkpoint approval -- audit trail), Pitfall 3 (runaway execution -- multi-layer circuit breaker), Pitfall 4 (GSD update breaks -- version check)
 
-**Addresses (from FEATURES.md):**
-- Fix cleanup rm-rf bug (P1)
-- Project root protection guard (P1)
+### Phase 4: Session Resilience and Progress Monitoring
+**Rationale:** Session resume and progress monitoring depend on completion detection (Phase 2) and safety infrastructure (Phase 3). These are the v2.0.x features that turn a basic autopilot into a reliable one. Progress monitoring is especially important for user confidence when the user walks away.
+**Delivers:** Session resume on failure (`--resume` with persisted session_id), progress monitoring via `--output-format stream-json` parsing, configurable `--max-turns` per project, structured completion report
+**Addresses:** Session resume, progress monitoring, max-turns config (all FEATURES v2.0.x)
+**Avoids:** Pitfall 3 (provides recovery path when circuit breaker triggers)
 
-**Avoids (from PITFALLS.md):**
-- Pitfall 1: Incomplete guard (audit entire codebase)
-- Pitfall 6: Registry path mismatch (mode field + migration)
-
-**Research flag:** Standard patterns. Git's own `git worktree remove` implements this same safety. No additional research needed.
-
----
-
-### Phase 2: Auto-Push and Merge UX Improvements
-
-**Rationale:** After cleanup is safe, auto-push is the next priority because it provides remote backup (the other failure mode in the vibecheck incident). Merge UX improvements ship in this phase because they share the same dependency (git_remote.sh) and address the second most impactful friction point in the user workflow. Auto-push must be designed as best-effort from day one per Pitfall 3.
-
-**Delivers:**
-- `lib/git_remote.sh` with `has_push_remote()`, `push_branch()`, `push_current_branch()`
-- `lib/commands/execute.sh` updated: push branch after commit
-- `lib/commands/merge.sh` updated: auto-switch to main, stash/unstash, push after merge
-- `lib/commands/init.sh` updated: detect remote, report status
-- Auto-push opt-out via `.ralph/config.json` (P3, low effort)
-- Stash restore failure recovery guidance (P3, low effort)
-
-**Addresses (from FEATURES.md):**
-- Merge auto-switch to main (P1)
-- Merge dirty-worktree handling (P1)
-- Auto-push to remote (P2)
-- Auto-push opt-out config (P3)
-- Stash restore failure recovery (P3)
-
-**Avoids (from PITFALLS.md):**
-- Pitfall 2: Auto-push before safety fix (Phase 1 is prerequisite)
-- Pitfall 3: Workflow crash on push failure (best-effort design, never die() on push)
-- Pitfall 4: Force-push (explicit prohibition; no --force in codebase)
-- Pitfall 5: Silent uncommitted work loss (check porcelain before switch)
-
-**Research flag:** Standard patterns. Git stash and push behavior well-documented. Stash apply/drop preference over pop is the established automation pattern. No additional research needed.
-
----
-
-### Phase 3: CLI Guidance and Polish
-
-**Rationale:** Guidance touches every command file and produces only output changes -- no logic changes. This makes it safest to add last, when all other behavior (including exact merge outcomes that determine guidance text) is finalized. Adding guidance before merge UX is stable would require updating guidance text again anyway. This phase also includes P3 polish items not already shipped in Phase 2.
-
-**Delivers:**
-- `lib/guidance.sh` with `print_guidance()` dispatching by command + outcome
-- `lib/common.sh` updated: add `print_next_step()` helper
-- All command files updated: `print_guidance()` calls at end of each command
-- Outcome-branched guidance (merge success vs partial merge vs rollback -- different next steps)
-- Safety audit trail in `.ralph/logs/safety-audit.log` (P3)
-- Contextual next-step chain (state-aware, queries registry) (P2)
-
-**Addresses (from FEATURES.md):**
-- CLI next-step guidance (P1 -- basic static guidance)
-- Contextual next-step chain (P2 -- state-aware guidance)
-- Safety audit trail (P3)
-
-**Avoids (from PITFALLS.md):**
-- UX Pitfall: Guidance assumes linear workflow (branch by merge outcome)
-- UX Pitfall: Verbose guidance causing banner blindness (max 2-3 lines per command)
-- UX Pitfall: Technical stash messages (translate to plain English)
-
-**Research flag:** Standard patterns. CLI UX guidance well-established (git hints, npm, gh CLI patterns). No additional research needed.
-
----
+### Phase 5: Integration Testing and Installation
+**Rationale:** End-to-end testing must happen after all components exist. The installer copies components to correct locations. This phase validates the full pipeline against real GSD workflows.
+**Delivers:** End-to-end integration tests (full phase execution in worktree), `install.sh` installer, GSD compatibility test suite, documentation
+**Addresses:** Validates all features work together
+**Avoids:** Pitfall 4 (GSD compatibility -- tested against real GSD), Pitfall 7 (nesting depth -- verified end-to-end)
 
 ### Phase Ordering Rationale
 
-- **Safety first (Phase 1):** The rm-rf bug is a confirmed production incident. Until cleanup is safe, the tool should not be used in production. All other v1.1 work is lower priority than eliminating the data-loss risk.
-
-- **Functionality before cross-cutting concerns (Phases 2 before 3):** Auto-push and merge UX are behavior changes. Guidance is output-only. Guidance text depends on what the behavior actually does. Adding guidance before behavior is finalized creates rework.
-
-- **Independent modules first within each phase:** Within each phase, build library modules (safety.sh, git_remote.sh, guidance.sh) before the command files that use them. No circular dependencies.
-
-- **How this avoids pitfalls:** Safety guardrails (Phase 1) prevent the auto-push false-security pitfall (Pitfall 2) by construction -- auto-push physically cannot ship before safety guardrails in this ordering.
+- **Phase 1 before Phase 2:** The architectural boundary and SKILL.md must exist before the launcher can reference them. Every pitfall in the "Core architecture phase" category (Pitfalls 1, 4, 5, 7) must be addressed in design before code is written.
+- **Phase 2 before Phase 3:** A working autopilot (even without defense-in-depth) is more valuable than hardened infrastructure without a product. Phase 2 delivers the MVP; Phase 3 hardens it.
+- **Phase 3 before Phase 4:** Safety infrastructure (circuit breakers, version checking, audit logging) must exist before the session resilience and monitoring layer on top. A resumed session needs circuit breakers to prevent the same runaway scenario.
+- **Phase 5 last:** Integration tests require all components. The installer is the final packaging step.
+- **Why this grouping:** Phases 1-2 deliver the MVP (~200 LOC). Phases 3-4 harden it. Phase 5 validates it. This mirrors the FEATURES.md prioritization: P1 (launch) -> P2 (after validation) -> testing.
 
 ### Research Flags
 
-**Phases with standard patterns (skip research-phase):**
-- **Phase 1 (Safety Guardrails):** Git worktree remove safety, bash path comparison, inode comparison all well-documented. Codebase analysis sufficient.
-- **Phase 2 (Auto-Push + Merge UX):** Git stash, push, and checkout mechanics well-documented. Best-effort push pattern is standard in automation tools.
-- **Phase 3 (Guidance):** CLI UX patterns well-established. No niche domain knowledge needed.
+Phases likely needing deeper research during planning:
+- **Phase 1:** Needs verification of open questions from ARCHITECTURE.md -- specifically whether `claude -p "/gsd:execute-phase 3"` correctly triggers GSD skills in headless mode, and whether `--worktree` shares or copies `.planning/` files. These determine the invocation strategy.
+- **Phase 2:** Needs validation of `--allowedTools` inheritance by subagents in headless mode. If subagents do NOT inherit, the hook-based permission approach becomes primary rather than defense-in-depth.
+- **Phase 3:** Needs research on `PreToolUse` hook behavior for `AskUserQuestion` in headless mode -- the hook may not fire at all in `-p` mode (ARCHITECTURE.md notes `PermissionRequest` hooks do not fire in headless mode).
 
-**Areas NOT needing research:**
-- Whether to keep Bash (settled by v1.0 constraints)
-- Alternative path safety libraries (bash builtins solve the problem)
-- Alternative stash strategies (git stash push + apply/drop is the documented best practice)
+Phases with standard patterns (skip research-phase):
+- **Phase 4:** Session resume (`--resume` flag) and stream-json parsing are well-documented Claude Code features with established patterns.
+- **Phase 5:** Standard bats-core testing patterns; installer is a simple file-copy script.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | No new dependencies; all techniques verified against Bash 3.2 on darwin24/arm64 and git 2.20+ minimums |
-| Features | HIGH | Derived from known production incident + direct codebase analysis; priorities clear and well-justified |
-| Architecture | HIGH | Integration points verified against actual source line numbers (cleanup.sh:180, merge.sh:168-177, execute.sh:160, registry.sh); not theoretical |
-| Pitfalls | HIGH | Grounded in real incident (vibecheck data loss), confirmed bugs in codebase, and verified git documentation for edge cases |
+| Stack | HIGH | All technologies verified against official Claude Code docs (v2.1.71). Zero new dependencies. Version requirements confirmed. |
+| Features | HIGH | Feature landscape grounded in competitor analysis (Ralph, Copilot CLI), GSD codebase inspection, and Claude Code API verification. MVP scope is clear and minimal. |
+| Architecture | HIGH | Architecture verified against Claude Code hooks reference, headless mode docs, and GSD workflow source code. 5 open questions identified but none block Phase 1-2. |
+| Pitfalls | HIGH | Pitfalls grounded in v1.x failure history (9,693 LOC rewrite), documented GSD issues (#668, #686), and Claude Code safety literature (32% unintended modification rate with `--dangerously-skip-permissions`). |
 
 **Overall confidence:** HIGH
 
-All four research files are grounded in the actual v1.0 codebase (reading specific files and line numbers) and a known production incident. This is not theoretical research -- it is post-mortem + forward-looking safety analysis. The recommendations are specific, actionable, and technically verifiable.
-
 ### Gaps to Address
 
-1. **Registry migration testing:** The recommendation to add a `mode` field and migrate old entries is sound, but there is no inventory of how many v1.0 registries exist with the old format. During Phase 1 implementation, test against a registry written by v1.0 code to verify migration logic works correctly.
-
-2. **Stash pop vs apply/drop edge case coverage:** STACK.md recommends `apply`+`drop` over `pop`. FEATURES.md implementation pattern uses `stash pop`. These are inconsistent. Resolution: use `apply`+`drop` in the final implementation (the safer option documented in STACK.md), confirm during Phase 2.
-
-3. **Auto-push timing relative to Ralph's commits:** PITFALLS.md warns not to auto-push while Ralph is still committing on the branch. The Phase 2 design pushes after `execute` completes (initial branch setup), not continuously during Ralph's work. This is the correct interpretation, but should be made explicit in implementation.
-
-4. **Hardcoded main/master detection:** PITFALLS.md flags that custom default branch names (e.g., `trunk`, `develop`) will fail. The Phase 2 auto-switch implementation already handles this via `git show-ref --verify` loop over candidates. This is sufficient for v1.1 but should be noted as a known limitation if users have non-standard branch names.
+- **Headless mode + GSD skill invocation:** Does `claude -p "/gsd:execute-phase 3"` trigger GSD skills? If not, the prompt must include workflow content directly via `@file` references. Validate in Phase 1 planning.
+- **Worktree `.planning/` isolation:** When `claude --worktree` creates a worktree, are `.planning/` files shared or copied? This determines whether config changes leak across sessions. Validate in Phase 1 planning.
+- **Subagent `--allowedTools` inheritance:** Do subagents spawned via the `Agent` tool inherit `--allowedTools` from the parent headless session? If not, Phase 3 hooks become critical. Validate in Phase 2 planning.
+- **`PreToolUse` hook behavior in headless mode:** If `PreToolUse` hooks do not fire for `AskUserQuestion` in `-p` mode, the defense-in-depth hook in Phase 3 provides no value. Validate before Phase 3 planning.
+- **Session continuation context preservation:** Does `claude -p --continue` preserve `--append-system-prompt` content and auto-mode config? If not, resumed sessions may lose autonomous behavior. Validate in Phase 4 planning.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- `/Users/daniswhoiam/Projects/gsd-ralph/lib/commands/cleanup.sh` -- Lines 174-183: confirmed rm-rf fallback bug
-- `/Users/daniswhoiam/Projects/gsd-ralph/lib/commands/merge.sh` -- Lines 168-184: branch check and clean-worktree requirement
-- `/Users/daniswhoiam/Projects/gsd-ralph/lib/commands/execute.sh` -- Line 160: $(pwd) registration bug in sequential mode
-- `/Users/daniswhoiam/Projects/gsd-ralph/lib/cleanup/registry.sh` -- Registry structure and CRUD
-- `.planning/STATE.md` -- Known incident: vibecheck project data loss from cleanup command
-- [Git stash documentation](https://git-scm.com/docs/git-stash) -- apply+drop over pop in scripted automation
-- [Git rev-parse documentation](https://git-scm.com/docs/git-rev-parse) -- --show-toplevel, --git-common-dir
-- [Git push documentation](https://git-scm.com/docs/git-push) -- fast-forward rules, force-push behavior
-- [Git worktree documentation](https://git-scm.com/docs/git-worktree) -- main worktree cannot be removed
+- [Claude Code headless mode docs](https://code.claude.com/docs/en/headless) -- `-p` flag, `--allowedTools`, `--output-format`, `--append-system-prompt`
+- [Claude Code hooks reference](https://code.claude.com/docs/en/hooks) -- `PermissionRequest` and `PreToolUse` events, decision control JSON schema
+- [Claude Code subagents docs](https://code.claude.com/docs/en/sub-agents) -- Custom agents, `permissionMode`, `isolation: worktree`, `skills` field
+- [Claude Code CLI reference](https://code.claude.com/docs/en/cli-reference) -- All CLI flags
+- [Claude Code skills docs](https://code.claude.com/docs/en/skills) -- Skill format, frontmatter, invocation control
+- GSD codebase (local inspection) -- `execute-phase.md`, `execute-plan.md`, `checkpoints.md`, `gsd-tools.cjs`
 
 ### Secondary (MEDIUM confidence)
-- [safe-rm patterns](https://github.com/kaelzhang/shell-safe-rm) -- path blacklisting approach
-- [Git autostash patterns](https://www.eficode.com/blog/git-autostash) -- autostash configuration and behavior
-- [CLI UX best practices](https://evilmartians.com/chronicles/cli-ux-best-practices-3-patterns-for-improving-progress-displays) -- next-step guidance patterns
-- [Bash scripting for reliable automation](https://oneuptime.com/blog/post/2026-02-13-bash-best-practices/view) -- set -euo pipefail implications
+- [AskUserQuestion hook feature request #12605](https://github.com/anthropics/claude-code/issues/12605) -- Confirmed limitation: hooks cannot auto-respond to AskUserQuestion
+- [PreToolUse AskUserQuestion bug #12031](https://github.com/anthropics/claude-code/issues/12031) -- Fixed in v2.0.76
+- [PermissionRequest hook bug #19298](https://github.com/anthropics/claude-code/issues/19298) -- `deny` broken, `allow` works
+- [GSD issue #686](https://github.com/gsd-build/get-shit-done/issues/686) -- Auto-advance chain freezing from agent nesting
+- [GSD issue #668](https://github.com/gsd-build/get-shit-done/issues/668) -- Auto-advance chain dropping commits
+- [Ralph for Claude Code](https://github.com/frankbria/ralph-claude-code) -- Reference implementation patterns
+- [GitHub Copilot CLI autopilot docs](https://docs.github.com/en/copilot/concepts/agents/copilot-cli/autopilot) -- Competitor feature analysis
+- [Claude Code `--dangerously-skip-permissions` guide](https://www.ksred.com/claude-code-dangerously-skip-permissions-when-to-use-it-and-when-you-absolutely-shouldnt/) -- 32% unintended modification rate
 
-### Tertiary (LOW confidence, verify during implementation)
-- Exact behavior of `git stash apply` on conflict (stash is preserved -- should be verified in test environment)
-- First-push credential manager retry behavior (known to be flaky with some credential managers)
+### Tertiary (LOW confidence)
+- [Claude Code context buffer management](https://claudefa.st/blog/guide/mechanics/context-buffer-management) -- 33K-45K reserved buffer; needs validation against current Claude Code version
 
 ---
-*Research completed: 2026-02-20*
+*Research completed: 2026-03-09*
 *Ready for roadmap: yes*
