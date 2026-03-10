@@ -454,6 +454,7 @@ run_loop() {
     local loop_start_epoch iteration=0
     loop_start_epoch=$(date +%s)
     _init_audit_log "$AUDIT_FILE"
+    export RALPH_AUDIT_FILE="$AUDIT_FILE"
     _install_hook
     trap _cleanup EXIT INT TERM
 
