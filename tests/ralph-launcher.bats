@@ -918,3 +918,61 @@ MOCKEOF
     assert_success  # exit 0, not error
     assert_output --partial "disabled"
 }
+
+# ============================================================
+# Phase 14: RALPH_SCRIPTS_DIR portability tests
+# ============================================================
+
+@test "RALPH_SCRIPTS_DIR auto-detects from BASH_SOURCE when not set" {
+    unset RALPH_SCRIPTS_DIR
+    source "$REAL_PROJECT_ROOT/scripts/ralph-launcher.sh"
+
+    # Should auto-detect to the real scripts directory
+    [ "$RALPH_SCRIPTS_DIR" = "$REAL_PROJECT_ROOT/scripts" ]
+}
+
+@test "RALPH_SCRIPTS_DIR override causes scripts to load from custom path" {
+    # Create custom scripts directory with required scripts
+    mkdir -p "$TEST_TEMP_DIR/custom-scripts"
+    cp "$REAL_PROJECT_ROOT/scripts/validate-config.sh" "$TEST_TEMP_DIR/custom-scripts/"
+    cp "$REAL_PROJECT_ROOT/scripts/assemble-context.sh" "$TEST_TEMP_DIR/custom-scripts/"
+
+    # Set override before sourcing
+    export RALPH_SCRIPTS_DIR="$TEST_TEMP_DIR/custom-scripts"
+    source "$REAL_PROJECT_ROOT/scripts/ralph-launcher.sh"
+
+    # Verify paths resolve to custom location
+    [ "$CONTEXT_SCRIPT" = "$TEST_TEMP_DIR/custom-scripts/assemble-context.sh" ]
+    [ "$VALIDATE_SCRIPT" = "$TEST_TEMP_DIR/custom-scripts/validate-config.sh" ]
+}
+
+@test "_install_hook uses RALPH_SCRIPTS_DIR for hook script path" {
+    # Create custom scripts directory with ralph-hook.sh
+    mkdir -p "$TEST_TEMP_DIR/custom-scripts"
+    cp "$REAL_PROJECT_ROOT/scripts/validate-config.sh" "$TEST_TEMP_DIR/custom-scripts/"
+    cp "$REAL_PROJECT_ROOT/scripts/assemble-context.sh" "$TEST_TEMP_DIR/custom-scripts/"
+    cp "$REAL_PROJECT_ROOT/scripts/ralph-hook.sh" "$TEST_TEMP_DIR/custom-scripts/"
+
+    # Set override before sourcing
+    export RALPH_SCRIPTS_DIR="$TEST_TEMP_DIR/custom-scripts"
+    source "$REAL_PROJECT_ROOT/scripts/ralph-launcher.sh"
+
+    # Set PROJECT_ROOT so settings.local.json gets created in test dir
+    PROJECT_ROOT="$TEST_TEMP_DIR"
+
+    # Call _install_hook
+    _install_hook
+
+    # Verify hook command path uses RALPH_SCRIPTS_DIR, not PROJECT_ROOT/scripts
+    local hook_cmd
+    hook_cmd=$(jq -r '.hooks.PreToolUse[0].hooks[0].command' "$TEST_TEMP_DIR/.claude/settings.local.json")
+    [ "$hook_cmd" = "$TEST_TEMP_DIR/custom-scripts/ralph-hook.sh" ]
+}
+
+@test "RALPH_SCRIPTS_DIR is exported after sourcing" {
+    unset RALPH_SCRIPTS_DIR
+    source "$REAL_PROJECT_ROOT/scripts/ralph-launcher.sh"
+
+    # Verify RALPH_SCRIPTS_DIR is in the environment (exported)
+    env | grep -q "RALPH_SCRIPTS_DIR="
+}
