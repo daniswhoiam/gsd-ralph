@@ -2,7 +2,7 @@
 phase: 11
 slug: shell-launcher-and-headless-invocation
 status: draft
-nyquist_compliant: false
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-03-10
 ---
@@ -38,17 +38,9 @@ created: 2026-03-10
 
 | Task ID | Plan | Wave | Requirement | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|-----------|-------------------|-------------|--------|
-| 11-01-01 | 01 | 0 | AUTO-01 | smoke | `./tests/bats/bin/bats tests/ralph-launcher.bats -x` | ❌ W0 | ⬜ pending |
-| 11-01-02 | 01 | 1 | AUTO-01 | smoke | `./tests/bats/bin/bats tests/ralph-launcher.bats -x` | ❌ W0 | ⬜ pending |
-| 11-01-03 | 01 | 1 | AUTO-02 | unit | `./tests/bats/bin/bats tests/ralph-launcher.bats -x` | ❌ W0 | ⬜ pending |
-| 11-01-04 | 01 | 1 | SAFE-01, SAFE-02 | unit | `./tests/bats/bin/bats tests/ralph-launcher.bats -x` | ❌ W0 | ⬜ pending |
-| 11-01-05 | 01 | 1 | AUTO-05 | unit | `./tests/bats/bin/bats tests/ralph-launcher.bats -x` | ❌ W0 | ⬜ pending |
-| 11-02-01 | 02 | 0 | PERM-01 | unit | `./tests/bats/bin/bats tests/ralph-permissions.bats -x` | ❌ W0 | ⬜ pending |
-| 11-02-02 | 02 | 1 | PERM-01 | unit | `./tests/bats/bin/bats tests/ralph-permissions.bats -x` | ❌ W0 | ⬜ pending |
-| 11-02-03 | 02 | 1 | PERM-02 | unit | `./tests/bats/bin/bats tests/ralph-permissions.bats -x` | ❌ W0 | ⬜ pending |
-| 11-02-04 | 02 | 1 | PERM-03 | unit | `./tests/bats/bin/bats tests/ralph-permissions.bats -x` | ❌ W0 | ⬜ pending |
-| 11-03-01 | 03 | 1 | OBSV-01 | unit | `./tests/bats/bin/bats tests/ralph-launcher.bats -x` | ❌ W0 | ⬜ pending |
-| 11-03-02 | 03 | 1 | OBSV-02 | unit | `./tests/bats/bin/bats tests/ralph-launcher.bats -x` | ❌ W0 | ⬜ pending |
+| 11-01-T1 | 01 | 1 | AUTO-01, AUTO-05, PERM-01, PERM-02, PERM-03, SAFE-01, SAFE-02 | unit | `./tests/bats/bin/bats tests/ralph-launcher.bats tests/ralph-permissions.bats -x` | ❌ W0 | ⬜ pending |
+| 11-01-T2 | 01 | 1 | AUTO-01 | smoke | `test -f .claude/commands/gsd/ralph.md && grep -q 'ARGUMENTS' .claude/commands/gsd/ralph.md` | ❌ W0 | ⬜ pending |
+| 11-02-T1 | 02 | 2 | AUTO-02, OBSV-01, OBSV-02 | unit | `./tests/bats/bin/bats tests/ralph-launcher.bats tests/ralph-permissions.bats -x` | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
