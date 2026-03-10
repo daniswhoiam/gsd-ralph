@@ -769,3 +769,77 @@ line3"
     assert_success
     assert_output ""
 }
+
+# ============================================================
+# Plan 12-02: Hook install/remove lifecycle tests
+# ============================================================
+
+@test "install_hook: _install_hook creates settings.local.json with hook config" {
+    PROJECT_ROOT="$TEST_TEMP_DIR"
+    # No existing settings.local.json
+    _install_hook
+    assert_file_exists "$TEST_TEMP_DIR/.claude/settings.local.json"
+    run jq -r '.hooks.PreToolUse[0].matcher' "$TEST_TEMP_DIR/.claude/settings.local.json"
+    assert_output "AskUserQuestion"
+    run jq -r '.hooks.PreToolUse[0].hooks[0].command' "$TEST_TEMP_DIR/.claude/settings.local.json"
+    assert_output --partial "ralph-hook.sh"
+}
+
+@test "install_hook: _install_hook preserves existing permissions in settings.local.json" {
+    PROJECT_ROOT="$TEST_TEMP_DIR"
+    create_mock_settings_local '{"permissions":{"allow":["Bash(./tests/bats/bin/bats:*)"]}}'
+    _install_hook
+    # Verify permissions are preserved
+    run jq -r '.permissions.allow[0]' "$TEST_TEMP_DIR/.claude/settings.local.json"
+    assert_output "Bash(./tests/bats/bin/bats:*)"
+    # Verify hook was added
+    run jq -r '.hooks.PreToolUse[0].matcher' "$TEST_TEMP_DIR/.claude/settings.local.json"
+    assert_output "AskUserQuestion"
+}
+
+@test "install_hook: _install_hook uses absolute path to hook script" {
+    PROJECT_ROOT="$TEST_TEMP_DIR"
+    _install_hook
+    run jq -r '.hooks.PreToolUse[0].hooks[0].command' "$TEST_TEMP_DIR/.claude/settings.local.json"
+    # Path should start with / (absolute)
+    [[ "$output" == /* ]]
+}
+
+@test "remove_hook: _remove_hook removes ralph hook entry" {
+    PROJECT_ROOT="$TEST_TEMP_DIR"
+    _install_hook
+    # Verify hook is present
+    run jq -r '.hooks.PreToolUse[0].matcher' "$TEST_TEMP_DIR/.claude/settings.local.json"
+    assert_output "AskUserQuestion"
+    # Remove it
+    _remove_hook
+    # PreToolUse should be gone (empty array cleaned up)
+    run jq -r '.hooks.PreToolUse // "absent"' "$TEST_TEMP_DIR/.claude/settings.local.json"
+    assert_output "absent"
+}
+
+@test "remove_hook: _remove_hook preserves other settings" {
+    PROJECT_ROOT="$TEST_TEMP_DIR"
+    create_mock_settings_local '{"permissions":{"allow":["Bash(*)"]}}'
+    _install_hook
+    _remove_hook
+    # Permissions should still be there
+    run jq -r '.permissions.allow[0]' "$TEST_TEMP_DIR/.claude/settings.local.json"
+    assert_output "Bash(*)"
+}
+
+@test "remove_hook: _remove_hook handles missing settings.local.json" {
+    PROJECT_ROOT="$TEST_TEMP_DIR"
+    # No file exists -- should not error
+    run _remove_hook
+    assert_success
+}
+
+@test "remove_hook: _remove_hook cleans up empty hooks object" {
+    PROJECT_ROOT="$TEST_TEMP_DIR"
+    _install_hook
+    _remove_hook
+    # hooks key should be gone entirely (not an empty object)
+    run jq -r '.hooks // "absent"' "$TEST_TEMP_DIR/.claude/settings.local.json"
+    assert_output "absent"
+}
