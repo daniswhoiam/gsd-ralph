@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # tests/installer.bats -- Tests for install.sh installer
-# Covers: INST-01, INST-02, INST-03, INST-04, INST-06
+# Covers: INST-01, INST-02, INST-03, INST-04, INST-05, INST-06, INST-07, INST-08
 
 setup() {
     load 'test_helper/common'
@@ -316,4 +316,278 @@ WRAPPER
     # Verify files came from the right source
     run cmp -s "$REAL_PROJECT_ROOT/scripts/ralph-launcher.sh" "scripts/ralph/ralph-launcher.sh"
     assert_success
+}
+
+# ============================================================
+# Config merge (INST-05)
+# ============================================================
+
+@test "installer: adds ralph key to config.json when not present" {
+    create_test_repo
+    create_gsd_structure
+    # Create config WITHOUT ralph key
+    create_ralph_config_raw '{"mode":"yolo","parallelization":true}'
+    cd "$TEST_TEMP_DIR"
+
+    run bash "$INSTALLER"
+    assert_success
+
+    # config.json should now have a .ralph key
+    run jq -e '.ralph' .planning/config.json
+    assert_success
+}
+
+@test "installer: merged ralph config has correct defaults" {
+    create_test_repo
+    create_gsd_structure
+    create_ralph_config_raw '{"mode":"yolo"}'
+    cd "$TEST_TEMP_DIR"
+
+    run bash "$INSTALLER"
+    assert_success
+
+    # Check each default value
+    run jq -r '.ralph.enabled' .planning/config.json
+    assert_output "true"
+
+    run jq -r '.ralph.max_turns' .planning/config.json
+    assert_output "50"
+
+    run jq -r '.ralph.permission_tier' .planning/config.json
+    assert_output "default"
+
+    run jq -r '.ralph.timeout_minutes' .planning/config.json
+    assert_output "30"
+}
+
+@test "installer: does not overwrite existing ralph config with custom values" {
+    create_test_repo
+    create_gsd_structure
+    # Create config WITH custom ralph values
+    create_ralph_config true 100 "elevated"
+    cd "$TEST_TEMP_DIR"
+
+    run bash "$INSTALLER"
+    assert_success
+
+    # Custom values should be preserved
+    run jq -r '.ralph.max_turns' .planning/config.json
+    assert_output "100"
+
+    run jq -r '.ralph.permission_tier' .planning/config.json
+    assert_output "elevated"
+}
+
+@test "installer: exits non-zero on invalid JSON in config.json" {
+    create_test_repo
+    create_gsd_structure
+    # Write garbage to config.json
+    echo "this is not valid json {{{" > "$TEST_TEMP_DIR/.planning/config.json"
+    cd "$TEST_TEMP_DIR"
+
+    run bash "$INSTALLER"
+    assert_failure
+    assert_output --partial "invalid JSON"
+}
+
+@test "installer: config merge creates temp file in .planning/ directory" {
+    create_test_repo
+    create_gsd_structure
+    create_ralph_config_raw '{"mode":"yolo"}'
+    cd "$TEST_TEMP_DIR"
+
+    # Run installer and check that no stray temp files remain in /tmp
+    # (they should be created in .planning/ and cleaned up by mv)
+    run bash "$INSTALLER"
+    assert_success
+
+    # Verify no leftover temp files in .planning/
+    local stray_count
+    stray_count=$(find .planning -name 'config.json.*' -type f 2>/dev/null | wc -l | tr -d ' ')
+    assert_equal "$stray_count" "0"
+}
+
+@test "installer: preserves other config keys during merge" {
+    create_test_repo
+    create_gsd_structure
+    create_ralph_config_raw '{"mode":"yolo","parallelization":true,"commit_docs":true}'
+    cd "$TEST_TEMP_DIR"
+
+    run bash "$INSTALLER"
+    assert_success
+
+    # Original keys should still be present
+    run jq -r '.mode' .planning/config.json
+    assert_output "yolo"
+
+    run jq -r '.parallelization' .planning/config.json
+    assert_output "true"
+
+    run jq -r '.commit_docs' .planning/config.json
+    assert_output "true"
+}
+
+# ============================================================
+# Post-install verification (INST-07)
+# ============================================================
+
+@test "installer: verify_installation returns 0 when all files exist and are executable" {
+    create_test_repo
+    create_gsd_structure
+    create_ralph_config_raw '{"mode":"yolo"}'
+    cd "$TEST_TEMP_DIR"
+
+    # Run full install first
+    bash "$INSTALLER"
+
+    # Source install.sh (main is guarded) and call verify_installation
+    source "$INSTALLER"
+    run verify_installation
+    assert_success
+}
+
+@test "installer: verify_installation returns non-zero when a script file is missing" {
+    create_test_repo
+    create_gsd_structure
+    create_ralph_config_raw '{"mode":"yolo"}'
+    cd "$TEST_TEMP_DIR"
+
+    bash "$INSTALLER"
+
+    # Remove one script file
+    rm -f scripts/ralph/validate-config.sh
+
+    source "$INSTALLER"
+    run verify_installation
+    # Must be a real failure (1-6), not "command not found" (127)
+    assert_failure
+    [ "$status" -lt 127 ]
+}
+
+@test "installer: verify_installation returns non-zero when a script is not executable" {
+    create_test_repo
+    create_gsd_structure
+    create_ralph_config_raw '{"mode":"yolo"}'
+    cd "$TEST_TEMP_DIR"
+
+    bash "$INSTALLER"
+
+    # Remove execute permission from one script
+    chmod -x scripts/ralph/ralph-hook.sh
+
+    source "$INSTALLER"
+    run verify_installation
+    # Must be a real failure, not "command not found"
+    assert_failure
+    [ "$status" -lt 127 ]
+}
+
+@test "installer: verify_installation returns non-zero when ralph config key is missing" {
+    create_test_repo
+    create_gsd_structure
+    create_ralph_config_raw '{"mode":"yolo"}'
+    cd "$TEST_TEMP_DIR"
+
+    bash "$INSTALLER"
+
+    # Remove the ralph key from config.json
+    local tmp_file
+    tmp_file="$(mktemp)"
+    jq 'del(.ralph)' .planning/config.json > "$tmp_file" && mv "$tmp_file" .planning/config.json
+
+    source "$INSTALLER"
+    run verify_installation
+    # Must be a real failure, not "command not found"
+    assert_failure
+    [ "$status" -lt 127 ]
+}
+
+@test "installer: verify_installation checks all 6 manifest files and config key" {
+    create_test_repo
+    create_gsd_structure
+    create_ralph_config_raw '{"mode":"yolo"}'
+    cd "$TEST_TEMP_DIR"
+
+    bash "$INSTALLER"
+
+    # Remove ALL files and config key to see total error count
+    rm -f scripts/ralph/ralph-launcher.sh
+    rm -f scripts/ralph/assemble-context.sh
+    rm -f scripts/ralph/validate-config.sh
+    rm -f scripts/ralph/ralph-hook.sh
+    rm -f .claude/commands/gsd/ralph.md
+    rm -f .claude/skills/gsd-ralph-autopilot/SKILL.md
+    local tmp_file
+    tmp_file="$(mktemp)"
+    jq 'del(.ralph)' .planning/config.json > "$tmp_file" && mv "$tmp_file" .planning/config.json
+
+    source "$INSTALLER"
+    run verify_installation
+    assert_failure
+    # Should report 7 errors (4 scripts + 2 non-script files + 1 config key)
+    # The exit code should be 7 (error count)
+    assert_equal "$status" "7"
+}
+
+# ============================================================
+# Summary output (INST-08)
+# ============================================================
+
+@test "installer: output contains count of files installed on fresh install" {
+    create_test_repo
+    create_gsd_structure
+    create_ralph_config_raw '{"mode":"yolo"}'
+    cd "$TEST_TEMP_DIR"
+
+    run bash "$INSTALLER"
+    assert_success
+    assert_output --partial "Installed"
+}
+
+@test "installer: output contains count of files skipped on idempotent re-run" {
+    create_test_repo
+    create_gsd_structure
+    create_ralph_config_raw '{"mode":"yolo"}'
+    cd "$TEST_TEMP_DIR"
+
+    bash "$INSTALLER"
+
+    run bash "$INSTALLER"
+    assert_success
+    assert_output --partial "already up to date"
+}
+
+@test "installer: output contains next-step instructions mentioning /gsd:ralph" {
+    create_test_repo
+    create_gsd_structure
+    create_ralph_config_raw '{"mode":"yolo"}'
+    cd "$TEST_TEMP_DIR"
+
+    run bash "$INSTALLER"
+    assert_success
+    assert_output --partial "/gsd:ralph"
+}
+
+@test "installer: output includes installation complete banner" {
+    create_test_repo
+    create_gsd_structure
+    create_ralph_config_raw '{"mode":"yolo"}'
+    cd "$TEST_TEMP_DIR"
+
+    run bash "$INSTALLER"
+    assert_success
+    assert_output --partial "Installation complete"
+}
+
+@test "installer: fresh install exits 0 with success indicators" {
+    create_test_repo
+    create_gsd_structure
+    create_ralph_config_raw '{"mode":"yolo"}'
+    cd "$TEST_TEMP_DIR"
+
+    run bash "$INSTALLER"
+    assert_success
+    # Should have both installed count and success message
+    assert_output --partial "Installed"
+    assert_output --partial "complete"
 }
