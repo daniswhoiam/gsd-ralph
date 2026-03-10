@@ -29,12 +29,15 @@ fi
     cat "$STATE_FILE"
     printf "\n\n"
 
-    # Extract phase number from STATE.md "Phase: N of M" line
-    phase_num=$(grep -oE 'Phase: [0-9]+' "$STATE_FILE" | grep -oE '[0-9]+' | head -1)
+    # Extract phase number from STATE.md — handles both plain "Phase: N" and
+    # markdown bold "**Phase:** N" formats
+    phase_num=$(grep -oE '(\*\*)?Phase:(\*\*)? [0-9]+' "$STATE_FILE" 2>/dev/null | grep -oE '[0-9]+' | head -1 || true)
 
     if [ -n "$phase_num" ]; then
+        # Zero-pad to match GSD NN-slug directory format (01-, 02-, etc.)
+        padded_phase=$(printf "%02d" "$phase_num")
         # Find phase directory (GSD NN-slug format)
-        phase_dir=$(find "$PROJECT_ROOT/.planning/phases" -maxdepth 1 -type d -name "${phase_num}-*" 2>/dev/null | head -1)
+        phase_dir=$(find "$PROJECT_ROOT/.planning/phases" -maxdepth 1 -type d -name "${padded_phase}-*" 2>/dev/null | head -1)
 
         if [ -n "$phase_dir" ] && [ -d "$phase_dir" ]; then
             # Check if any plan files exist before emitting section header
