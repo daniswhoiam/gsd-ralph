@@ -149,3 +149,12 @@ create_mock_audit_log() {
         : > "$TEST_TEMP_DIR/.ralph/audit.log"
     fi
 }
+
+# Helper: create a mock .claude/settings.local.json in TEST_TEMP_DIR
+# Usage: create_mock_settings_local [content]
+# Default content: {"permissions":{"allow":[]}}
+create_mock_settings_local() {
+    local content="${1:-{\"permissions\":{\"allow\":[]}}}"
+    mkdir -p "$TEST_TEMP_DIR/.claude"
+    echo "$content" > "$TEST_TEMP_DIR/.claude/settings.local.json"
+}
