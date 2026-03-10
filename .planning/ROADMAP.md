@@ -51,7 +51,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Milestone Goal:** Make gsd-ralph installable in any repo with a single command following current Claude Code ecosystem patterns.
 
 - [x] **Phase 14: Location-Independent Scripts** - Refactor all scripts to work from any directory, not just the dev repo layout (completed 2026-03-10)
-- [ ] **Phase 15: Core Installer** - Single-command installer with prerequisite detection, file copy, config merge, and verification
+- [x] **Phase 15: Core Installer** - Single-command installer with prerequisite detection, file copy, config merge, and verification (completed 2026-03-10)
 - [ ] **Phase 16: End-to-End Validation** - Integration tests proving the full install-then-use workflow in realistic target repos
 
 ## Phase Details
@@ -80,7 +80,7 @@ Plans:
   3. Running the installer a second time in the same repo produces no changes and no errors (idempotent)
   4. After install, running `/gsd:ralph execute-phase N --dry-run` in the target repo produces valid output (full workflow functional)
   5. Installer prints colored summary with count of files installed and explicit next-step instructions
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 15-01-PLAN.md -- TDD installer prerequisites, file copy manifest, path adjustment, and idempotency
@@ -118,5 +118,5 @@ Phases execute in numeric order: 14 -> 15 -> 16
 | 12. Defense-in-Depth | v2.0 | 2/2 | Complete | 2026-03-10 |
 | 13. Audit Path Fix | v2.0 | 1/1 | Complete | 2026-03-10 |
 | 14. Location-Independent Scripts | v2.1 | 1/1 | Complete | 2026-03-10 |
-| 15. Core Installer | 1/2 | In Progress|  | - |
+| 15. Core Installer | 2/2 | Complete   | 2026-03-10 | - |
 | 16. End-to-End Validation | v2.1 | 0/? | Not started | - |

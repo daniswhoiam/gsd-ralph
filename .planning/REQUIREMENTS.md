@@ -13,10 +13,10 @@ Requirements for Easy Install milestone. Each maps to roadmap phases.
 - [x] **INST-02**: Installer checks for GSD framework and displays version guidance if missing
 - [x] **INST-03**: Installer checks for jq, git, and bash >= 3.2 with actionable fix instructions
 - [x] **INST-04**: Re-running the installer is safe — identical files are skipped, no data loss
-- [ ] **INST-05**: Installer adds ralph config section to .planning/config.json without overwriting existing settings
+- [x] **INST-05**: Installer adds ralph config section to .planning/config.json without overwriting existing settings
 - [x] **INST-06**: Installer copies all Ralph components (scripts, skills, commands) to target repo
-- [ ] **INST-07**: Post-install verification confirms all files exist and are executable
-- [ ] **INST-08**: Installer displays clear output with next-step guidance after completion
+- [x] **INST-07**: Post-install verification confirms all files exist and are executable
+- [x] **INST-08**: Installer displays clear output with next-step guidance after completion
 
 ### Portability
 
@@ -59,10 +59,10 @@ Deferred to v2.2+. Tracked but not in current roadmap.
 | INST-02 | Phase 15 | Complete |
 | INST-03 | Phase 15 | Complete |
 | INST-04 | Phase 15 | Complete |
-| INST-05 | Phase 15 | Pending |
+| INST-05 | Phase 15 | Complete |
 | INST-06 | Phase 15 | Complete |
-| INST-07 | Phase 15 | Pending |
-| INST-08 | Phase 15 | Pending |
+| INST-07 | Phase 15 | Complete |
+| INST-08 | Phase 15 | Complete |
 | PORT-01 | Phase 14 | Complete |
 | PORT-02 | Phase 14 | Complete |
 | PORT-03 | Phase 14 | Complete |
