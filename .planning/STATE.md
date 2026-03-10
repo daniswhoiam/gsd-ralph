@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.0
-milestone_name: Autopilot Core
-status: completed
-stopped_at: Milestone v2.0 archived
-last_updated: "2026-03-10T16:44:50.945Z"
-last_activity: 2026-03-10 -- Milestone v2.0 Autopilot Core archived
+milestone: v2.1
+milestone_name: Easy Install
+status: active
+stopped_at: Defining requirements
+last_updated: "2026-03-10T18:00:00Z"
+last_activity: 2026-03-10 -- Milestone v2.1 started
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 7
-  completed_plans: 7
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -21,15 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-10)
 
 **Core value:** Add `--ralph` to any GSD command and walk away -- Ralph drives, GSD works, code ships.
-**Current focus:** Planning next milestone
+**Current focus:** v2.1 Easy Install
 
 ## Current Position
 
-Milestone: v2.0 Autopilot Core -- SHIPPED 2026-03-10
-Status: Archived
-Next: `/gsd:new-milestone` to start next milestone
-
-Progress: [##########] 100% (v1.0 + v1.1 + v2.0 complete)
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-10 — Milestone v2.1 started
 
 ## Performance Metrics
 
@@ -60,14 +59,14 @@ See PROJECT.md Key Decisions table for full list with outcomes.
 
 ### Pending Todos
 
-(none)
+- Fix: assemble-context.sh crashes when no active phase (grep fails with pipefail)
 
 ### Blockers/Concerns
 
-(none -- milestone complete)
+(none)
 
 ## Session Continuity
 
 Last session: 2026-03-10
-Stopped at: Milestone v2.0 archived
-Next step: `/gsd:new-milestone` to define next milestone
+Stopped at: Defining requirements for v2.1
+Next step: Complete requirements and roadmap

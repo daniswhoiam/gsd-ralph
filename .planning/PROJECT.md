@@ -43,7 +43,11 @@ Add `--ralph` to any GSD command and walk away — Ralph drives, GSD works, code
 
 ### Active
 
-(No active requirements — next milestone not yet defined)
+<!-- v2.1 Easy Install — requirements defined in REQUIREMENTS.md -->
+
+- [ ] One-command installation following Claude Code ecosystem patterns
+- [ ] GSD prerequisite detection with helpful version guidance
+- [ ] Full GSD + Ralph workflow functional after install
 
 ### Out of Scope
 
@@ -92,5 +96,15 @@ Key v2.0 components:
 | v2.0: Trap-based cleanup lifecycle | Single _cleanup trap handles all exit paths | ✓ Good — eliminated duplicate cleanup code |
 | v2.0: settings.local.json merge/unmerge | Preserves existing hooks and permissions during install/remove | ✓ Good — non-destructive |
 
+## Current Milestone: v2.1 Easy Install
+
+**Goal:** Make gsd-ralph installable in any repo with a single command following current Claude Code ecosystem patterns.
+
+**Target features:**
+- One-command installer (npx or Claude Code native pattern — TBD from research)
+- GSD prerequisite check with version info
+- Copies all Ralph components (scripts, hooks, skills, config) to target repo
+- Full GSD + Ralph workflow works immediately after install
+
 ---
-*Last updated: 2026-03-10 after v2.0 milestone*
+*Last updated: 2026-03-10 after v2.1 milestone started*
