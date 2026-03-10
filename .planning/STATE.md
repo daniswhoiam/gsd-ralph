@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: Easy Install
 status: completed
-stopped_at: Completed 15-02-PLAN.md
-last_updated: "2026-03-10T19:07:05.328Z"
-last_activity: 2026-03-10 -- Completed 15-02 Core Installer (config merge, verification, summary)
+stopped_at: Completed 16-01-PLAN.md
+last_updated: "2026-03-10T19:31:32.168Z"
+last_activity: 2026-03-10 -- Completed 16-01 E2E install workflow scenario tests
 progress:
   total_phases: 3
-  completed_phases: 2
-  total_plans: 3
-  completed_plans: 3
+  completed_phases: 3
+  total_plans: 4
+  completed_plans: 4
   percent: 100
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-10)
 
 **Core value:** Add `--ralph` to any GSD command and walk away -- Ralph drives, GSD works, code ships.
-**Current focus:** v2.1 Easy Install -- Phase 15 (Core Installer)
+**Current focus:** v2.1 Easy Install -- Phase 16 (End-to-End Validation) -- COMPLETE
 
 ## Current Position
 
-Phase: 15 of 16 (Core Installer) -- COMPLETE
-Plan: 2 of 2 in current phase
-Status: Phase 15 Complete
-Last activity: 2026-03-10 -- Completed 15-02 Core Installer (config merge, verification, summary)
+Phase: 16 of 16 (End-to-End Validation) -- COMPLETE
+Plan: 1 of 1 in current phase
+Status: v2.1 Milestone Complete
+Last activity: 2026-03-10 -- Completed 16-01 E2E install workflow scenario tests
 
 Progress: [██████████] 100%
 
@@ -39,7 +39,7 @@ Progress: [██████████] 100%
 - Timeline: 2 days (Mar 9-10, 2026)
 - Commits: 55
 - Codebase: 831 LOC Bash + 1,593 LOC Bats tests (2,424 total)
-- Tests: 351 passing, 0 failures (319 + 32 installer tests from Phase 15)
+- Tests: 356 passing, 0 failures (319 + 32 installer + 5 E2E tests)
 
 **Historical:**
 - v1.0: 13 plans in 7 days
@@ -62,6 +62,7 @@ See PROJECT.md Key Decisions table for full list.
 - v2.1: verify_installation returns error count as exit code for granular failure reporting (Phase 15-02)
 - v2.1: Config merge temp file in .planning/ directory for atomic mv on same filesystem (Phase 15-02)
 - [Phase 15]: Check ralph key existence before merge (skip if present) rather than recursive merge
+- [Phase 16]: v2.1: Used max_turns and Context lines as dry-run output markers instead of execute-phase (Phase 16-01)
 
 ### Pending Todos
 
@@ -73,6 +74,6 @@ See PROJECT.md Key Decisions table for full list.
 
 ## Session Continuity
 
-Last session: 2026-03-10T18:56:48.344Z
-Stopped at: Completed 15-02-PLAN.md
-Next step: Phase 15 complete. Proceed to Phase 16 (end-to-end validation) or run /gsd:verify-work
+Last session: 2026-03-10T19:31:32.166Z
+Stopped at: Completed 16-01-PLAN.md
+Next step: v2.1 Easy Install milestone complete. All phases (14-16) done. Run /gsd:verify-work for final validation.

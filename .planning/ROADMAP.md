@@ -52,7 +52,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 14: Location-Independent Scripts** - Refactor all scripts to work from any directory, not just the dev repo layout (completed 2026-03-10)
 - [x] **Phase 15: Core Installer** - Single-command installer with prerequisite detection, file copy, config merge, and verification (completed 2026-03-10)
-- [ ] **Phase 16: End-to-End Validation** - Integration tests proving the full install-then-use workflow in realistic target repos
+- [x] **Phase 16: End-to-End Validation** - Integration tests proving the full install-then-use workflow in realistic target repos (completed 2026-03-10)
 
 ## Phase Details
 
@@ -95,7 +95,7 @@ Plans:
   2. Install-then-dry-run test confirms `/gsd:ralph execute-phase` works in an installed repo
   3. Re-install idempotency test confirms no file changes on second run
   4. All tests run in isolated temporary directories (no side effects on dev repo)
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 
 Plans:
 - [ ] 16-01-PLAN.md -- TDD end-to-end install workflow scenarios (fresh, existing config, error, dry-run, idempotency)
@@ -122,4 +122,4 @@ Phases execute in numeric order: 14 -> 15 -> 16
 | 13. Audit Path Fix | v2.0 | 1/1 | Complete | 2026-03-10 |
 | 14. Location-Independent Scripts | v2.1 | 1/1 | Complete | 2026-03-10 |
 | 15. Core Installer | v2.1 | 2/2 | Complete | 2026-03-10 |
-| 16. End-to-End Validation | v2.1 | 0/1 | Not started | - |
+| 16. End-to-End Validation | 1/1 | Complete   | 2026-03-10 | - |
