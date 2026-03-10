@@ -169,3 +169,420 @@ teardown() {
     assert_output --partial 'permission_tier: default'
     assert_output --partial 'worktree: always on'
 }
+
+# ============================================================
+# Plan 02: Loop execution engine tests
+# ============================================================
+
+# --- check_state_completion tests ---
+
+@test "check_state_completion returns complete when phase number > target" {
+    create_mock_state_advanced 12 1 "Executing"
+    STATE_FILE="$TEST_TEMP_DIR/.planning/STATE.md"
+    run check_state_completion "$STATE_FILE" 11
+    assert_success
+    assert_output "complete"
+}
+
+@test "check_state_completion returns complete when status is Complete" {
+    create_mock_state_advanced 11 2 "Complete"
+    STATE_FILE="$TEST_TEMP_DIR/.planning/STATE.md"
+    run check_state_completion "$STATE_FILE" 11
+    assert_success
+    assert_output "complete"
+}
+
+@test "check_state_completion returns incomplete when phase is current and executing" {
+    create_mock_state_advanced 11 1 "Executing"
+    STATE_FILE="$TEST_TEMP_DIR/.planning/STATE.md"
+    run check_state_completion "$STATE_FILE" 11
+    assert_success
+    assert_output "incomplete"
+}
+
+@test "check_state_completion returns missing when STATE.md does not exist" {
+    run check_state_completion "$TEST_TEMP_DIR/.planning/nonexistent-STATE.md" 11
+    assert_success
+    assert_output "missing"
+}
+
+@test "check_state_completion returns unknown when phase number not found" {
+    mkdir -p "$TEST_TEMP_DIR/.planning"
+    echo "# Empty state file with no phase info" > "$TEST_TEMP_DIR/.planning/STATE.md"
+    run check_state_completion "$TEST_TEMP_DIR/.planning/STATE.md" 11
+    assert_success
+    assert_output "unknown"
+}
+
+# --- execute_iteration tests ---
+
+@test "execute_iteration calls assemble-context.sh with temp file path" {
+    create_mock_assemble_context 0
+    # Create a mock claude that records its args and succeeds
+    mkdir -p "$TEST_TEMP_DIR/bin"
+    cat > "$TEST_TEMP_DIR/bin/claude" <<'MOCKEOF'
+#!/bin/bash
+echo '{"type":"result","result":"done","num_turns":5}'
+exit 0
+MOCKEOF
+    chmod +x "$TEST_TEMP_DIR/bin/claude"
+    export PATH="$TEST_TEMP_DIR/bin:$PATH"
+
+    # Track assemble-context.sh calls
+    cat > "$TEST_TEMP_DIR/scripts/assemble-context.sh" <<'TRACKEOF'
+#!/bin/bash
+echo "ASSEMBLE_CALLED:$1" >> "$TEST_TEMP_DIR/assemble-calls.log"
+echo "# Mock context" > "$1"
+exit 0
+TRACKEOF
+    chmod +x "$TEST_TEMP_DIR/scripts/assemble-context.sh"
+
+    PROJECT_ROOT="$TEST_TEMP_DIR"
+    CONTEXT_SCRIPT="$TEST_TEMP_DIR/scripts/assemble-context.sh"
+    MAX_TURNS=50
+    PERMISSION_TIER="default"
+
+    run execute_iteration "test prompt" 50 "default"
+    assert_success
+
+    # Verify assemble-context.sh was called with a file path
+    assert_file_exists "$TEST_TEMP_DIR/assemble-calls.log"
+    run cat "$TEST_TEMP_DIR/assemble-calls.log"
+    assert_output --partial "ASSEMBLE_CALLED:"
+}
+
+@test "execute_iteration calls claude -p command via env -u CLAUDECODE" {
+    create_mock_assemble_context 0
+    # Create a mock claude that logs invocation details
+    mkdir -p "$TEST_TEMP_DIR/bin"
+    cat > "$TEST_TEMP_DIR/bin/claude" <<'MOCKEOF'
+#!/bin/bash
+echo "CLAUDE_CALLED" >> "$TEST_TEMP_DIR/claude-calls.log"
+echo '{"type":"result","result":"done","num_turns":5}'
+exit 0
+MOCKEOF
+    chmod +x "$TEST_TEMP_DIR/bin/claude"
+    export PATH="$TEST_TEMP_DIR/bin:$PATH"
+
+    PROJECT_ROOT="$TEST_TEMP_DIR"
+    CONTEXT_SCRIPT="$TEST_TEMP_DIR/scripts/assemble-context.sh"
+    MAX_TURNS=50
+    PERMISSION_TIER="default"
+
+    run execute_iteration "test prompt" 50 "default"
+    assert_success
+
+    # Verify claude was called
+    assert_file_exists "$TEST_TEMP_DIR/claude-calls.log"
+}
+
+@test "execute_iteration returns the exit code from claude -p" {
+    create_mock_assemble_context 0
+    # Create a mock claude that exits with code 1
+    mkdir -p "$TEST_TEMP_DIR/bin"
+    cat > "$TEST_TEMP_DIR/bin/claude" <<'MOCKEOF'
+#!/bin/bash
+echo '{"type":"result","result":"failed","num_turns":50}'
+exit 1
+MOCKEOF
+    chmod +x "$TEST_TEMP_DIR/bin/claude"
+    export PATH="$TEST_TEMP_DIR/bin:$PATH"
+
+    PROJECT_ROOT="$TEST_TEMP_DIR"
+    CONTEXT_SCRIPT="$TEST_TEMP_DIR/scripts/assemble-context.sh"
+    MAX_TURNS=50
+    PERMISSION_TIER="default"
+
+    run execute_iteration "test prompt" 50 "default"
+    assert_failure
+}
+
+# --- run_loop tests ---
+
+@test "run_loop stops when check_state_completion returns complete" {
+    # STATE.md starts at phase 11, plan 1 -- mock claude will advance it to complete
+    create_mock_state_advanced 11 2 "Complete"
+    create_mock_assemble_context 0
+
+    mkdir -p "$TEST_TEMP_DIR/bin"
+    cat > "$TEST_TEMP_DIR/bin/claude" <<'MOCKEOF'
+#!/bin/bash
+echo '{"type":"result","result":"done","num_turns":5}'
+exit 0
+MOCKEOF
+    chmod +x "$TEST_TEMP_DIR/bin/claude"
+    export PATH="$TEST_TEMP_DIR/bin:$PATH"
+
+    PROJECT_ROOT="$TEST_TEMP_DIR"
+    STATE_FILE="$TEST_TEMP_DIR/.planning/STATE.md"
+    CONTEXT_SCRIPT="$TEST_TEMP_DIR/scripts/assemble-context.sh"
+    MAX_TURNS=50
+    PERMISSION_TIER="default"
+    GSD_COMMAND="execute-phase 11"
+
+    run run_loop "execute-phase 11"
+    assert_success
+    assert_output --partial "complete"
+}
+
+@test "run_loop retries once on failure when STATE.md shows no progress" {
+    # STATE.md stays the same (no progress) across failures
+    create_mock_state_advanced 11 1 "Executing"
+    create_mock_assemble_context 0
+
+    # Mock claude always fails
+    mkdir -p "$TEST_TEMP_DIR/bin"
+    cat > "$TEST_TEMP_DIR/bin/claude" <<'MOCKEOF'
+#!/bin/bash
+echo '{"type":"result","result":"error","num_turns":5}'
+exit 1
+MOCKEOF
+    chmod +x "$TEST_TEMP_DIR/bin/claude"
+    export PATH="$TEST_TEMP_DIR/bin:$PATH"
+
+    PROJECT_ROOT="$TEST_TEMP_DIR"
+    STATE_FILE="$TEST_TEMP_DIR/.planning/STATE.md"
+    CONTEXT_SCRIPT="$TEST_TEMP_DIR/scripts/assemble-context.sh"
+    MAX_TURNS=50
+    PERMISSION_TIER="default"
+    GSD_COMMAND="execute-phase 11"
+
+    run run_loop "execute-phase 11"
+    assert_failure
+    assert_output --partial "Unrecoverable failure"
+}
+
+@test "run_loop continues on non-zero exit when STATE.md shows progress" {
+    # Start at phase 11 plan 1
+    create_mock_state_advanced 11 1 "Executing"
+    create_mock_assemble_context 0
+
+    # Mock claude: first call fails but advances state, second call succeeds and completes
+    mkdir -p "$TEST_TEMP_DIR/bin"
+    local iteration_file="$TEST_TEMP_DIR/iteration_count"
+    echo "0" > "$iteration_file"
+
+    cat > "$TEST_TEMP_DIR/bin/claude" <<MOCKEOF
+#!/bin/bash
+ITER=\$(cat "$iteration_file")
+ITER=\$((ITER + 1))
+echo "\$ITER" > "$iteration_file"
+if [ "\$ITER" -eq 1 ]; then
+    # First iteration: advance plan but exit non-zero (max-turns hit)
+    cat > "$TEST_TEMP_DIR/.planning/STATE.md" <<STATEEOF
+---
+gsd_state_version: 1.0
+status: executing
+---
+
+# Project State
+
+## Current Position
+
+Phase: 11 of 12
+Plan: 2 of 2
+Status: Executing
+STATEEOF
+    echo '{"type":"result","result":"partial","num_turns":50}'
+    exit 1
+elif [ "\$ITER" -eq 2 ]; then
+    # Second iteration: complete
+    cat > "$TEST_TEMP_DIR/.planning/STATE.md" <<STATEEOF
+---
+gsd_state_version: 1.0
+status: executing
+---
+
+# Project State
+
+## Current Position
+
+Phase: 11 of 12
+Plan: 2 of 2
+Status: Complete
+STATEEOF
+    echo '{"type":"result","result":"done","num_turns":10}'
+    exit 0
+fi
+MOCKEOF
+    chmod +x "$TEST_TEMP_DIR/bin/claude"
+    export PATH="$TEST_TEMP_DIR/bin:$PATH"
+
+    PROJECT_ROOT="$TEST_TEMP_DIR"
+    STATE_FILE="$TEST_TEMP_DIR/.planning/STATE.md"
+    CONTEXT_SCRIPT="$TEST_TEMP_DIR/scripts/assemble-context.sh"
+    MAX_TURNS=50
+    PERMISSION_TIER="default"
+    GSD_COMMAND="execute-phase 11"
+
+    run run_loop "execute-phase 11"
+    assert_success
+    assert_output --partial "complete"
+    # Verify it ran 2 iterations (progress on first, complete on second)
+    run cat "$iteration_file"
+    assert_output "2"
+}
+
+@test "run_loop stops after retry also fails" {
+    create_mock_state_advanced 11 1 "Executing"
+    create_mock_assemble_context 0
+
+    # Track iteration count
+    local iteration_file="$TEST_TEMP_DIR/iteration_count"
+    echo "0" > "$iteration_file"
+
+    mkdir -p "$TEST_TEMP_DIR/bin"
+    cat > "$TEST_TEMP_DIR/bin/claude" <<MOCKEOF
+#!/bin/bash
+ITER=\$(cat "$iteration_file")
+ITER=\$((ITER + 1))
+echo "\$ITER" > "$iteration_file"
+echo '{"type":"result","result":"error","num_turns":5}'
+exit 1
+MOCKEOF
+    chmod +x "$TEST_TEMP_DIR/bin/claude"
+    export PATH="$TEST_TEMP_DIR/bin:$PATH"
+
+    PROJECT_ROOT="$TEST_TEMP_DIR"
+    STATE_FILE="$TEST_TEMP_DIR/.planning/STATE.md"
+    CONTEXT_SCRIPT="$TEST_TEMP_DIR/scripts/assemble-context.sh"
+    MAX_TURNS=50
+    PERMISSION_TIER="default"
+    GSD_COMMAND="execute-phase 11"
+
+    run run_loop "execute-phase 11"
+    assert_failure
+    # Should have run original + 1 retry = 2 iterations
+    run cat "$iteration_file"
+    assert_output "2"
+}
+
+@test "run_loop emits terminal bell on completion" {
+    create_mock_state_advanced 11 2 "Complete"
+    create_mock_assemble_context 0
+
+    mkdir -p "$TEST_TEMP_DIR/bin"
+    cat > "$TEST_TEMP_DIR/bin/claude" <<'MOCKEOF'
+#!/bin/bash
+echo '{"type":"result","result":"done","num_turns":5}'
+exit 0
+MOCKEOF
+    chmod +x "$TEST_TEMP_DIR/bin/claude"
+    export PATH="$TEST_TEMP_DIR/bin:$PATH"
+
+    PROJECT_ROOT="$TEST_TEMP_DIR"
+    STATE_FILE="$TEST_TEMP_DIR/.planning/STATE.md"
+    CONTEXT_SCRIPT="$TEST_TEMP_DIR/scripts/assemble-context.sh"
+    MAX_TURNS=50
+    PERMISSION_TIER="default"
+    GSD_COMMAND="execute-phase 11"
+
+    run run_loop "execute-phase 11"
+    assert_success
+    # Check for bell character (octal 007) in output
+    echo "$output" | od -c | grep -q '\\a' || echo "$output" | grep -qP '\x07' || [[ "$output" == *$'\a'* ]]
+}
+
+@test "run_loop emits terminal bell on unrecoverable failure" {
+    create_mock_state_advanced 11 1 "Executing"
+    create_mock_assemble_context 0
+
+    mkdir -p "$TEST_TEMP_DIR/bin"
+    cat > "$TEST_TEMP_DIR/bin/claude" <<'MOCKEOF'
+#!/bin/bash
+echo '{"type":"result","result":"error","num_turns":5}'
+exit 1
+MOCKEOF
+    chmod +x "$TEST_TEMP_DIR/bin/claude"
+    export PATH="$TEST_TEMP_DIR/bin:$PATH"
+
+    PROJECT_ROOT="$TEST_TEMP_DIR"
+    STATE_FILE="$TEST_TEMP_DIR/.planning/STATE.md"
+    CONTEXT_SCRIPT="$TEST_TEMP_DIR/scripts/assemble-context.sh"
+    MAX_TURNS=50
+    PERMISSION_TIER="default"
+    GSD_COMMAND="execute-phase 11"
+
+    run run_loop "execute-phase 11"
+    assert_failure
+    # Check for bell character in output (combined stdout+stderr)
+    echo "$output" | od -c | grep -q '\\a' || echo "$output" | grep -qP '\x07' || [[ "$output" == *$'\a'* ]]
+}
+
+@test "run_loop reassembles context before each iteration" {
+    # Two iterations: first makes progress, second completes
+    create_mock_state_advanced 11 1 "Executing"
+
+    # Track assemble calls
+    mkdir -p "$TEST_TEMP_DIR/scripts"
+    cat > "$TEST_TEMP_DIR/scripts/assemble-context.sh" <<'TRACKEOF'
+#!/bin/bash
+echo "ASSEMBLE_CALL" >> "$TEST_TEMP_DIR/assemble-calls.log"
+echo "# Mock context" > "$1"
+exit 0
+TRACKEOF
+    chmod +x "$TEST_TEMP_DIR/scripts/assemble-context.sh"
+
+    local iteration_file="$TEST_TEMP_DIR/iteration_count"
+    echo "0" > "$iteration_file"
+
+    mkdir -p "$TEST_TEMP_DIR/bin"
+    cat > "$TEST_TEMP_DIR/bin/claude" <<MOCKEOF
+#!/bin/bash
+ITER=\$(cat "$iteration_file")
+ITER=\$((ITER + 1))
+echo "\$ITER" > "$iteration_file"
+if [ "\$ITER" -eq 1 ]; then
+    cat > "$TEST_TEMP_DIR/.planning/STATE.md" <<STATEEOF
+---
+gsd_state_version: 1.0
+status: executing
+---
+
+# Project State
+
+## Current Position
+
+Phase: 11 of 12
+Plan: 2 of 2
+Status: Executing
+STATEEOF
+    echo '{"type":"result","result":"partial","num_turns":50}'
+    exit 1
+else
+    cat > "$TEST_TEMP_DIR/.planning/STATE.md" <<STATEEOF
+---
+gsd_state_version: 1.0
+status: executing
+---
+
+# Project State
+
+## Current Position
+
+Phase: 11 of 12
+Plan: 2 of 2
+Status: Complete
+STATEEOF
+    echo '{"type":"result","result":"done","num_turns":10}'
+    exit 0
+fi
+MOCKEOF
+    chmod +x "$TEST_TEMP_DIR/bin/claude"
+    export PATH="$TEST_TEMP_DIR/bin:$PATH"
+
+    PROJECT_ROOT="$TEST_TEMP_DIR"
+    STATE_FILE="$TEST_TEMP_DIR/.planning/STATE.md"
+    CONTEXT_SCRIPT="$TEST_TEMP_DIR/scripts/assemble-context.sh"
+    MAX_TURNS=50
+    PERMISSION_TIER="default"
+    GSD_COMMAND="execute-phase 11"
+
+    run run_loop "execute-phase 11"
+    assert_success
+
+    # Verify assemble-context.sh was called at least twice (once per iteration)
+    local call_count
+    call_count=$(wc -l < "$TEST_TEMP_DIR/assemble-calls.log" | tr -d ' ')
+    [ "$call_count" -ge 2 ]
+}

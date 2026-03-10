@@ -82,3 +82,50 @@ create_context_file() {
     local content="${1:-# Test Context}"
     echo "$content" > "$TEST_TEMP_DIR/context.md"
 }
+
+# Helper: create a mock STATE.md with configurable phase, plan, and status
+# Usage: create_mock_state_advanced <phase_number> <plan_number> <status>
+# Example: create_mock_state_advanced 11 2 "Executing"
+create_mock_state_advanced() {
+    local phase_number="${1:-10}"
+    local plan_number="${2:-1}"
+    local status="${3:-Executing}"
+    local total_phases="${4:-12}"
+
+    mkdir -p "$TEST_TEMP_DIR/.planning"
+    cat > "$TEST_TEMP_DIR/.planning/STATE.md" <<EOF
+---
+gsd_state_version: 1.0
+status: executing
+---
+
+# Project State
+
+## Current Position
+
+Phase: ${phase_number} of ${total_phases}
+Plan: ${plan_number} of 2
+Status: ${status}
+EOF
+}
+
+# Helper: create a mock assemble-context.sh script
+# Usage: create_mock_assemble_context [exit_code]
+# The mock script writes predictable context content to the output file argument
+create_mock_assemble_context() {
+    local exit_code="${1:-0}"
+    mkdir -p "$TEST_TEMP_DIR/scripts"
+    cat > "$TEST_TEMP_DIR/scripts/assemble-context.sh" <<MOCKEOF
+#!/bin/bash
+# Mock assemble-context.sh for testing
+OUTPUT_FILE="\$1"
+if [ -z "\$OUTPUT_FILE" ]; then
+    echo "ERROR: No output file specified" >&2
+    exit 1
+fi
+echo "# Mock assembled context" > "\$OUTPUT_FILE"
+echo "# STATE.md content would go here" >> "\$OUTPUT_FILE"
+exit ${exit_code}
+MOCKEOF
+    chmod +x "$TEST_TEMP_DIR/scripts/assemble-context.sh"
+}
