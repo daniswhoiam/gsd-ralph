@@ -118,5 +118,5 @@ Phases execute in numeric order: 14 -> 15 -> 16
 | 12. Defense-in-Depth | v2.0 | 2/2 | Complete | 2026-03-10 |
 | 13. Audit Path Fix | v2.0 | 1/1 | Complete | 2026-03-10 |
 | 14. Location-Independent Scripts | v2.1 | 1/1 | Complete | 2026-03-10 |
-| 15. Core Installer | 2/2 | Complete   | 2026-03-10 | - |
+| 15. Core Installer | 2/2 | Complete    | 2026-03-10 | - |
 | 16. End-to-End Validation | v2.1 | 0/? | Not started | - |
