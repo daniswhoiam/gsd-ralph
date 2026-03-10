@@ -4,6 +4,7 @@ description: |
   Autonomous behavior rules for gsd-ralph autopilot mode. Activates when
   executing GSD commands autonomously without human supervision. Handles
   decision points, checkpoints, and human-action steps automatically.
+  Scoped to within-workflow decisions only -- does NOT trigger cross-workflow auto-advance.
 user-invocable: false
 ---
 
@@ -43,3 +44,25 @@ answer questions or approve actions. Follow these rules strictly.
 - When all tasks in the current scope are complete, exit cleanly.
 - Do not invent additional work beyond what the plan specifies.
 - Do not refactor or improve code that is not part of the current task.
+
+## Rule 6: Scope Boundary -- Ralph vs Auto-Advance
+
+`--ralph` grants within-workflow autonomy. It does NOT grant cross-workflow chaining.
+
+**What `--ralph` authorizes (current workflow only):**
+- Auto-approve checkpoints (Rule 2)
+- Pick first/default option at decision points (Rule 1)
+- Skip human-action steps (Rule 3)
+- All of Rules 1-5 apply to the CURRENT GSD workflow invocation only
+
+**What `--ralph` does NOT authorize:**
+- `--ralph` does NOT imply `--auto` (GSD's cross-workflow chaining flag)
+- `--ralph` does NOT permit auto-advancing from plan-phase to execute-phase to transition
+- `--ralph` does NOT permit invoking the next GSD workflow after the current one completes
+
+**Boundary rule:**
+- When the current GSD workflow completes, Ralph STOPS. No chaining to the next workflow.
+- `--auto` is a GSD orchestrator concept. Ralph must not set, read, or act on
+  `workflow._auto_chain_active` or `workflow.auto_advance`.
+- If both `--ralph` and `--auto` are present, they operate independently:
+  Ralph handles within-workflow autonomy; GSD handles cross-workflow chaining.
