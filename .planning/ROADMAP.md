@@ -4,7 +4,7 @@
 
 - v1.0 MVP -- Phases 1-6 (shipped 2026-02-19)
 - v1.1 Stability & Safety -- Phases 7-9 (shipped 2026-02-23)
-- v2.0 Autopilot Core -- Phases 10-12 (in progress)
+- v2.0 Autopilot Core -- Phases 10-13 (in progress)
 
 ## Phases
 
@@ -42,6 +42,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 10: Core Architecture and Autonomous Behavior** - Foundational artifacts that define what gsd-ralph does vs. what GSD/Claude Code do (completed 2026-03-09)
 - [x] **Phase 11: Shell Launcher and Headless Invocation** - The working autopilot: `--ralph` flag, loop execution, permission tiers, worktree isolation (completed 2026-03-10)
 - [x] **Phase 12: Defense-in-Depth and Observability** - Hardening with circuit breakers, AskUserQuestion denial hook, progress monitoring, audit logging (completed 2026-03-10)
+- [ ] **Phase 13: Audit Path Fix and Config Enforcement** - Close audit integration gap (split audit log) and enforce ralph.enabled config field
 
 ## Phase Details
 
@@ -91,6 +92,18 @@ Plans:
 - [x] 12-01-PLAN.md -- Circuit breaker, graceful stop, progress display, audit lifecycle, config validation
 - [x] 12-02-PLAN.md -- PreToolUse hook for AskUserQuestion denial + hook auto-install/remove lifecycle
 
+### Phase 13: Audit Path Fix and Config Enforcement
+**Goal**: Close integration gap and tech debt from milestone audit — unified audit log path and functional `ralph.enabled` config check
+**Depends on**: Phase 12
+**Requirements**: OBSV-04 (integration fix)
+**Gap Closure:** Closes gaps from v2.0 audit
+**Success Criteria** (what must be TRUE):
+  1. The PreToolUse hook writes audit entries to the same absolute path that `_print_audit_summary` reads, regardless of whether `--worktree` is active
+  2. When `ralph.enabled` is `false` in `.planning/config.json`, the launcher exits early with a clear message instead of proceeding with execution
+
+Plans:
+- [ ] 13-01-PLAN.md -- Export RALPH_AUDIT_FILE absolute path + check ralph.enabled config field
+
 ## Progress
 
 **Execution Order:**
@@ -110,3 +123,4 @@ Phases execute in numeric order: 10 -> 11 -> 12
 | 10. Core Architecture and Autonomous Behavior | 2/2 | Complete    | 2026-03-09 | - |
 | 11. Shell Launcher and Headless Invocation | 2/2 | Complete    | 2026-03-10 | - |
 | 12. Defense-in-Depth and Observability | 2/2 | Complete    | 2026-03-10 | 2026-03-10 |
+| 13. Audit Path Fix and Config Enforcement | v2.0 | 0/1 | Pending | - |
