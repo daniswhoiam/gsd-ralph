@@ -83,8 +83,8 @@ Plans:
 **Plans:** 2/2 plans complete
 
 Plans:
-- [ ] 15-01-PLAN.md -- TDD installer prerequisites, file copy manifest, path adjustment, and idempotency
-- [ ] 15-02-PLAN.md -- TDD config merge, post-install verification, and summary output
+- [x] 15-01-PLAN.md -- TDD installer prerequisites, file copy manifest, path adjustment, and idempotency
+- [x] 15-02-PLAN.md -- TDD config merge, post-install verification, and summary output
 
 ### Phase 16: End-to-End Validation
 **Goal**: Automated test suite proves the complete install-then-use workflow works in realistic target repos with varying initial states
@@ -95,7 +95,10 @@ Plans:
   2. Install-then-dry-run test confirms `/gsd:ralph execute-phase` works in an installed repo
   3. Re-install idempotency test confirms no file changes on second run
   4. All tests run in isolated temporary directories (no side effects on dev repo)
-**Plans**: TBD
+**Plans:** 1 plan
+
+Plans:
+- [ ] 16-01-PLAN.md -- TDD end-to-end install workflow scenarios (fresh, existing config, error, dry-run, idempotency)
 
 ## Progress
 
@@ -118,5 +121,5 @@ Phases execute in numeric order: 14 -> 15 -> 16
 | 12. Defense-in-Depth | v2.0 | 2/2 | Complete | 2026-03-10 |
 | 13. Audit Path Fix | v2.0 | 1/1 | Complete | 2026-03-10 |
 | 14. Location-Independent Scripts | v2.1 | 1/1 | Complete | 2026-03-10 |
-| 15. Core Installer | 2/2 | Complete    | 2026-03-10 | - |
-| 16. End-to-End Validation | v2.1 | 0/? | Not started | - |
+| 15. Core Installer | v2.1 | 2/2 | Complete | 2026-03-10 |
+| 16. End-to-End Validation | v2.1 | 0/1 | Not started | - |
