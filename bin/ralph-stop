@@ -1,0 +1,8 @@
+#!/bin/bash
+# bin/ralph-stop -- Request graceful stop of running Ralph autopilot
+set -euo pipefail
+PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+STOP_FILE="$PROJECT_ROOT/.ralph/.stop"
+mkdir -p "$(dirname "$STOP_FILE")"
+touch "$STOP_FILE"
+echo "Ralph: Stop requested. Will halt after current iteration."

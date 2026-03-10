@@ -12,6 +12,7 @@
   "ralph": {
     "enabled": true,
     "max_turns": 50,
-    "permission_tier": "default"
+    "permission_tier": "default",
+    "timeout_minutes": 30
   }
 }

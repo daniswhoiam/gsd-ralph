@@ -33,6 +33,12 @@ PERMISSION_TIER="$DEFAULT_PERMISSION_TIER"
 DRY_RUN=false
 GSD_COMMAND=""
 
+# --- Phase 12 constants ---
+DEFAULT_TIMEOUT_MINUTES=30
+STOP_FILE="$PROJECT_ROOT/.ralph/.stop"
+AUDIT_FILE="$PROJECT_ROOT/.ralph/audit.log"
+TIMEOUT_MINUTES="$DEFAULT_TIMEOUT_MINUTES"
+
 # --- Source config validation ---
 if [ -f "$VALIDATE_SCRIPT" ]; then
     source "$VALIDATE_SCRIPT"
@@ -90,6 +96,11 @@ read_config() {
         fi
         if [ -n "$cfg_tier" ]; then
             PERMISSION_TIER="$cfg_tier"
+        fi
+        local cfg_timeout
+        cfg_timeout=$(jq -r '.ralph.timeout_minutes // empty' "$CONFIG_FILE" 2>/dev/null)
+        if [ -n "$cfg_timeout" ]; then
+            TIMEOUT_MINUTES="$cfg_timeout"
         fi
     fi
 }
@@ -250,6 +261,78 @@ _capture_state_snapshot() {
     echo "phase:${phase:-?}|plan:${plan:-?}|status:${status:-?}"
 }
 
+# --- Phase 12: Defense-in-depth functions ---
+
+# Check circuit breaker (wall-clock timeout)
+# Args: $1 = timeout_minutes, $2 = start_epoch
+# Returns: 0 if within timeout, 1 if exceeded
+_check_circuit_breaker() {
+    local timeout_minutes="$1"
+    local start_epoch="$2"
+
+    local now_epoch timeout_seconds elapsed
+    now_epoch=$(date +%s)
+    timeout_seconds=$((timeout_minutes * 60))
+    elapsed=$((now_epoch - start_epoch))
+
+    if [ "$elapsed" -ge "$timeout_seconds" ]; then
+        printf '\a'
+        echo "Circuit breaker: wall-clock timeout (${timeout_minutes}m) exceeded after $(_format_duration $elapsed)."
+        return 1
+    fi
+    return 0
+}
+
+# Check graceful stop via sentinel file
+# Args: $1 = stop_file path
+# Returns: 0 if no stop file, 1 if stop requested (file removed after detection)
+_check_graceful_stop() {
+    local stop_file="$1"
+
+    if [ -f "$stop_file" ]; then
+        rm -f "$stop_file"
+        printf '\a'
+        echo "Graceful stop: .ralph/.stop detected. Halting after current iteration."
+        return 1
+    fi
+    return 0
+}
+
+# Format seconds into human-readable duration
+# Args: $1 = seconds
+# Returns (via echo): "Nm Ns" or "Ns"
+_format_duration() {
+    local seconds="$1"
+    local mins secs
+    mins=$((seconds / 60))
+    secs=$((seconds % 60))
+
+    if [ "$mins" -gt 0 ]; then
+        echo "${mins}m ${secs}s"
+    else
+        echo "${secs}s"
+    fi
+}
+
+# Initialize audit log: create directory and truncate file
+# Args: $1 = audit_file path
+_init_audit_log() {
+    local audit_file="$1"
+    mkdir -p "$(dirname "$audit_file")"
+    : > "$audit_file"
+}
+
+# Print audit summary if audit log has content
+# Args: $1 = audit_file path
+_print_audit_summary() {
+    local audit_file="$1"
+    if [ -f "$audit_file" ] && [ -s "$audit_file" ]; then
+        local count
+        count=$(wc -l < "$audit_file" | tr -d ' ')
+        echo "Audit: $count decisions logged. See $audit_file for details."
+    fi
+}
+
 # Execute a single iteration: assemble context, build command, run claude -p
 # Args: $1 = prompt, $2 = max_turns, $3 = permission_tier
 # Returns: exit code from claude -p invocation
@@ -319,8 +402,26 @@ run_loop() {
     prompt=$(build_prompt "$gsd_command")
 
     local consecutive_no_progress=0
+    local loop_start_epoch iteration=0
+    loop_start_epoch=$(date +%s)
+    _init_audit_log "$AUDIT_FILE"
 
     while true; do
+        # Check circuit breaker (wall-clock timeout)
+        if ! _check_circuit_breaker "$TIMEOUT_MINUTES" "$loop_start_epoch"; then
+            _print_audit_summary "$AUDIT_FILE"
+            return 1
+        fi
+        # Check graceful stop
+        if ! _check_graceful_stop "$STOP_FILE"; then
+            _print_audit_summary "$AUDIT_FILE"
+            return 1
+        fi
+
+        iteration=$((iteration + 1))
+        local iter_start_epoch
+        iter_start_epoch=$(date +%s)
+
         # Capture state snapshot before iteration
         local pre_snapshot
         pre_snapshot=$(_capture_state_snapshot "$STATE_FILE")
@@ -328,6 +429,14 @@ run_loop() {
         # Execute iteration
         local iter_exit=0
         execute_iteration "$prompt" "$MAX_TURNS" "$PERMISSION_TIER" || iter_exit=$?
+
+        # Progress display
+        local iter_end_epoch iter_duration total_duration post_state
+        iter_end_epoch=$(date +%s)
+        iter_duration=$((iter_end_epoch - iter_start_epoch))
+        total_duration=$((iter_end_epoch - loop_start_epoch))
+        post_state=$(_capture_state_snapshot "$STATE_FILE")
+        echo "Ralph: Iter $iteration done ($(_format_duration $iter_duration)) | Total: $(_format_duration $total_duration) | $post_state | exit=$iter_exit"
 
         # Check completion status
         local completion
@@ -337,6 +446,8 @@ run_loop() {
             # Phase complete -- success
             printf '\a'
             echo "Ralph: Phase $target_phase complete."
+            rm -f "$STOP_FILE"
+            _print_audit_summary "$AUDIT_FILE"
             return 0
         fi
 
@@ -364,6 +475,7 @@ run_loop() {
             # Retry also failed with no progress -- unrecoverable
             printf '\a'
             echo "Ralph: Unrecoverable failure after retry. Check logs." >&2
+            _print_audit_summary "$AUDIT_FILE"
             return 1
         fi
 

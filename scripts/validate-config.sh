@@ -51,8 +51,18 @@ validate_ralph_config() {
         has_warnings=1
     fi
 
+    # Validate timeout_minutes field: must be a positive integer
+    local timeout_min
+    timeout_min=$(jq -r '.ralph.timeout_minutes // "MISSING"' "$config_file")
+    if [ "$timeout_min" != "MISSING" ]; then
+        if ! echo "$timeout_min" | grep -qE '^[0-9]+$'; then
+            echo "WARNING: ralph.timeout_minutes should be a positive integer, got: $timeout_min" >&2
+            has_warnings=1
+        fi
+    fi
+
     # Warn on unknown keys (strict with warnings)
-    local known_keys="enabled max_turns permission_tier"
+    local known_keys="enabled max_turns permission_tier timeout_minutes"
     local actual_keys
     actual_keys=$(jq -r '.ralph | keys[]' "$config_file" 2>/dev/null)
     local key
