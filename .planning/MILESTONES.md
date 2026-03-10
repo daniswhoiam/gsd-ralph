@@ -1,5 +1,27 @@
 # Milestones
 
+## v2.0 Autopilot Core (Shipped: 2026-03-10)
+
+**Phases completed:** 4 phases, 7 plans
+**Timeline:** 2 days (Mar 9-10, 2026)
+**Git range:** 50c8ff4..fc2a08d (55 commits)
+**Codebase:** 831 LOC Bash + 1,593 LOC Bats tests (2,424 total)
+**Test suite:** 315 tests, 0 failures
+
+**Key accomplishments:**
+1. SKILL.md autonomous behavior rules with Claude Code auto-discovery
+2. Shell launcher (592 LOC) with `--ralph` flag, arg parsing, config, three permission tiers, worktree isolation
+3. Loop execution engine with STATE.md completion detection, progress-aware retry, terminal bell
+4. Circuit breaker (wall-clock timeout), graceful stop (`bin/ralph-stop`), audit log lifecycle
+5. PreToolUse hook blocking AskUserQuestion with guidance feedback and auto-install/remove lifecycle
+6. Unified audit path and `ralph.enabled` config enforcement (gap closure from audit)
+
+**Delivered:** Complete rewrite from 9,693 LOC standalone CLI to ~830 LOC thin GSD autopilot layer. Add `--ralph` to any GSD command and walk away. 16/16 v2.0 requirements satisfied. Audit passed with only minor documentation tech debt.
+
+**Archives:** `milestones/v2.0-ROADMAP.md`, `milestones/v2.0-REQUIREMENTS.md`, `milestones/v2.0-MILESTONE-AUDIT.md`
+
+---
+
 ## v1.0 MVP (Shipped: 2026-02-19)
 
 **Phases completed:** 6 phases, 13 plans
