@@ -188,6 +188,190 @@ dry_run_output() {
     echo "To execute, run without --dry-run"
 }
 
+# --- Plan 02: Loop execution engine functions ---
+
+# Check STATE.md for phase completion status
+# Args: $1 = state_file path, $2 = target_phase number
+# Returns (via echo): "complete", "incomplete", "missing", or "unknown"
+check_state_completion() {
+    local state_file="$1"
+    local target_phase="$2"
+
+    if [ ! -f "$state_file" ]; then
+        echo "missing"
+        return 0
+    fi
+
+    # Extract current phase number from "Phase: N of M" line
+    local current_phase
+    current_phase=$(grep -E 'Phase: [0-9]+' "$state_file" | grep -oE '[0-9]+' | head -1)
+
+    if [ -z "$current_phase" ]; then
+        echo "unknown"
+        return 0
+    fi
+
+    # If current phase has advanced beyond target, it's complete
+    if [ "$current_phase" -gt "$target_phase" ]; then
+        echo "complete"
+        return 0
+    fi
+
+    # Check the status field
+    local status
+    status=$(grep -E 'Status: ' "$state_file" | head -1 | sed 's/.*Status: //')
+
+    case "$status" in
+        Complete*|complete*)
+            echo "complete"
+            ;;
+        *)
+            echo "incomplete"
+            ;;
+    esac
+}
+
+# Capture a state snapshot for progress detection
+# Args: $1 = state_file path
+# Returns (via echo): "phase:N|plan:N|status:X" or "unavailable"
+_capture_state_snapshot() {
+    local state_file="$1"
+
+    if [ ! -f "$state_file" ]; then
+        echo "unavailable"
+        return 0
+    fi
+
+    local phase plan status
+    phase=$(grep -E 'Phase: [0-9]+' "$state_file" | grep -oE '[0-9]+' | head -1)
+    plan=$(grep -E 'Plan: [0-9]+' "$state_file" | grep -oE '[0-9]+' | head -1)
+    status=$(grep -E 'Status: ' "$state_file" | head -1 | sed 's/.*Status: //')
+
+    echo "phase:${phase:-?}|plan:${plan:-?}|status:${status:-?}"
+}
+
+# Execute a single iteration: assemble context, build command, run claude -p
+# Args: $1 = prompt, $2 = max_turns, $3 = permission_tier
+# Returns: exit code from claude -p invocation
+execute_iteration() {
+    local prompt="$1"
+    local max_turns="$2"
+    local perm_tier="$3"
+
+    # Create a fresh temp file for context
+    local context_file
+    context_file=$(mktemp "${TMPDIR:-/tmp}/ralph-context.XXXXXX")
+
+    # Assemble context fresh for this iteration
+    if [ -x "$CONTEXT_SCRIPT" ]; then
+        if ! bash "$CONTEXT_SCRIPT" "$context_file"; then
+            echo "ERROR: Context assembly failed" >&2
+            rm -f "$context_file"
+            return 1
+        fi
+    else
+        echo "WARNING: Context script not found: $CONTEXT_SCRIPT" >&2
+        echo "# No context assembled" > "$context_file"
+    fi
+
+    # Build the claude -p command
+    local cmd
+    cmd=$(build_claude_command "$prompt" "$context_file" "$max_turns" "$perm_tier")
+
+    # Execute via env -u CLAUDECODE (already included in cmd by build_claude_command)
+    local exit_code=0
+    bash -c "$cmd" || exit_code=$?
+
+    # Clean up temp context file
+    rm -f "$context_file"
+
+    return $exit_code
+}
+
+# Main loop: iterate claude -p instances until STATE.md shows phase complete
+# Args: $1 = gsd_command (e.g., "execute-phase 11")
+# Behavior:
+#   - Loops until check_state_completion returns "complete"
+#   - On exit code 0: check completion
+#   - On exit code non-zero: check STATE.md for progress
+#     - Progress detected: continue (max-turns exhaustion, not failure)
+#     - No progress: retry once, then stop
+#   - Emits terminal bell on completion or unrecoverable failure
+run_loop() {
+    local gsd_command="$1"
+
+    # Extract target phase number from command
+    local target_phase
+    target_phase=$(echo "$gsd_command" | grep -oE '[0-9]+' | head -1)
+    if [ -z "$target_phase" ]; then
+        target_phase="unknown"
+    fi
+
+    # Validate STATE.md exists before starting
+    if [ ! -f "$STATE_FILE" ]; then
+        echo "ERROR: STATE.md not found at $STATE_FILE" >&2
+        printf '\a'
+        return 1
+    fi
+
+    # Build the prompt once (context is reassembled each iteration)
+    local prompt
+    prompt=$(build_prompt "$gsd_command")
+
+    local consecutive_no_progress=0
+
+    while true; do
+        # Capture state snapshot before iteration
+        local pre_snapshot
+        pre_snapshot=$(_capture_state_snapshot "$STATE_FILE")
+
+        # Execute iteration
+        local iter_exit=0
+        execute_iteration "$prompt" "$MAX_TURNS" "$PERMISSION_TIER" || iter_exit=$?
+
+        # Check completion status
+        local completion
+        completion=$(check_state_completion "$STATE_FILE" "$target_phase")
+
+        if [ "$completion" = "complete" ]; then
+            # Phase complete -- success
+            printf '\a'
+            echo "Ralph: Phase $target_phase complete."
+            return 0
+        fi
+
+        if [ $iter_exit -eq 0 ]; then
+            # Exit code 0 but not complete yet -- continue looping
+            consecutive_no_progress=0
+            continue
+        fi
+
+        # Non-zero exit: check for progress
+        local post_snapshot
+        post_snapshot=$(_capture_state_snapshot "$STATE_FILE")
+
+        if [ "$pre_snapshot" != "$post_snapshot" ]; then
+            # Progress detected despite non-zero exit (max-turns exhaustion)
+            # Continue looping, not a retry
+            consecutive_no_progress=0
+            continue
+        fi
+
+        # No progress on non-zero exit -- count toward retry
+        consecutive_no_progress=$((consecutive_no_progress + 1))
+
+        if [ $consecutive_no_progress -ge 2 ]; then
+            # Retry also failed with no progress -- unrecoverable
+            printf '\a'
+            echo "Ralph: Unrecoverable failure after retry. Check logs." >&2
+            return 1
+        fi
+
+        # First failure with no progress -- retry once
+        # (loop continues, next iteration is the retry)
+    done
+}
+
 # --- Main execution (guarded for testability) ---
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     # Parse arguments
@@ -228,9 +412,9 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
         exit 0
     fi
 
-    # Execution loop will be implemented in Plan 02
-    echo "ERROR: Execution loop not yet implemented (Plan 02)" >&2
-    echo "Use --dry-run to preview the command" >&2
+    # Clean up the initial context file (run_loop assembles fresh context each iteration)
     rm -f "$CONTEXT_FILE"
-    exit 1
+
+    # Execute the loop
+    run_loop "$GSD_COMMAND"
 fi

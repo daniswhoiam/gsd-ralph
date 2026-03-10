@@ -228,11 +228,11 @@ MOCKEOF
     chmod +x "$TEST_TEMP_DIR/bin/claude"
     export PATH="$TEST_TEMP_DIR/bin:$PATH"
 
-    # Track assemble-context.sh calls
-    cat > "$TEST_TEMP_DIR/scripts/assemble-context.sh" <<'TRACKEOF'
+    # Track assemble-context.sh calls (use unquoted heredoc to expand TEST_TEMP_DIR at write time)
+    cat > "$TEST_TEMP_DIR/scripts/assemble-context.sh" <<TRACKEOF
 #!/bin/bash
-echo "ASSEMBLE_CALLED:$1" >> "$TEST_TEMP_DIR/assemble-calls.log"
-echo "# Mock context" > "$1"
+echo "ASSEMBLE_CALLED:\$1" >> "$TEST_TEMP_DIR/assemble-calls.log"
+echo "# Mock context" > "\$1"
 exit 0
 TRACKEOF
     chmod +x "$TEST_TEMP_DIR/scripts/assemble-context.sh"
@@ -253,9 +253,9 @@ TRACKEOF
 
 @test "execute_iteration calls claude -p command via env -u CLAUDECODE" {
     create_mock_assemble_context 0
-    # Create a mock claude that logs invocation details
+    # Create a mock claude that logs invocation details (unquoted heredoc for path expansion)
     mkdir -p "$TEST_TEMP_DIR/bin"
-    cat > "$TEST_TEMP_DIR/bin/claude" <<'MOCKEOF'
+    cat > "$TEST_TEMP_DIR/bin/claude" <<MOCKEOF
 #!/bin/bash
 echo "CLAUDE_CALLED" >> "$TEST_TEMP_DIR/claude-calls.log"
 echo '{"type":"result","result":"done","num_turns":5}'
@@ -513,12 +513,12 @@ MOCKEOF
     # Two iterations: first makes progress, second completes
     create_mock_state_advanced 11 1 "Executing"
 
-    # Track assemble calls
+    # Track assemble calls (unquoted heredoc for path expansion)
     mkdir -p "$TEST_TEMP_DIR/scripts"
-    cat > "$TEST_TEMP_DIR/scripts/assemble-context.sh" <<'TRACKEOF'
+    cat > "$TEST_TEMP_DIR/scripts/assemble-context.sh" <<TRACKEOF
 #!/bin/bash
 echo "ASSEMBLE_CALL" >> "$TEST_TEMP_DIR/assemble-calls.log"
-echo "# Mock context" > "$1"
+echo "# Mock context" > "\$1"
 exit 0
 TRACKEOF
     chmod +x "$TEST_TEMP_DIR/scripts/assemble-context.sh"
