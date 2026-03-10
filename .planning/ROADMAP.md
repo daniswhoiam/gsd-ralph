@@ -109,4 +109,4 @@ Phases execute in numeric order: 10 -> 11 -> 12
 | 9. CLI Guidance | v1.1 | 2/2 | Complete | 2026-02-23 |
 | 10. Core Architecture and Autonomous Behavior | 2/2 | Complete    | 2026-03-09 | - |
 | 11. Shell Launcher and Headless Invocation | 2/2 | Complete    | 2026-03-10 | - |
-| 12. Defense-in-Depth and Observability | 2/2 | Complete   | 2026-03-10 | 2026-03-10 |
+| 12. Defense-in-Depth and Observability | 2/2 | Complete    | 2026-03-10 | 2026-03-10 |
