@@ -85,7 +85,11 @@ Plans:
   2. A PreToolUse hook denies AskUserQuestion calls as defense-in-depth, providing guidance feedback to the Claude instance instead of silently failing
   3. User can observe real-time progress during an autonomous run by parsing `stream-json` output (iteration count, current activity, elapsed time)
   4. All auto-approved decisions are logged to an audit file that the user can review after the run completes
-**Plans**: TBD
+**Plans:** 2 plans
+
+Plans:
+- [ ] 12-01-PLAN.md -- Circuit breaker, graceful stop, progress display, audit lifecycle, config validation
+- [ ] 12-02-PLAN.md -- PreToolUse hook for AskUserQuestion denial + hook auto-install/remove lifecycle
 
 ## Progress
 
@@ -105,4 +109,4 @@ Phases execute in numeric order: 10 -> 11 -> 12
 | 9. CLI Guidance | v1.1 | 2/2 | Complete | 2026-02-23 |
 | 10. Core Architecture and Autonomous Behavior | 2/2 | Complete    | 2026-03-09 | - |
 | 11. Shell Launcher and Headless Invocation | 2/2 | Complete    | 2026-03-10 | - |
-| 12. Defense-in-Depth and Observability | v2.0 | 0/TBD | Not started | - |
+| 12. Defense-in-Depth and Observability | v2.0 | 0/2 | Not started | - |
