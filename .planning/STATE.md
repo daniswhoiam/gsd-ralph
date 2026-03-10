@@ -72,6 +72,12 @@ See PROJECT.md Key Decisions table for full list.
 
 (none)
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 1 | Document --ralph vs --auto flag distinction in SKILL.md | 2026-03-10 | 21afb2b | [1-document-ralph-vs-auto-flag-distinction-](./quick/1-document-ralph-vs-auto-flag-distinction-/) |
+
 ## Session Continuity
 
 Last session: 2026-03-10T19:51:57Z
