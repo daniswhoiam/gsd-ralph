@@ -70,7 +70,11 @@ Plans:
   3. User can choose between three permission tiers: default `--allowedTools` whitelist, `--auto-mode` for Claude risk reasoning, or `--yolo` for full bypass -- each resulting in the correct Claude Code flags
   4. User runs `--dry-run` and sees the exact `claude -p` command that would be launched, without executing it
   5. Each iteration runs with a `--max-turns` ceiling to prevent unbounded execution
-**Plans**: TBD
+**Plans:** 2 plans
+
+Plans:
+- [ ] 11-01-PLAN.md -- /gsd:ralph command file + launcher core (arg parsing, config, permissions, command building, dry-run)
+- [ ] 11-02-PLAN.md -- Loop execution engine (iteration loop, STATE.md completion detection, retry, bell notification)
 
 ### Phase 12: Defense-in-Depth and Observability
 **Goal**: The autopilot is hardened against runaway execution and provides real-time visibility into what is happening during autonomous runs
@@ -100,5 +104,5 @@ Phases execute in numeric order: 10 -> 11 -> 12
 | 8. Auto-Push & Merge UX | v1.1 | 3/3 | Complete | 2026-02-23 |
 | 9. CLI Guidance | v1.1 | 2/2 | Complete | 2026-02-23 |
 | 10. Core Architecture and Autonomous Behavior | 2/2 | Complete    | 2026-03-09 | - |
-| 11. Shell Launcher and Headless Invocation | v2.0 | 0/TBD | Not started | - |
+| 11. Shell Launcher and Headless Invocation | v2.0 | 0/2 | Not started | - |
 | 12. Defense-in-Depth and Observability | v2.0 | 0/TBD | Not started | - |
