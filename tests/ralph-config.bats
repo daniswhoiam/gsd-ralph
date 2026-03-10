@@ -91,3 +91,23 @@ teardown() {
     # Should warn but not fail
     assert_output --partial "WARNING"
 }
+
+# ============================================================
+# Plan 12-01: timeout_minutes validation tests
+# ============================================================
+
+@test "validate_ralph_config accepts timeout_minutes as known key" {
+    create_ralph_config_raw '{"ralph": {"enabled": true, "max_turns": 50, "permission_tier": "default", "timeout_minutes": 30}}'
+    run validate_ralph_config "$TEST_TEMP_DIR/.planning/config.json"
+    assert_success
+    refute_output --partial "unknown"
+    refute_output --partial "Unknown"
+}
+
+@test "validate_ralph_config warns on non-integer timeout_minutes" {
+    create_ralph_config_raw '{"ralph": {"enabled": true, "max_turns": 50, "permission_tier": "default", "timeout_minutes": "thirty"}}'
+    run validate_ralph_config "$TEST_TEMP_DIR/.planning/config.json"
+    assert_success
+    assert_output --partial "WARNING"
+    assert_output --partial "timeout_minutes"
+}

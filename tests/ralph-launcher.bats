@@ -586,3 +586,186 @@ MOCKEOF
     call_count=$(wc -l < "$TEST_TEMP_DIR/assemble-calls.log" | tr -d ' ')
     [ "$call_count" -ge 2 ]
 }
+
+# ============================================================
+# Plan 12-01: Circuit breaker tests
+# ============================================================
+
+@test "circuit_breaker: _check_circuit_breaker returns 0 when within timeout" {
+    local start_epoch
+    start_epoch=$(date +%s)
+    start_epoch=$((start_epoch - 60))  # 60 seconds ago
+
+    run _check_circuit_breaker 30 "$start_epoch"
+    assert_success
+}
+
+@test "circuit_breaker: _check_circuit_breaker returns 1 when timeout exceeded" {
+    local start_epoch
+    start_epoch=$(date +%s)
+    start_epoch=$((start_epoch - 1801))  # 1801 seconds ago (> 30 min)
+
+    run _check_circuit_breaker 30 "$start_epoch"
+    assert_failure
+    assert_output --partial "Circuit breaker"
+}
+
+@test "circuit_breaker: run_loop stops when wall-clock timeout exceeded" {
+    create_mock_state_advanced 11 1 "Executing"
+    create_mock_assemble_context 0
+
+    mkdir -p "$TEST_TEMP_DIR/bin"
+    cat > "$TEST_TEMP_DIR/bin/claude" <<'MOCKEOF'
+#!/bin/bash
+echo '{"type":"result","result":"done","num_turns":5}'
+exit 0
+MOCKEOF
+    chmod +x "$TEST_TEMP_DIR/bin/claude"
+    export PATH="$TEST_TEMP_DIR/bin:$PATH"
+
+    PROJECT_ROOT="$TEST_TEMP_DIR"
+    STATE_FILE="$TEST_TEMP_DIR/.planning/STATE.md"
+    CONTEXT_SCRIPT="$TEST_TEMP_DIR/scripts/assemble-context.sh"
+    STOP_FILE="$TEST_TEMP_DIR/.ralph/.stop"
+    AUDIT_FILE="$TEST_TEMP_DIR/.ralph/audit.log"
+    MAX_TURNS=50
+    PERMISSION_TIER="default"
+    TIMEOUT_MINUTES=0  # immediate trigger
+
+    run run_loop "execute-phase 11"
+    assert_failure
+    assert_output --partial "Circuit breaker"
+}
+
+# ============================================================
+# Plan 12-01: Graceful stop tests
+# ============================================================
+
+@test "graceful_stop: _check_graceful_stop returns 0 when no stop file" {
+    run _check_graceful_stop "$TEST_TEMP_DIR/.ralph/.stop"
+    assert_success
+}
+
+@test "graceful_stop: _check_graceful_stop returns 1 when stop file exists" {
+    create_mock_stop_file
+
+    run _check_graceful_stop "$TEST_TEMP_DIR/.ralph/.stop"
+    assert_failure
+    assert_output --partial "Graceful stop"
+}
+
+@test "graceful_stop: _check_graceful_stop removes stop file after detection" {
+    create_mock_stop_file
+
+    _check_graceful_stop "$TEST_TEMP_DIR/.ralph/.stop" || true
+    [ ! -f "$TEST_TEMP_DIR/.ralph/.stop" ]
+}
+
+@test "graceful_stop: run_loop stops when .ralph/.stop file exists" {
+    create_mock_state_advanced 11 1 "Executing"
+    create_mock_assemble_context 0
+    create_mock_stop_file
+
+    mkdir -p "$TEST_TEMP_DIR/bin"
+    cat > "$TEST_TEMP_DIR/bin/claude" <<'MOCKEOF'
+#!/bin/bash
+echo '{"type":"result","result":"done","num_turns":5}'
+exit 0
+MOCKEOF
+    chmod +x "$TEST_TEMP_DIR/bin/claude"
+    export PATH="$TEST_TEMP_DIR/bin:$PATH"
+
+    PROJECT_ROOT="$TEST_TEMP_DIR"
+    STATE_FILE="$TEST_TEMP_DIR/.planning/STATE.md"
+    CONTEXT_SCRIPT="$TEST_TEMP_DIR/scripts/assemble-context.sh"
+    STOP_FILE="$TEST_TEMP_DIR/.ralph/.stop"
+    AUDIT_FILE="$TEST_TEMP_DIR/.ralph/audit.log"
+    MAX_TURNS=50
+    PERMISSION_TIER="default"
+    TIMEOUT_MINUTES=30
+
+    run run_loop "execute-phase 11"
+    assert_failure
+    assert_output --partial "Graceful stop"
+}
+
+# ============================================================
+# Plan 12-01: Progress display tests
+# ============================================================
+
+@test "progress: _format_duration formats 0 seconds" {
+    run _format_duration 0
+    assert_success
+    assert_output "0s"
+}
+
+@test "progress: _format_duration formats 65 seconds" {
+    run _format_duration 65
+    assert_success
+    assert_output "1m 5s"
+}
+
+@test "progress: _format_duration formats 3600 seconds" {
+    run _format_duration 3600
+    assert_success
+    assert_output "60m 0s"
+}
+
+@test "progress: run_loop prints iteration summary after each iteration" {
+    create_mock_state_advanced 11 2 "Complete"
+    create_mock_assemble_context 0
+
+    mkdir -p "$TEST_TEMP_DIR/bin"
+    cat > "$TEST_TEMP_DIR/bin/claude" <<'MOCKEOF'
+#!/bin/bash
+echo '{"type":"result","result":"done","num_turns":5}'
+exit 0
+MOCKEOF
+    chmod +x "$TEST_TEMP_DIR/bin/claude"
+    export PATH="$TEST_TEMP_DIR/bin:$PATH"
+
+    PROJECT_ROOT="$TEST_TEMP_DIR"
+    STATE_FILE="$TEST_TEMP_DIR/.planning/STATE.md"
+    CONTEXT_SCRIPT="$TEST_TEMP_DIR/scripts/assemble-context.sh"
+    STOP_FILE="$TEST_TEMP_DIR/.ralph/.stop"
+    AUDIT_FILE="$TEST_TEMP_DIR/.ralph/audit.log"
+    MAX_TURNS=50
+    PERMISSION_TIER="default"
+    TIMEOUT_MINUTES=30
+
+    run run_loop "execute-phase 11"
+    assert_success
+    assert_output --partial "Ralph: Iter"
+}
+
+# ============================================================
+# Plan 12-01: Audit lifecycle tests
+# ============================================================
+
+@test "audit: _init_audit_log creates directory and truncates file" {
+    local audit_file="$TEST_TEMP_DIR/.ralph/audit.log"
+
+    _init_audit_log "$audit_file"
+
+    assert_file_exists "$audit_file"
+    # File should be empty (truncated)
+    [ ! -s "$audit_file" ]
+}
+
+@test "audit: _print_audit_summary shows count when log has content" {
+    create_mock_audit_log "line1
+line2
+line3"
+
+    run _print_audit_summary "$TEST_TEMP_DIR/.ralph/audit.log"
+    assert_success
+    assert_output --partial "3 decisions logged"
+}
+
+@test "audit: _print_audit_summary is silent when log is empty" {
+    create_mock_audit_log ""
+
+    run _print_audit_summary "$TEST_TEMP_DIR/.ralph/audit.log"
+    assert_success
+    assert_output ""
+}

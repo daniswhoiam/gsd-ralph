@@ -129,3 +129,23 @@ exit ${exit_code}
 MOCKEOF
     chmod +x "$TEST_TEMP_DIR/scripts/assemble-context.sh"
 }
+
+# Helper: create a .ralph/.stop sentinel file for graceful stop testing
+# Usage: create_mock_stop_file
+create_mock_stop_file() {
+    mkdir -p "$TEST_TEMP_DIR/.ralph"
+    touch "$TEST_TEMP_DIR/.ralph/.stop"
+}
+
+# Helper: create a mock audit log file with optional content
+# Usage: create_mock_audit_log [content]
+# If content is provided, it's written to the audit log; otherwise file is empty
+create_mock_audit_log() {
+    local content="${1:-}"
+    mkdir -p "$TEST_TEMP_DIR/.ralph"
+    if [ -n "$content" ]; then
+        echo "$content" > "$TEST_TEMP_DIR/.ralph/audit.log"
+    else
+        : > "$TEST_TEMP_DIR/.ralph/audit.log"
+    fi
+}
