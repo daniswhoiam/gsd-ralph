@@ -40,7 +40,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Milestone Goal:** Complete rewrite from standalone CLI to thin GSD autopilot layer (~200-400 LOC). Add `--ralph` to any GSD command and walk away.
 
 - [x] **Phase 10: Core Architecture and Autonomous Behavior** - Foundational artifacts that define what gsd-ralph does vs. what GSD/Claude Code do (completed 2026-03-09)
-- [ ] **Phase 11: Shell Launcher and Headless Invocation** - The working autopilot: `--ralph` flag, loop execution, permission tiers, worktree isolation
+- [x] **Phase 11: Shell Launcher and Headless Invocation** - The working autopilot: `--ralph` flag, loop execution, permission tiers, worktree isolation (completed 2026-03-10)
 - [ ] **Phase 12: Defense-in-Depth and Observability** - Hardening with circuit breakers, AskUserQuestion denial hook, progress monitoring, audit logging
 
 ## Phase Details
@@ -70,7 +70,7 @@ Plans:
   3. User can choose between three permission tiers: default `--allowedTools` whitelist, `--auto-mode` for Claude risk reasoning, or `--yolo` for full bypass -- each resulting in the correct Claude Code flags
   4. User runs `--dry-run` and sees the exact `claude -p` command that would be launched, without executing it
   5. Each iteration runs with a `--max-turns` ceiling to prevent unbounded execution
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 11-01-PLAN.md -- /gsd:ralph command file + launcher core (arg parsing, config, permissions, command building, dry-run)
@@ -104,5 +104,5 @@ Phases execute in numeric order: 10 -> 11 -> 12
 | 8. Auto-Push & Merge UX | v1.1 | 3/3 | Complete | 2026-02-23 |
 | 9. CLI Guidance | v1.1 | 2/2 | Complete | 2026-02-23 |
 | 10. Core Architecture and Autonomous Behavior | 2/2 | Complete    | 2026-03-09 | - |
-| 11. Shell Launcher and Headless Invocation | 1/2 | In Progress|  | - |
+| 11. Shell Launcher and Headless Invocation | 2/2 | Complete   | 2026-03-10 | - |
 | 12. Defense-in-Depth and Observability | v2.0 | 0/TBD | Not started | - |

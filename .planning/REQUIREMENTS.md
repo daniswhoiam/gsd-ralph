@@ -10,7 +10,7 @@ Requirements for the Autopilot Core rewrite. Each maps to roadmap phases.
 ### Autopilot
 
 - [x] **AUTO-01**: User can add `--ralph` to any GSD command to run it autonomously
-- [ ] **AUTO-02**: System loops fresh Claude Code instances (Ralph pattern), each picking up incomplete work from GSD state on disk
+- [x] **AUTO-02**: System loops fresh Claude Code instances (Ralph pattern), each picking up incomplete work from GSD state on disk
 - [x] **AUTO-03**: System assembles GSD context (PROJECT.md, STATE.md, phase plans) into each iteration's prompt
 - [x] **AUTO-04**: System injects autonomous behavior prompt that prevents AskUserQuestion and auto-approves checkpoints
 - [x] **AUTO-05**: User can run `--dry-run` to preview the command without executing
@@ -30,8 +30,8 @@ Requirements for the Autopilot Core rewrite. Each maps to roadmap phases.
 
 ### Observability
 
-- [ ] **OBSV-01**: System detects iteration completion/failure from exit code and output
-- [ ] **OBSV-02**: Terminal bell on loop completion or failure
+- [x] **OBSV-01**: System detects iteration completion/failure from exit code and output
+- [x] **OBSV-02**: Terminal bell on loop completion or failure
 - [ ] **OBSV-03**: Real-time progress display by parsing stream-json output
 - [ ] **OBSV-04**: Auto-approved decisions logged to audit file for post-run review
 
@@ -70,7 +70,7 @@ Deferred to v2.1+. Tracked but not in current roadmap.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | AUTO-01 | Phase 11 | Complete |
-| AUTO-02 | Phase 11 | Pending |
+| AUTO-02 | Phase 11 | Complete |
 | AUTO-03 | Phase 10 | Complete |
 | AUTO-04 | Phase 10 | Complete |
 | AUTO-05 | Phase 11 | Complete |
@@ -81,8 +81,8 @@ Deferred to v2.1+. Tracked but not in current roadmap.
 | SAFE-02 | Phase 11 | Complete |
 | SAFE-03 | Phase 12 | Pending |
 | SAFE-04 | Phase 12 | Pending |
-| OBSV-01 | Phase 11 | Pending |
-| OBSV-02 | Phase 11 | Pending |
+| OBSV-01 | Phase 11 | Complete |
+| OBSV-02 | Phase 11 | Complete |
 | OBSV-03 | Phase 12 | Pending |
 | OBSV-04 | Phase 12 | Pending |
 
