@@ -1,5 +1,27 @@
 # Milestones
 
+## v2.1 Easy Install (Shipped: 2026-03-10)
+
+**Phases completed:** 3 phases, 4 plans
+**Timeline:** 1 day (Mar 10, 2026)
+**Git range:** a02c761..e294fdd (30 commits)
+**Codebase:** 32 files changed, +5,569 / -1,170
+**Test suite:** 356 tests, 0 failures
+
+**Key accomplishments:**
+1. RALPH_SCRIPTS_DIR auto-detection via BASH_SOURCE with external override — scripts work from any directory
+2. Single-command `install.sh` with prerequisite detection (bash, git, jq, GSD), 6-file copy manifest, sed path adjustment
+3. Idempotent re-runs via `cmp -s` comparison — safe re-installation with zero data loss
+4. jq-based config merge adds ralph defaults to config.json without overwriting existing settings
+5. 7-point post-install verification with colored summary output and next-step guidance
+6. 5 E2E scenario tests proving complete install-then-use workflows across fresh, existing, and error scenarios
+
+**Delivered:** Users can install gsd-ralph into any GSD project with `bash /path/to/gsd-ralph/install.sh` and immediately use `/gsd:ralph execute-phase N` with full autopilot functionality. Installer is idempotent, preserves existing config, and provides clear next-step guidance. 11/11 v2.1 requirements satisfied. Audit passed with zero gaps.
+
+**Archives:** `milestones/v2.1-ROADMAP.md`, `milestones/v2.1-REQUIREMENTS.md`, `milestones/v2.1-MILESTONE-AUDIT.md`
+
+---
+
 ## v2.0 Autopilot Core (Shipped: 2026-03-10)
 
 **Phases completed:** 4 phases, 7 plans
