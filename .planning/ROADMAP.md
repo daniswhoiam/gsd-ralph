@@ -50,7 +50,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Milestone Goal:** Make gsd-ralph installable in any repo with a single command following current Claude Code ecosystem patterns.
 
-- [ ] **Phase 14: Location-Independent Scripts** - Refactor all scripts to work from any directory, not just the dev repo layout
+- [x] **Phase 14: Location-Independent Scripts** - Refactor all scripts to work from any directory, not just the dev repo layout (completed 2026-03-10)
 - [ ] **Phase 15: Core Installer** - Single-command installer with prerequisite detection, file copy, config merge, and verification
 - [ ] **Phase 16: End-to-End Validation** - Integration tests proving the full install-then-use workflow in realistic target repos
 
@@ -65,7 +65,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. All script-to-script source/reference paths resolve through a `RALPH_SCRIPTS_DIR` variable, not hardcoded paths
   3. All 315 existing tests pass without modification after the refactor
   4. Setting `RALPH_SCRIPTS_DIR` to a custom path before invoking ralph causes scripts to load from that path
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 
 Plans:
 - [ ] 14-01-PLAN.md -- Add RALPH_SCRIPTS_DIR auto-detection, replace hardcoded paths, full regression
@@ -113,6 +113,6 @@ Phases execute in numeric order: 14 -> 15 -> 16
 | 11. Shell Launcher | v2.0 | 2/2 | Complete | 2026-03-10 |
 | 12. Defense-in-Depth | v2.0 | 2/2 | Complete | 2026-03-10 |
 | 13. Audit Path Fix | v2.0 | 1/1 | Complete | 2026-03-10 |
-| 14. Location-Independent Scripts | v2.1 | 0/1 | Not started | - |
+| 14. Location-Independent Scripts | 1/1 | Complete   | 2026-03-10 | - |
 | 15. Core Installer | v2.1 | 0/? | Not started | - |
 | 16. End-to-End Validation | v2.1 | 0/? | Not started | - |

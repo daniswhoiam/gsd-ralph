@@ -20,9 +20,9 @@ Requirements for Easy Install milestone. Each maps to roadmap phases.
 
 ### Portability
 
-- [ ] **PORT-01**: Ralph scripts work from both `scripts/` (dev repo) and `scripts/ralph/` (installed repo)
-- [ ] **PORT-02**: All script-to-script references use configurable paths, not hardcoded locations
-- [ ] **PORT-03**: Existing 315 tests pass after portability refactor
+- [x] **PORT-01**: Ralph scripts work from both `scripts/` (dev repo) and `scripts/ralph/` (installed repo)
+- [x] **PORT-02**: All script-to-script references use configurable paths, not hardcoded locations
+- [x] **PORT-03**: Existing 315 tests pass after portability refactor
 
 ## Future Requirements
 
@@ -63,9 +63,9 @@ Deferred to v2.2+. Tracked but not in current roadmap.
 | INST-06 | Phase 15 | Pending |
 | INST-07 | Phase 15 | Pending |
 | INST-08 | Phase 15 | Pending |
-| PORT-01 | Phase 14 | Pending |
-| PORT-02 | Phase 14 | Pending |
-| PORT-03 | Phase 14 | Pending |
+| PORT-01 | Phase 14 | Complete |
+| PORT-02 | Phase 14 | Complete |
+| PORT-03 | Phase 14 | Complete |
 
 **Coverage:**
 - v2.1 requirements: 11 total
