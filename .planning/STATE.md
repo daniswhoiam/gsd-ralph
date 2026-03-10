@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Autopilot Core
-status: completed
-stopped_at: Phase 12 context gathered
-last_updated: "2026-03-10T13:37:10.877Z"
-last_activity: 2026-03-10 -- Completed 11-02 loop execution engine with STATE.md completion detection
+status: executing
+stopped_at: Completed 12-01-PLAN.md
+last_updated: "2026-03-10T14:12:07.025Z"
+last_activity: 2026-03-10 -- Completed 12-01 circuit breaker, graceful stop, progress display, audit lifecycle
 progress:
   total_phases: 3
   completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
-  percent: 100
+  total_plans: 6
+  completed_plans: 5
+  percent: 83
 ---
 
 # Project State
@@ -21,17 +21,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-09)
 
 **Core value:** Add `--ralph` to any GSD command and walk away -- Ralph drives, GSD works, code ships.
-**Current focus:** Phase 11 - Shell Launcher and Headless Invocation
+**Current focus:** Phase 12 - Defense-in-Depth and Observability
 
 ## Current Position
 
 Milestone: v2.0 Autopilot Core
-Phase: 11 of 12 (Shell Launcher and Headless Invocation)
-Plan: 2 of 2 in current phase
-Status: Complete
-Last activity: 2026-03-10 -- Completed 11-02 loop execution engine with STATE.md completion detection
+Phase: 12 of 12 (Defense-in-Depth and Observability)
+Plan: 1 of 2 in current phase
+Status: Executing
+Last activity: 2026-03-10 -- Completed 12-01 circuit breaker, graceful stop, progress display, audit lifecycle
 
-Progress: [########################] 100% (v1.0 + v1.1 complete; v2.0 2/3 phases done, Phase 11 complete)
+Progress: [████████████████████░░░░] 83% (v1.0 + v1.1 complete; v2.0 Phase 12: 1/2 plans done)
 
 ## Performance Metrics
 
@@ -48,10 +48,11 @@ Progress: [########################] 100% (v1.0 + v1.1 complete; v2.0 2/3 phases
 - Codebase: 9,693 LOC total, 211 tests
 
 **v2.0 Velocity:**
-- Total plans completed: 2
+- Total plans completed: 3
 - Target: ~200-400 LOC (thin integration layer)
 - 11-01: 3min, 2 tasks, 5 files, 22 tests
 - 11-02: 6min, 1 task, 3 files, 37 tests
+- 12-01: 9min, 1 task, 7 files, 58 tests
 
 ## Accumulated Context
 
@@ -75,6 +76,10 @@ Recent decisions affecting current work:
 - [Phase 11]: Invalid permission tier returns error (fail-safe, not silent fallback)
 - [Phase 11-02]: Progress detection via state snapshot comparison (phase/plan/status triple)
 - [Phase 11-02]: Non-zero exit with state change = max-turns exhaustion (continue), without = failure (retry once)
+- [Phase 12-01]: Circuit breaker uses wall-clock elapsed time (date +%s arithmetic), not iteration count
+- [Phase 12-01]: Graceful stop auto-removes sentinel file after detection to prevent stale state
+- [Phase 12-01]: Audit log truncated at each run start to keep logs scoped to current session
+- [Phase 12-01]: Progress line format: Ralph: Iter N done (Xm Ys) | Total: Xm Ys | state | exit=N
 
 ### Pending Todos
 
@@ -88,6 +93,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-03-10T13:37:10.873Z
-Stopped at: Phase 12 context gathered
-Next step: Begin Phase 12 (Defense-in-Depth and Observability)
+Last session: 2026-03-10T14:12:00.920Z
+Stopped at: Completed 12-01-PLAN.md
+Next step: Execute Phase 12 Plan 02 (hook script and audit integration)

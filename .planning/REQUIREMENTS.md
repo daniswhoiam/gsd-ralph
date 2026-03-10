@@ -25,15 +25,15 @@ Requirements for the Autopilot Core rewrite. Each maps to roadmap phases.
 
 - [x] **SAFE-01**: Each iteration runs in an isolated worktree via `--worktree`
 - [x] **SAFE-02**: System enforces `--max-turns` ceiling per iteration
-- [ ] **SAFE-03**: Circuit breaker with wall-clock timeout and graceful stop mechanism
+- [x] **SAFE-03**: Circuit breaker with wall-clock timeout and graceful stop mechanism
 - [ ] **SAFE-04**: PreToolUse hook blocks AskUserQuestion as defense-in-depth
 
 ### Observability
 
 - [x] **OBSV-01**: System detects iteration completion/failure from exit code and output
 - [x] **OBSV-02**: Terminal bell on loop completion or failure
-- [ ] **OBSV-03**: Real-time progress display by parsing stream-json output
-- [ ] **OBSV-04**: Auto-approved decisions logged to audit file for post-run review
+- [x] **OBSV-03**: Real-time progress display by parsing stream-json output
+- [x] **OBSV-04**: Auto-approved decisions logged to audit file for post-run review
 
 ## Future Requirements
 
@@ -79,12 +79,12 @@ Deferred to v2.1+. Tracked but not in current roadmap.
 | PERM-03 | Phase 11 | Complete |
 | SAFE-01 | Phase 11 | Complete |
 | SAFE-02 | Phase 11 | Complete |
-| SAFE-03 | Phase 12 | Pending |
+| SAFE-03 | Phase 12 | Complete |
 | SAFE-04 | Phase 12 | Pending |
 | OBSV-01 | Phase 11 | Complete |
 | OBSV-02 | Phase 11 | Complete |
-| OBSV-03 | Phase 12 | Pending |
-| OBSV-04 | Phase 12 | Pending |
+| OBSV-03 | Phase 12 | Complete |
+| OBSV-04 | Phase 12 | Complete |
 
 **Coverage:**
 - v2.0 requirements: 16 total
