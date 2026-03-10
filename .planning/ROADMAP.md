@@ -65,7 +65,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. All script-to-script source/reference paths resolve through a `RALPH_SCRIPTS_DIR` variable, not hardcoded paths
   3. All 315 existing tests pass without modification after the refactor
   4. Setting `RALPH_SCRIPTS_DIR` to a custom path before invoking ralph causes scripts to load from that path
-**Plans**: TBD
+**Plans:** 1 plan
+
+Plans:
+- [ ] 14-01-PLAN.md -- Add RALPH_SCRIPTS_DIR auto-detection, replace hardcoded paths, full regression
 
 ### Phase 15: Core Installer
 **Goal**: User can install gsd-ralph into any GSD project with a single terminal command and have a working Ralph setup immediately
@@ -110,6 +113,6 @@ Phases execute in numeric order: 14 -> 15 -> 16
 | 11. Shell Launcher | v2.0 | 2/2 | Complete | 2026-03-10 |
 | 12. Defense-in-Depth | v2.0 | 2/2 | Complete | 2026-03-10 |
 | 13. Audit Path Fix | v2.0 | 1/1 | Complete | 2026-03-10 |
-| 14. Location-Independent Scripts | v2.1 | 0/? | Not started | - |
+| 14. Location-Independent Scripts | v2.1 | 0/1 | Not started | - |
 | 15. Core Installer | v2.1 | 0/? | Not started | - |
 | 16. End-to-End Validation | v2.1 | 0/? | Not started | - |
