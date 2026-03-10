@@ -9,22 +9,22 @@ Requirements for the Autopilot Core rewrite. Each maps to roadmap phases.
 
 ### Autopilot
 
-- [ ] **AUTO-01**: User can add `--ralph` to any GSD command to run it autonomously
+- [x] **AUTO-01**: User can add `--ralph` to any GSD command to run it autonomously
 - [ ] **AUTO-02**: System loops fresh Claude Code instances (Ralph pattern), each picking up incomplete work from GSD state on disk
 - [x] **AUTO-03**: System assembles GSD context (PROJECT.md, STATE.md, phase plans) into each iteration's prompt
 - [x] **AUTO-04**: System injects autonomous behavior prompt that prevents AskUserQuestion and auto-approves checkpoints
-- [ ] **AUTO-05**: User can run `--dry-run` to preview the command without executing
+- [x] **AUTO-05**: User can run `--dry-run` to preview the command without executing
 
 ### Permissions
 
-- [ ] **PERM-01**: Default mode uses `--allowedTools` with a scoped tool whitelist
-- [ ] **PERM-02**: User can opt into `--auto-mode` for Claude's risk-based auto-approval
-- [ ] **PERM-03**: User can opt into `--yolo` for `--dangerously-skip-permissions` full bypass
+- [x] **PERM-01**: Default mode uses `--allowedTools` with a scoped tool whitelist
+- [x] **PERM-02**: User can opt into `--auto-mode` for Claude's risk-based auto-approval
+- [x] **PERM-03**: User can opt into `--yolo` for `--dangerously-skip-permissions` full bypass
 
 ### Safety
 
-- [ ] **SAFE-01**: Each iteration runs in an isolated worktree via `--worktree`
-- [ ] **SAFE-02**: System enforces `--max-turns` ceiling per iteration
+- [x] **SAFE-01**: Each iteration runs in an isolated worktree via `--worktree`
+- [x] **SAFE-02**: System enforces `--max-turns` ceiling per iteration
 - [ ] **SAFE-03**: Circuit breaker with wall-clock timeout and graceful stop mechanism
 - [ ] **SAFE-04**: PreToolUse hook blocks AskUserQuestion as defense-in-depth
 
@@ -69,16 +69,16 @@ Deferred to v2.1+. Tracked but not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTO-01 | Phase 11 | Pending |
+| AUTO-01 | Phase 11 | Complete |
 | AUTO-02 | Phase 11 | Pending |
 | AUTO-03 | Phase 10 | Complete |
 | AUTO-04 | Phase 10 | Complete |
-| AUTO-05 | Phase 11 | Pending |
-| PERM-01 | Phase 11 | Pending |
-| PERM-02 | Phase 11 | Pending |
-| PERM-03 | Phase 11 | Pending |
-| SAFE-01 | Phase 11 | Pending |
-| SAFE-02 | Phase 11 | Pending |
+| AUTO-05 | Phase 11 | Complete |
+| PERM-01 | Phase 11 | Complete |
+| PERM-02 | Phase 11 | Complete |
+| PERM-03 | Phase 11 | Complete |
+| SAFE-01 | Phase 11 | Complete |
+| SAFE-02 | Phase 11 | Complete |
 | SAFE-03 | Phase 12 | Pending |
 | SAFE-04 | Phase 12 | Pending |
 | OBSV-01 | Phase 11 | Pending |
