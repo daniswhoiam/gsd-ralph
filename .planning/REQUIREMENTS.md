@@ -53,27 +53,25 @@ Deferred to v2.2+. Tracked but not in current roadmap.
 
 ## Traceability
 
-Which phases cover which requirements. Updated during roadmap creation.
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INST-01 | Pending | Pending |
-| INST-02 | Pending | Pending |
-| INST-03 | Pending | Pending |
-| INST-04 | Pending | Pending |
-| INST-05 | Pending | Pending |
-| INST-06 | Pending | Pending |
-| INST-07 | Pending | Pending |
-| INST-08 | Pending | Pending |
-| PORT-01 | Pending | Pending |
-| PORT-02 | Pending | Pending |
-| PORT-03 | Pending | Pending |
+| INST-01 | Phase 15 | Pending |
+| INST-02 | Phase 15 | Pending |
+| INST-03 | Phase 15 | Pending |
+| INST-04 | Phase 15 | Pending |
+| INST-05 | Phase 15 | Pending |
+| INST-06 | Phase 15 | Pending |
+| INST-07 | Phase 15 | Pending |
+| INST-08 | Phase 15 | Pending |
+| PORT-01 | Phase 14 | Pending |
+| PORT-02 | Phase 14 | Pending |
+| PORT-03 | Phase 14 | Pending |
 
 **Coverage:**
 - v2.1 requirements: 11 total
-- Mapped to phases: 0
-- Unmapped: 11 ⚠️
+- Mapped to phases: 11
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-10*
-*Last updated: 2026-03-10 after initial definition*
+*Last updated: 2026-03-10 after roadmap creation*
