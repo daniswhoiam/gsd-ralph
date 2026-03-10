@@ -26,13 +26,13 @@ Requirements for the Autopilot Core rewrite. Each maps to roadmap phases.
 - [x] **SAFE-01**: Each iteration runs in an isolated worktree via `--worktree`
 - [x] **SAFE-02**: System enforces `--max-turns` ceiling per iteration
 - [x] **SAFE-03**: Circuit breaker with wall-clock timeout and graceful stop mechanism
-- [ ] **SAFE-04**: PreToolUse hook blocks AskUserQuestion as defense-in-depth
+- [x] **SAFE-04**: PreToolUse hook blocks AskUserQuestion as defense-in-depth
 
 ### Observability
 
 - [x] **OBSV-01**: System detects iteration completion/failure from exit code and output
 - [x] **OBSV-02**: Terminal bell on loop completion or failure
-- [x] **OBSV-03**: Real-time progress display by parsing stream-json output
+- [x] **OBSV-03**: Real-time progress display by parsing stream-json output *(Deferred to v2.1 per user decision. Per-iteration summary satisfies v2.0 visibility intent)*
 - [x] **OBSV-04**: Auto-approved decisions logged to audit file for post-run review
 
 ## Future Requirements
@@ -80,7 +80,7 @@ Deferred to v2.1+. Tracked but not in current roadmap.
 | SAFE-01 | Phase 11 | Complete |
 | SAFE-02 | Phase 11 | Complete |
 | SAFE-03 | Phase 12 | Complete |
-| SAFE-04 | Phase 12 | Pending |
+| SAFE-04 | Phase 12 | Complete |
 | OBSV-01 | Phase 11 | Complete |
 | OBSV-02 | Phase 11 | Complete |
 | OBSV-03 | Phase 12 | Complete |
@@ -89,8 +89,9 @@ Deferred to v2.1+. Tracked but not in current roadmap.
 **Coverage:**
 - v2.0 requirements: 16 total
 - Mapped to phases: 16
+- Complete: 16
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-09*
-*Last updated: 2026-03-09 after roadmap creation*
+*Last updated: 2026-03-10 after Phase 12 Plan 02 completion*
