@@ -1,172 +1,201 @@
 # Project Research Summary
 
-**Project:** gsd-ralph v2.0 Autopilot Integration Layer
-**Domain:** Autonomous CLI execution layer bridging GSD planning workflows with Claude Code headless execution
-**Researched:** 2026-03-09
+**Project:** gsd-ralph v2.1 Easy Install
+**Domain:** CLI tool distribution/installation for Claude Code extension
+**Researched:** 2026-03-10
 **Confidence:** HIGH
 
 ## Executive Summary
 
-gsd-ralph v2.0 is a complete architectural pivot from a standalone Bash CLI (v1.x, 9,693 LOC) to a thin integration layer (~200-400 LOC) that bridges GSD's interactive planning/execution workflows with Claude Code's headless automation capabilities. The core insight driving this rewrite: GSD already handles all planning, execution, verification, and state management; Claude Code now provides native worktree isolation, headless mode, and tool auto-approval. gsd-ralph v2.0 only needs to make Ralph act as the "user" for GSD commands -- auto-responding to checkpoints, auto-approving tool permissions, and orchestrating the `claude -p` invocation with the right context and flags.
+gsd-ralph v2.1 needs to solve one problem: getting ~40 Bash files from the gsd-ralph repo into any GSD project with a single command. The four research streams agree on the core installer mechanics -- prerequisite detection, idempotent file copy, non-destructive settings merge, install manifest for clean uninstall -- but disagree sharply on the distribution mechanism. The Stack researcher recommends the Claude Code plugin system as primary distribution. The Architecture researcher argues plugins break GSD integration due to command namespacing (`/gsd-ralph:ralph` instead of `/gsd:ralph`) and because plugin files live in a read-only cache rather than in the project tree where ralph-launcher.sh expects them. The Features researcher favors a bash install script as the v2.1 mechanism with plugins deferred to v2.1.x. The Pitfalls researcher recommends evaluating the plugin system first before committing to either approach.
 
-The recommended approach uses three native mechanisms in a layered defense-in-depth pattern: (1) GSD's own `workflow.auto_advance` config to auto-approve checkpoints at the workflow level, (2) `claude -p` with `--allowedTools` for headless execution with scoped tool permissions, and (3) `--append-system-prompt` injection to prevent `AskUserQuestion` calls entirely. The implementation consists of a shell launcher script (`bin/gsd-ralph`), an autonomous behavior skill (`skills/ralph-mode/SKILL.md`), and an optional defense-in-depth hook for `AskUserQuestion` denial. No new runtime dependencies are required beyond what GSD and Claude Code already provide.
+**The recommendation: Build a bash installer script as the v2.1 distribution mechanism. Defer plugin packaging to v2.2+.** The namespacing conflict is the deciding factor. gsd-ralph's command MUST be `/gsd:ralph` to integrate with the GSD command namespace -- this is a hard requirement from the existing v2.0 architecture and user mental model. Claude Code plugins namespace their commands under the plugin name, producing `/gsd-ralph:ralph` instead. Additionally, the dynamic hook injection pattern (install hook at ralph start, remove at ralph exit via trap) does not fit the plugin model where hooks are static and always active. These are not theoretical concerns; they are architectural incompatibilities confirmed by both the Architecture and Pitfalls researchers against official Claude Code plugin documentation. The bash installer approach has zero new dependencies, works with the existing Bash 3.2 requirement, and follows patterns proven by the existing `_install_hook`/`_remove_hook` code.
 
-The primary risks are: (1) scope creep that reimplements GSD logic inside gsd-ralph, destroying the "thin layer" architecture, (2) agent nesting depth exceeding Claude Code's limits when gsd-ralph wraps `claude -p` around GSD workflows that themselves spawn subagents, and (3) runaway execution without circuit breakers burning API credits or making destructive changes while the user is away. All three are addressable through strict architectural boundaries, careful invocation design, and multi-layer safety limits implemented early in the build.
+The primary risks are: (1) destroying user's existing `settings.local.json` content during install, (2) hardcoded absolute paths that break when scripts are copied to a different repo, and (3) version drift between source and installed copies. All three have proven mitigation patterns from the existing codebase. The biggest implementation challenge is making the existing scripts location-independent (supporting both `scripts/` in the dev repo and `scripts/ralph/` in target repos) -- this refactor must happen before the installer can be built.
 
 ## Key Findings
 
 ### Recommended Stack
 
-The v2.0 stack requires zero new dependencies. Everything runs on top of existing Claude Code CLI (2.1.63+), GSD tools (`gsd-tools.cjs`), Bash 3.2+, and jq 1.6+. The integration is built from four small components: a custom agent definition (~50 lines), a permission hook (~30 lines), a CLI wrapper (~100 lines), and hook registration config (~15 lines). See [STACK.md](./STACK.md) for full details.
+The v2.1 stack adds nothing to the existing v2.0 runtime. gsd-ralph remains pure Bash with jq for JSON manipulation. The installer itself is a self-contained Bash script that downloads a GitHub release tarball and copies files to the target project. No npm package, no Node.js dependency, no build step. See [STACK.md](./STACK.md) for full evaluation of three distribution approaches.
 
 **Core technologies:**
-- **Claude Code CLI (`claude -p`):** Runtime environment for headless execution -- `-p` flag, `--allowedTools`, `--worktree`, `--max-turns`, `--output-format json`
-- **Claude Code Custom Agents:** `.claude/agents/ralph-autopilot.md` with `permissionMode: bypassPermissions` for the primary permission bypass mechanism
-- **GSD config system:** `workflow.auto_advance` flag already handles checkpoint auto-approval -- no custom checkpoint logic needed
-- **Bash 3.2 + jq:** Hook scripts and wrapper; macOS system Bash compatibility required
+- **Bash 3.2+**: Installer and runtime -- macOS system bash compatibility required
+- **jq 1.5+**: JSON manipulation for config merge -- already a v2.0 runtime dependency
+- **curl**: Release tarball download -- install-time only, universally available
+- **GitHub Releases**: Distribution via tagged tarballs -- no registry, no marketplace, no npm
 
-**Critical version requirements:** Claude Code 2.1.63+ (custom agent support with `permissionMode`), jq 1.6+ (hook JSON parsing).
+**What NOT to add:**
+- npm/npx package (gsd-ralph has zero Node.js code; npm adds conceptual mismatch)
+- Claude Code plugin system (namespacing conflict, static hooks incompatible with dynamic injection)
+- Homebrew formula (overkill for a Claude Code-specific tool)
+- curl-pipe-bash pattern (security concerns; download-then-execute is safer)
 
 ### Expected Features
 
-See [FEATURES.md](./FEATURES.md) for full feature landscape and dependency graph.
+See [FEATURES.md](./FEATURES.md) for full feature landscape, dependency graph, and competitor analysis.
 
-**Must have (table stakes -- v2.0 launch):**
-- `--ralph` flag entry point on GSD commands -- the single product promise
-- Auto-permission for Claude Code tool calls via `--allowedTools` -- zero human interaction after launch
-- Session invocation via `claude -p` with assembled GSD context
-- Worktree isolation via `claude --worktree` -- zero custom code, just pass the flag
-- Basic completion detection from exit code and JSON output
-- Terminal notification (bell + macOS notification) on completion/failure
-- Dry-run / preview mode showing the command that would be launched
+**Must have (table stakes):**
+- Single-command install (`bash install-ralph.sh` or download + local execute)
+- Prerequisite detection (claude, GSD, jq, git, bash >= 3.2) with actionable fix instructions
+- Idempotent re-runs (skip identical files, warn on user-modified files)
+- Non-destructive config merge (jq-based addition of ralph section to `.planning/config.json`)
+- Post-install verification (file existence, executable permissions, config validation)
+- Install manifest (`.ralph/.installed-files`) for tracking what was installed
+- Uninstall command (`install-ralph.sh --uninstall`) reading from manifest
+- Clear colored output with next-step guidance
 
-**Should have (v2.0.x after core validation):**
-- Session resume on failure via `--resume` with captured session_id
-- Circuit breaker (timeout, commit-count cap, no-progress detection)
-- Progress monitoring via stream-json parsing
-- Configurable `--max-turns` per project
+**Should have (differentiators):**
+- Upgrade-in-place (`--upgrade` flag replacing managed files, preserving user config)
+- Dry-run mode (`--dry-run` previewing all operations)
+- GSD integration detection (warn if `.planning/` missing, error if not a git repo)
+- Version-pinned installation (`--version X.Y.Z` from tagged releases)
 
-**Defer (v2.1+):**
-- Multi-phase orchestration (chain phase N completion into phase N+1)
-- Configurable response strategies for `AskUserQuestion` (requires Agent SDK, not Bash)
-- Parallel plan execution within a phase (primary source of v1.x complexity)
-- Agent teams integration (Claude Code feature still experimental)
+**Defer (v2.2+):**
+- Claude Code plugin packaging (revisit when/if namespacing constraints change)
+- Marketplace submission (requires plugin packaging first)
+- Auto-update mechanism (explicit upgrade is safer for autonomous execution tool)
+- Multi-repo batch installer
 
 ### Architecture Approach
 
-The architecture follows a "Headless Delegation" pattern: a thin shell launcher sets GSD config flags, constructs a `claude -p` invocation with scoped permissions and system prompt injection, launches it in a worktree, and parses the JSON result on completion. The launcher does NOT modify GSD workflow files, does NOT write to `.planning/` files, and does NOT manage worktrees -- those responsibilities stay with GSD and Claude Code respectively. See [ARCHITECTURE.md](./ARCHITECTURE.md) for full component analysis and data flow.
+The installer copies files from a GitHub release tarball into the target project tree, namespaced under `scripts/ralph/` to avoid collisions. Scripts must be refactored to use a `RALPH_SCRIPTS_DIR` variable instead of hardcoded paths, enabling them to work in both the dev repo (`scripts/`) and installed repos (`scripts/ralph/`). The installer does NOT touch `settings.local.json` at install time -- the existing runtime hook injection pattern (install at ralph start, remove at exit) is preserved. The installer only merges the `ralph` config section into `.planning/config.json`. See [ARCHITECTURE.md](./ARCHITECTURE.md) for full component analysis and data flow diagrams.
 
 **Major components:**
-1. **`bin/gsd-ralph` (Shell Launcher):** Parses `--ralph` flag, sets `workflow.auto_advance`, constructs `claude -p` command with `--allowedTools` / `--worktree` / `--max-turns` / `--append-system-prompt`, launches headless session, parses JSON result
-2. **`skills/ralph-mode/SKILL.md` (Autonomous Behavior Prompt):** System prompt instructions telling Claude to never call `AskUserQuestion`, auto-approve `human-verify`, auto-select first option for `decision`, skip `human-action`, and follow GSD conventions
-3. **`hooks/deny-ask.sh` (Defense-in-Depth Hook):** Optional `PreToolUse` hook that denies `AskUserQuestion` with guidance feedback -- backup layer in case system prompt compliance fails
-4. **Config extension (`.planning/config.json`):** Ralph-specific config fields (`ralph.enabled`, `ralph.allowed_tools`, `ralph.max_turns`, `ralph.worktree_prefix`)
+1. **install-ralph.sh** -- Single-file installer handling prerequisites, download, copy, config merge, verification, and uninstall
+2. **RALPH_SCRIPTS_DIR refactor** -- Path variable in all scripts replacing hardcoded `scripts/` references, enabling dual-location operation
+3. **Install manifest** -- `.ralph/.installed-files` tracking every file for clean uninstall
+4. **Config merge** -- jq-based addition of `ralph` section to `.planning/config.json` (additive only, never overwrites)
 
 ### Critical Pitfalls
 
-See [PITFALLS.md](./PITFALLS.md) for all 8 pitfalls with detailed prevention strategies.
+See [PITFALLS.md](./PITFALLS.md) for all 6 pitfalls with detailed prevention strategies and recovery procedures.
 
-1. **Reimplementing GSD logic** -- The strongest gravitational pull. gsd-ralph must call `gsd-tools.cjs` for ALL plan/phase/state data, never parse `.planning/` files directly. Verification: LOC stays under 500; `grep` for parse/discover/frontmatter patterns returns zero results.
-2. **Agent nesting depth** -- `claude -p` invoking GSD workflows that spawn `Task()` subagents can exceed Claude Code's nesting limit. gsd-ralph must be the TOP-LEVEL invoker and pass GSD workflow context via `--append-system-prompt` / `@file` references so the Claude instance IS the GSD orchestrator, not a wrapper around one.
-3. **Runaway execution without circuit breakers** -- No built-in token budget or timeout in `claude -p`. Implement multi-layer limits: `--max-turns` (hard ceiling), wall-clock `timeout` wrapper, and no-progress detection. Always use `--allowedTools` (not `--dangerously-skip-permissions`) and `--worktree` isolation.
-4. **GSD update breaks gsd-ralph silently** -- Minimize GSD API surface (CLI commands only, not internal file paths). Pin GSD version, check at startup, warn on mismatch. Run compatibility tests against real `gsd-tools.cjs`.
-5. **State corruption from concurrent access** -- gsd-ralph must NEVER write to `.planning/` files. Let GSD workflows handle all state mutations. Use worktree isolation so config changes are scoped.
+1. **settings.local.json destruction** -- Use jq per-key array concatenation (not `*` deep merge which replaces arrays). However, the stronger approach is to NOT modify settings.local.json at install time at all, leaving hook management to the launcher at runtime. This is the recommended approach.
+
+2. **Hardcoded absolute paths** -- All installed paths must be relative to TARGET repo root, never source repo. Use `RALPH_SCRIPTS_DIR` variable. Test by installing into a directory at a different path than the source. Avoid `realpath` and `readlink -f` (not available on macOS without coreutils).
+
+3. **Broken or missing uninstall** -- Design uninstall BEFORE install. Write manifest during install; read manifest during uninstall. Test the full cycle: install, verify, uninstall, diff against pre-install state.
+
+4. **Version drift** -- Embed version marker in installed files and `.ralph/.version`. Provide explicit `--upgrade` command. Do NOT auto-update (breaks reproducibility for autonomous execution).
+
+5. **Assumed repo structure** -- Check prerequisites before any file operations. Use `mkdir -p` for all directories. Handle: empty git repo, no `.planning/`, no `.claude/`, existing files at target paths.
+
+## Distribution Mechanism: Resolving the Researcher Disagreement
+
+The four researchers disagreed on distribution. Here is the resolution:
+
+| Researcher | Recommendation | Key Argument |
+|-----------|---------------|-------------|
+| Stack | Claude Code plugin (primary) + npx (secondary) | Plugin system is THE standard for Claude Code extensions in 2026; 9,000+ plugins use it |
+| Architecture | Bash installer (reject plugins) | Plugin namespacing breaks `/gsd:ralph` command; plugin cache breaks project-root path references |
+| Features | Bash install script (v2.1), plugin (v2.1.x) | Pragmatic: build bash script first, wrap as plugin later |
+| Pitfalls | Evaluate plugins first, then decide | Plugin system mitigates many pitfalls automatically (uninstall, version management, settings merge) |
+
+**Resolution: Bash installer for v2.1. The Architecture researcher is correct on the technical constraints.**
+
+The plugin namespacing issue is not a configuration option -- it is how the plugin system works. A command at `commands/gsd/ralph.md` inside a plugin becomes `/gsd-ralph:gsd:ralph` or a similar namespaced variant, not `/gsd:ralph`. This breaks the core user experience of "same GSD commands, just add `--ralph`." The Stack researcher's research is high quality on HOW the plugin system works but does not address the namespacing conflict with GSD's command structure.
+
+The Pitfalls researcher's suggestion to evaluate plugins first is reasonable, but the Architecture researcher has already done that evaluation and identified concrete incompatibilities. No further evaluation is needed for v2.1.
+
+The Features researcher's phased approach (bash first, plugin later) is the closest to correct, but "later" should mean "when Claude Code plugin namespacing supports nested namespaces or custom command paths" -- not a fixed version number.
 
 ## Implications for Roadmap
 
-Based on combined research, here is the suggested phase structure. The ordering follows dependency chains from FEATURES.md and addresses pitfalls at the earliest possible point per PITFALLS.md.
+Based on research, suggested phase structure:
 
-### Phase 1: Core Architecture and Autonomous Behavior Prompt
-**Rationale:** Everything depends on the architectural boundary (what gsd-ralph does vs. what GSD does) and the autonomous behavior rules. PITFALLS.md identifies this boundary as "the single most important architectural decision" -- getting it wrong means a rewrite. The SKILL.md prompt is the "brain" that all other components reference.
-**Delivers:** `skills/ralph-mode/SKILL.md` with autonomous behavior rules; architectural boundary documentation; config schema extension for ralph-specific settings
-**Addresses:** GSD context injection (FEATURES), auto-response rules for each checkpoint type
-**Avoids:** Pitfall 1 (reimplementing GSD logic), Pitfall 5 (state corruption), Pitfall 7 (agent nesting)
+### Phase 1: Location-Independent Scripts
 
-### Phase 2: Shell Launcher and Headless Invocation
-**Rationale:** The launcher is the entry point that users interact with. It depends on the SKILL.md from Phase 1 and the config schema. This phase delivers the core `claude -p` invocation with all flags wired up. It is where the `--ralph` flag, `--allowedTools`, `--worktree`, and `--max-turns` come together.
-**Delivers:** `bin/gsd-ralph` script with flag parsing, config reading, `claude -p` invocation, JSON output parsing, basic completion detection, terminal notification, dry-run mode
-**Addresses:** `--ralph` flag parsing, auto-permission, session invocation, worktree isolation, completion detection, terminal notification, dry-run (all table-stakes features from FEATURES.md)
-**Avoids:** Pitfall 3 (runaway execution -- `--max-turns` + `timeout`), Pitfall 6 (prompt injection -- `--allowedTools` + `--worktree`), Pitfall 8 (token waste -- `@file` references, not inline content)
+**Rationale:** Every subsequent phase depends on scripts being able to run from `scripts/ralph/` in a target repo, not just `scripts/` in the dev repo. This is a refactor of existing code, not new functionality. PITFALLS.md Pitfall 2 (hardcoded paths) makes this the highest-priority prerequisite.
+**Delivers:** All existing scripts use `RALPH_SCRIPTS_DIR` variable; `.claude/commands/gsd/ralph.md` uses configurable path; all 315 existing tests still pass plus new tests for path override.
+**Addresses:** Prerequisite for file copy/install core (FEATURES.md dependency graph)
+**Avoids:** Hardcoded absolute paths pitfall (PITFALLS.md Pitfall 2)
 
-### Phase 3: Defense-in-Depth Hooks and Safety
-**Rationale:** The hook layer is optional but critical for reliability. Phase 2 delivers a working autopilot; Phase 3 hardens it. Circuit breaker patterns, `AskUserQuestion` denial hooks, and GSD version compatibility checking all belong here. These are not needed for basic function but prevent the failure modes identified in PITFALLS.md.
-**Delivers:** `PreToolUse` hook for `AskUserQuestion` denial, GSD version compatibility check, circuit breaker wrapper (wall-clock timeout, no-progress detection), graceful stop mechanism (`.ralph/.stop` file), audit log of auto-approved decisions
-**Addresses:** Circuit breaker (FEATURES v2.0.x), safety limits
-**Avoids:** Pitfall 2 (blanket checkpoint approval -- audit trail), Pitfall 3 (runaway execution -- multi-layer circuit breaker), Pitfall 4 (GSD update breaks -- version check)
+### Phase 2: Core Installer (Install + Uninstall)
 
-### Phase 4: Session Resilience and Progress Monitoring
-**Rationale:** Session resume and progress monitoring depend on completion detection (Phase 2) and safety infrastructure (Phase 3). These are the v2.0.x features that turn a basic autopilot into a reliable one. Progress monitoring is especially important for user confidence when the user walks away.
-**Delivers:** Session resume on failure (`--resume` with persisted session_id), progress monitoring via `--output-format stream-json` parsing, configurable `--max-turns` per project, structured completion report
-**Addresses:** Session resume, progress monitoring, max-turns config (all FEATURES v2.0.x)
-**Avoids:** Pitfall 3 (provides recovery path when circuit breaker triggers)
+**Rationale:** The installer is the primary deliverable of v2.1. Install and uninstall must be designed together (Pitfalls research insists on this -- Pitfall 3). The manifest format must be defined first, then install writes to it and uninstall reads from it.
+**Delivers:** `install-ralph.sh` with prerequisite detection, tarball download, file copy to `scripts/ralph/`, config merge, install manifest, `--uninstall` flag, idempotency, and post-install verification with colored output.
+**Addresses:** All P1 features from FEATURES.md (single-command install, prerequisite detection, idempotent re-runs, non-destructive config merge, .ralphrc generation, install manifest, uninstall, clear output)
+**Avoids:** settings.local.json destruction (Pitfall 1), assumed repo structure (Pitfall 5), missing jq (Pitfall 6), broken uninstall (Pitfall 3)
 
-### Phase 5: Integration Testing and Installation
-**Rationale:** End-to-end testing must happen after all components exist. The installer copies components to correct locations. This phase validates the full pipeline against real GSD workflows.
-**Delivers:** End-to-end integration tests (full phase execution in worktree), `install.sh` installer, GSD compatibility test suite, documentation
-**Addresses:** Validates all features work together
-**Avoids:** Pitfall 4 (GSD compatibility -- tested against real GSD), Pitfall 7 (nesting depth -- verified end-to-end)
+### Phase 3: Upgrade and Polish
+
+**Rationale:** Once install/uninstall works, add upgrade support and UX improvements. Version tracking enables upgrade detection. These are P2 features that depend on the core installer being stable.
+**Delivers:** `--upgrade` flag, `--dry-run` mode, version tracking in `.ralph/.version`, `--force` overwrite, GSD integration detection warnings.
+**Addresses:** P2 features from FEATURES.md (upgrade-in-place, dry-run mode, version pinning)
+**Avoids:** Version drift pitfall (Pitfall 4)
+
+### Phase 4: End-to-End Testing
+
+**Rationale:** The installer must be tested against realistic scenarios that differ from the dev environment. This is where path bugs and structure assumptions surface. Earlier phases have unit-level tests; this phase tests the integrated flow.
+**Delivers:** Test suite covering: fresh GSD project, project with existing `.claude/` config, non-GSD repo (error path), re-install idempotency, install-then-uninstall cycle, install-then-upgrade cycle, end-to-end `/gsd:ralph execute-phase N --dry-run` after install.
+**Addresses:** Post-install verification (FEATURES.md), cross-machine compatibility
+**Avoids:** All pitfalls -- this phase is the verification layer
 
 ### Phase Ordering Rationale
 
-- **Phase 1 before Phase 2:** The architectural boundary and SKILL.md must exist before the launcher can reference them. Every pitfall in the "Core architecture phase" category (Pitfalls 1, 4, 5, 7) must be addressed in design before code is written.
-- **Phase 2 before Phase 3:** A working autopilot (even without defense-in-depth) is more valuable than hardened infrastructure without a product. Phase 2 delivers the MVP; Phase 3 hardens it.
-- **Phase 3 before Phase 4:** Safety infrastructure (circuit breakers, version checking, audit logging) must exist before the session resilience and monitoring layer on top. A resumed session needs circuit breakers to prevent the same runaway scenario.
-- **Phase 5 last:** Integration tests require all components. The installer is the final packaging step.
-- **Why this grouping:** Phases 1-2 deliver the MVP (~200 LOC). Phases 3-4 harden it. Phase 5 validates it. This mirrors the FEATURES.md prioritization: P1 (launch) -> P2 (after validation) -> testing.
+- **Phase 1 before Phase 2:** Scripts must be location-independent before they can be installed elsewhere. Building the installer first would mean testing against broken scripts.
+- **Phase 2 as a single phase (install + uninstall together):** The Pitfalls researcher strongly recommends designing uninstall first, which forces defining the manifest format. Splitting install and uninstall into separate phases risks shipping install without uninstall.
+- **Phase 3 after Phase 2:** Upgrade requires a working installer and version tracking. Dry-run wraps existing install logic.
+- **Phase 4 last:** Integration tests require all components to exist. This validates the full pipeline.
 
 ### Research Flags
 
 Phases likely needing deeper research during planning:
-- **Phase 1:** Needs verification of open questions from ARCHITECTURE.md -- specifically whether `claude -p "/gsd:execute-phase 3"` correctly triggers GSD skills in headless mode, and whether `--worktree` shares or copies `.planning/` files. These determine the invocation strategy.
-- **Phase 2:** Needs validation of `--allowedTools` inheritance by subagents in headless mode. If subagents do NOT inherit, the hook-based permission approach becomes primary rather than defense-in-depth.
-- **Phase 3:** Needs research on `PreToolUse` hook behavior for `AskUserQuestion` in headless mode -- the hook may not fire at all in `-p` mode (ARCHITECTURE.md notes `PermissionRequest` hooks do not fire in headless mode).
+- **Phase 2:** The tarball download mechanism needs specific GitHub API/URL patterns confirmed. The config merge jq logic should be prototyped against edge cases (empty file, malformed JSON, existing ralph section). The lib/ directory installation path needs a design decision (see Gaps below).
 
 Phases with standard patterns (skip research-phase):
-- **Phase 4:** Session resume (`--resume` flag) and stream-json parsing are well-documented Claude Code features with established patterns.
-- **Phase 5:** Standard bats-core testing patterns; installer is a simple file-copy script.
+- **Phase 1:** Standard Bash refactoring -- replace hardcoded paths with variables. Well-understood pattern, existing test suite validates.
+- **Phase 3:** `--dry-run` and `--upgrade` are standard CLI patterns. gsd-ralph already has dry-run in ralph-launcher.sh as a reference.
+- **Phase 4:** Standard test authoring using bats-core (already in use with 315 tests).
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All technologies verified against official Claude Code docs (v2.1.71). Zero new dependencies. Version requirements confirmed. |
-| Features | HIGH | Feature landscape grounded in competitor analysis (Ralph, Copilot CLI), GSD codebase inspection, and Claude Code API verification. MVP scope is clear and minimal. |
-| Architecture | HIGH | Architecture verified against Claude Code hooks reference, headless mode docs, and GSD workflow source code. 5 open questions identified but none block Phase 1-2. |
-| Pitfalls | HIGH | Pitfalls grounded in v1.x failure history (9,693 LOC rewrite), documented GSD issues (#668, #686), and Claude Code safety literature (32% unintended modification rate with `--dangerously-skip-permissions`). |
+| Stack | HIGH | Official Claude Code plugin docs verified; decision to use bash installer is grounded in concrete namespacing constraints confirmed against plugin documentation |
+| Features | HIGH | Feature landscape well-mapped with competitor analysis (GSD npx installer, ralph-loop-setup plugin, flow-next plugin); MVP scope is clear; dependency graph is sound |
+| Architecture | HIGH | Installer flow is straightforward; existing `_install_hook`/`_remove_hook` patterns prove the merge approach; namespaced directory layout (`scripts/ralph/`) avoids collisions |
+| Pitfalls | HIGH | Pitfalls grounded in real codebase analysis (ralph-launcher.sh lines 342-383), real-world installer post-mortems (oh-my-bash issues), and official Claude Code settings merge documentation |
 
 **Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **Headless mode + GSD skill invocation:** Does `claude -p "/gsd:execute-phase 3"` trigger GSD skills? If not, the prompt must include workflow content directly via `@file` references. Validate in Phase 1 planning.
-- **Worktree `.planning/` isolation:** When `claude --worktree` creates a worktree, are `.planning/` files shared or copied? This determines whether config changes leak across sessions. Validate in Phase 1 planning.
-- **Subagent `--allowedTools` inheritance:** Do subagents spawned via the `Agent` tool inherit `--allowedTools` from the parent headless session? If not, Phase 3 hooks become critical. Validate in Phase 2 planning.
-- **`PreToolUse` hook behavior in headless mode:** If `PreToolUse` hooks do not fire for `AskUserQuestion` in `-p` mode, the defense-in-depth hook in Phase 3 provides no value. Validate before Phase 3 planning.
-- **Session continuation context preservation:** Does `claude -p --continue` preserve `--append-system-prompt` content and auto-mode config? If not, resumed sessions may lose autonomous behavior. Validate in Phase 4 planning.
+- **lib/ directory installation path**: The Features researcher lists `lib/**/*.sh` (18+ files across lib/, lib/commands/, lib/merge/, lib/cleanup/) as managed files, but the Architecture researcher's target layout only shows `scripts/ralph/`. Need to decide during Phase 2 planning whether lib/ files install to `scripts/ralph/lib/`, remain at `lib/` in the target, or get flattened into a different structure.
+- **GitHub release tarball URL format**: The exact URL pattern for downloading tagged releases (`https://github.com/USER/REPO/archive/refs/tags/vX.Y.Z.tar.gz`) is standard but should be confirmed during Phase 2 planning.
+- **RALPH_SCRIPTS_DIR impact scope**: Phase 1 needs to audit every script-to-script and script-to-lib reference in the codebase. The Architecture researcher identified `ralph-launcher.sh` and `ralph.md` but there may be additional references in lib/ files that source each other.
+- **`.ralphrc` and `.ralph/` gitignore handling**: Both the Pitfalls and Architecture researchers flag that these should be added to `.gitignore` if not present. This is a minor installer feature but needs a design decision on whether to auto-modify `.gitignore`.
+- **Plugin system re-evaluation trigger**: The plugin system is deferred, not rejected permanently. If Claude Code adds support for custom command namespaces or namespace aliasing in a future version, the plugin approach should be reconsidered. No action needed now, but worth noting for v2.2+ planning.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- [Claude Code headless mode docs](https://code.claude.com/docs/en/headless) -- `-p` flag, `--allowedTools`, `--output-format`, `--append-system-prompt`
-- [Claude Code hooks reference](https://code.claude.com/docs/en/hooks) -- `PermissionRequest` and `PreToolUse` events, decision control JSON schema
-- [Claude Code subagents docs](https://code.claude.com/docs/en/sub-agents) -- Custom agents, `permissionMode`, `isolation: worktree`, `skills` field
-- [Claude Code CLI reference](https://code.claude.com/docs/en/cli-reference) -- All CLI flags
-- [Claude Code skills docs](https://code.claude.com/docs/en/skills) -- Skill format, frontmatter, invocation control
-- GSD codebase (local inspection) -- `execute-phase.md`, `execute-plan.md`, `checkpoints.md`, `gsd-tools.cjs`
+- [Claude Code Plugin System docs](https://code.claude.com/docs/en/plugins) -- Plugin structure, manifest, namespacing behavior
+- [Claude Code Plugin Marketplace docs](https://code.claude.com/docs/en/plugin-marketplaces) -- Distribution options, marketplace.json
+- [Claude Code Discover Plugins docs](https://code.claude.com/docs/en/discover-plugins) -- Installation scopes, team config
+- [Claude Code Plugins Reference](https://code.claude.com/docs/en/plugins-reference) -- `CLAUDE_PLUGIN_ROOT`, hooks format, caching
+- [Claude Code Skills docs](https://code.claude.com/docs/en/skills) -- Skill discovery, SKILL.md format
+- [Claude Code Hooks Reference](https://code.claude.com/docs/en/hooks) -- PreToolUse hook schema, settings merge behavior
+- [Claude Code Settings docs](https://code.claude.com/docs/en/settings) -- Array concatenation/deduplication across scopes
+- [npm package.json bin field](https://docs.npmjs.com/cli/v11/configuring-npm/package-json/) -- npx CLI pattern (evaluated, not recommended)
+- gsd-ralph `ralph-launcher.sh` `_install_hook`/`_remove_hook` (lines 342-383) -- Proven jq merge/unmerge pattern
+- gsd-ralph test suite (315 tests across 6 suites) -- Existing coverage baseline
 
 ### Secondary (MEDIUM confidence)
-- [AskUserQuestion hook feature request #12605](https://github.com/anthropics/claude-code/issues/12605) -- Confirmed limitation: hooks cannot auto-respond to AskUserQuestion
-- [PreToolUse AskUserQuestion bug #12031](https://github.com/anthropics/claude-code/issues/12031) -- Fixed in v2.0.76
-- [PermissionRequest hook bug #19298](https://github.com/anthropics/claude-code/issues/19298) -- `deny` broken, `allow` works
-- [GSD issue #686](https://github.com/gsd-build/get-shit-done/issues/686) -- Auto-advance chain freezing from agent nesting
-- [GSD issue #668](https://github.com/gsd-build/get-shit-done/issues/668) -- Auto-advance chain dropping commits
-- [Ralph for Claude Code](https://github.com/frankbria/ralph-claude-code) -- Reference implementation patterns
-- [GitHub Copilot CLI autopilot docs](https://docs.github.com/en/copilot/concepts/agents/copilot-cli/autopilot) -- Competitor feature analysis
-- [Claude Code `--dangerously-skip-permissions` guide](https://www.ksred.com/claude-code-dangerously-skip-permissions-when-to-use-it-and-when-you-absolutely-shouldnt/) -- 32% unintended modification rate
+- [GSD get-shit-done-cc npm package](https://www.npmjs.com/package/get-shit-done-cc) -- npx installer reference pattern
+- [ralph-loop-setup plugin](https://github.com/MarioGiancini/ralph-loop-setup) -- Plugin-based distribution reference
+- [flow-next plugin](https://github.com/gmickel/gmickel-claude-marketplace) -- Plugin marketplace reference
+- [oh-my-bash installer issues #115, #267](https://github.com/ohmybash/oh-my-bash/issues/115) -- Real-world installer pitfalls
+- [macOS realpath unavailability](https://github.com/facebook/react-native/issues/34146) -- Bash 3.2 path resolution constraints
+- [Idempotent Bash scripts (Fatih Arslan)](https://arslan.io/2019/07/03/how-to-write-idempotent-bash-scripts/) -- Guard clause patterns
+- [Shopify CLI error handling](https://shopify.github.io/cli/cli/error_handling.html) -- Error UX principles
 
 ### Tertiary (LOW confidence)
-- [Claude Code context buffer management](https://claudefa.st/blog/guide/mechanics/context-buffer-management) -- 33K-45K reserved buffer; needs validation against current Claude Code version
+- [Anthropic Official Marketplace](https://github.com/anthropics/claude-plugins-official) -- 9.7k stars; namespacing behavior inferred from docs, not directly tested against gsd-ralph
+- [npm supply chain attacks analysis](https://snyk.io/articles/npm-security-best-practices-shai-hulud-attack/) -- Security rationale for avoiding npx distribution
+- [curl-pipe-bash security analysis](https://www.kicksecure.com/wiki/Dev/curl_bash_pipe) -- Partial download vulnerability documentation
 
 ---
-*Research completed: 2026-03-09*
+*Research completed: 2026-03-10*
 *Ready for roadmap: yes*

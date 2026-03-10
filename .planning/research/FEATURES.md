@@ -1,19 +1,19 @@
-# Feature Research: v2.0 Autopilot Core
+# Feature Research: v2.1 Easy Install
 
-**Domain:** Autonomous CLI execution layer / autopilot integration for AI-driven development workflows
-**Researched:** 2026-03-09
+**Domain:** Single-command installer for Claude Code CLI extension (gsd-ralph)
+**Researched:** 2026-03-10
 **Confidence:** HIGH
 
 ## Context
 
-This research covers the feature landscape for gsd-ralph v2.0 -- a complete rewrite from standalone Bash CLI (v1.x, 9,693 LOC, 211 tests) to a thin integration layer that adds `--ralph` to any GSD command for autonomous execution. The architectural insight: GSD already handles planning/execution/verification; Ralph already handles autonomous coding; Claude Code now provides native worktree isolation (`--worktree`), headless mode (`claude -p`), and tool auto-approval (`--allowedTools`). gsd-ralph v2.0 just needs to bridge the gap by making Ralph act as the "user" for GSD commands.
+This research covers the feature landscape for gsd-ralph v2.1 -- making the existing gsd-ralph autopilot tool installable in any GSD project with a single command. v2.0 (shipped, 830 LOC Bash + 1,593 LOC tests) provides the core autopilot functionality (`--ralph` flag, loop engine, circuit breaker, permission tiers, worktree isolation). v2.1 focuses exclusively on the installation/distribution problem: getting all those components into a target repo reliably.
 
 **Key ecosystem facts informing this research:**
-- Claude Code Agent SDK provides `canUseTool` callbacks for programmatic tool approval and `AskUserQuestion` interception (Python/TypeScript)
-- Claude Code hooks system has 18 lifecycle events (PreToolUse, PostToolUse, Stop, Notification, SubagentStart, SessionEnd, etc.) with matcher-based filtering and JSON I/O
-- Claude Code skills system supports YAML frontmatter, `context: fork` for subagent isolation, `allowed-tools` restriction, and `disable-model-invocation` for user-only triggers
-- GitHub Copilot CLI shipped autopilot mode (GA Feb 2026) with `--max-autopilot-continues`, `--allow-all`, and permission prompts at mode entry
-- Ralph (frankbria/ralph-claude-code) uses a Bash loop invoking `claude -p` with `--resume` for session continuity, dual-condition exit detection, and circuit breakers
+- Claude Code plugin system (v1.0.33+) provides native install/uninstall via `/plugin install name@marketplace` with skills, hooks, commands, and settings bundled in a standardized directory structure
+- GSD uses npx-based installation: `npx get-shit-done-cc --claude --global` copies commands, workflows, and templates to `~/.claude/`
+- The ralph-loop-setup plugin (MarioGiancini) and flow-next plugin (gmickel) both use the Claude Code plugin marketplace for distribution, with `/plugin install` handling file placement
+- gsd-ralph already has a proven pattern for non-destructive `settings.local.json` merge/unmerge via jq (in `ralph-launcher.sh` `_install_hook()` / `_remove_hook()`)
+- gsd-ralph must install ~40 files across 5 directories: `scripts/`, `lib/`, `bin/`, `templates/`, `.claude/skills/`
 
 ---
 
@@ -21,257 +21,256 @@ This research covers the feature landscape for gsd-ralph v2.0 -- a complete rewr
 
 ### Table Stakes (Users Expect These)
 
-Features that must exist for v2.0 to be considered a working autopilot layer. Missing any of these means the tool cannot replace manual GSD command execution.
+Features users assume exist. Missing any of these = the installer feels broken or untrustworthy.
 
-| Feature | Why Expected | Complexity | Dependencies | Notes |
-|---------|--------------|------------|--------------|-------|
-| **`--ralph` flag parsing on GSD commands** | Core product promise. Without this, the tool has no entry point. Users expect to type `gsd execute-phase 3 --ralph` and walk away. | LOW | GSD command interception mechanism | Two implementation paths: (1) GSD skill/hook that detects `--ralph` and wraps execution, or (2) shell wrapper/alias that intercepts `gsd` commands and adds autopilot behavior. The skill approach is more native to the GSD ecosystem. The wrapper approach is simpler but fragile to GSD updates. Recommend: GSD skill that accepts the phase number as `$ARGUMENTS` and orchestrates the autonomous execution. |
-| **Auto-permission for Claude Code tool calls** | Autopilot mode that stops to ask "Allow Bash?" every 30 seconds is not autopilot. Users expect zero human interaction after launch. | LOW | Claude Code `--allowedTools` or `--dangerously-skip-permissions` | Claude Code's `-p` flag with `--allowedTools "Write,Read,Edit,Grep,Glob,Bash(*)"` handles this natively. No custom code needed -- just pass the right flags when invoking Claude. The `.ralphrc` already defines `ALLOWED_TOOLS`. For v2.0, read this config and pass it to `claude -p`. Do NOT use `--dangerously-skip-permissions` -- it removes all safety guardrails. `--allowedTools` is the correct pattern: explicit opt-in per tool. |
-| **Session invocation via `claude -p`** | The tool must actually launch Claude Code in headless mode with the right prompt, context, and permissions. This is the core execution mechanism. | LOW | `--ralph` flag, tool permissions config | Invoke `claude -p "$PROMPT" --allowedTools "$TOOLS" --output-format json --max-turns $MAX_TURNS`. Stream output with `--output-format stream-json` if progress monitoring is needed. Use `--append-system-prompt` to inject GSD-specific context without replacing Claude Code's default system prompt. |
-| **GSD context injection** | Claude needs to know about the project, the phase, the plans, and the GSD conventions. Without context, it produces generic code that does not follow GSD workflow. | MEDIUM | Phase/plan discovery, PROJECT.md, STATE.md | Assemble context from: `.planning/PROJECT.md` (always), `.planning/STATE.md` (current position), phase plans (the specific plans for this phase), and `.planning/ROADMAP.md` (dependency awareness). Inject via `--append-system-prompt` or by constructing the prompt with embedded context. The v1.x `generate_protocol_prompt_md` function did this -- v2.0 needs the same capability but lighter weight. |
-| **Worktree isolation via Claude Code native** | Each autonomous execution must be isolated from the main branch. Users expect that autopilot work does not interfere with their current working tree. | LOW | Git repo with remote | Use `claude --worktree phase-N-slug -p "$PROMPT"`. Claude Code handles worktree creation, branch management, and cleanup natively as of v2.1.49. No custom worktree management needed -- this is the entire reason v1.x is being replaced. Worktrees are created at `.claude/worktrees/`. |
-| **Execution completion detection** | The tool must know when the work is done. Users expect that the autopilot stops when the task is complete, not when it runs out of turns. | MEDIUM | Session output parsing | Two approaches: (1) Use `--max-turns N` as a hard limit and rely on Claude's own completion logic. (2) Parse `--output-format json` result for completion indicators. Claude Code already handles this internally -- when it determines the task is complete, it stops. The `--max-turns` flag is a safety net, not the primary mechanism. Ralph v1.x's dual-condition exit detection (heuristic + explicit signal) is overkill for v2.0 because Claude Code's agent loop already has completion logic. |
-| **Terminal notification on completion** | User walked away. They need to know when to come back. Bell, desktop notification, or both. | LOW | Completion detection | `tput bel` for terminal bell (already in v1.x). Can add `osascript -e 'display notification "Phase 3 complete" with title "gsd-ralph"'` on macOS. Trigger on both success and failure -- the user needs to know either way. |
+| Feature | Why Expected | Complexity | Notes |
+|---------|--------------|------------|-------|
+| **Single-command install** | Every modern CLI tool installs in one command (GSD: `npx get-shit-done-cc`, Homebrew: `brew install`, Claude Code: `curl ... \| bash`). Multi-step manual setup is a non-starter. | MEDIUM | Primary approach: bash script (`./install.sh` or `bash <(curl -sL ...)`) that copies files from the gsd-ralph repo to the target project. Long-term: Claude Code plugin distribution. The bash script approach is simpler for v2.1 and does not require npm packaging. |
+| **Prerequisite detection** | If Claude Code, GSD, jq, or git is missing, the installer must detect and report clearly with fix instructions. Every mature installer does this (rustup checks for cc, Homebrew checks for Xcode tools). Cryptic failures erode trust. | LOW | Check for: `claude` binary in PATH, GSD commands directory (`~/.claude/commands/gsd/` or `.claude/commands/gsd/`), `jq` binary, `git` binary, bash version >= 3.2. For each missing prerequisite, print the exact install command. Exit early on hard requirements. |
+| **Idempotent re-runs** | Users re-run installers when unsure if the first run succeeded. Running twice must not break anything. Homebrew install issue #559 documents real user frustration when re-running creates errors. | MEDIUM | For each file: check if target exists and matches source (checksum or content comparison). If identical, skip with "already up to date" message. If different (user modified), warn but do not overwrite user-owned files. Use `mkdir -p` for directories. For settings.local.json, jq-merge is inherently idempotent (adding an already-present array element is a no-op with dedup). |
+| **Non-destructive settings merge** | Users may already have `.claude/settings.local.json` with custom permissions, hooks, and tool allowlists. Overwriting loses their config. Claude Code's own settings system merges arrays from multiple scopes. | MEDIUM | Existing proven pattern: `_install_hook()` in ralph-launcher.sh uses jq to merge PreToolUse hook config into existing settings. Generalize this to also merge permission entries (`permissions.allow` array). On uninstall, reverse: remove only ralph-specific entries via `_remove_hook()` pattern. |
+| **Post-install verification** | User needs proof the install worked. "Installation complete" alone is insufficient. GSD prints "Run `/gsd:help` to verify." Other tools run a version command. | LOW | After file copy: verify key files exist (`scripts/ralph-launcher.sh`, `bin/gsd-ralph`, `.claude/skills/gsd-ralph-autopilot/SKILL.md`), run `bin/gsd-ralph --version` to confirm executable, validate `.ralphrc` syntax with `scripts/validate-config.sh`. Print summary with next-step guidance. |
+| **Clear success/failure output** | Colored output showing each step's status, with a summary at the end. Standard in npx create-react-app, GSD installer, Homebrew. Silent installers that succeed without feedback leave users uncertain. | LOW | Use ANSI color codes (green checkmarks for success, red X for failure, yellow for warnings). Print each file copied. Print total summary: "Installed N files. Run `gsd-ralph --version` to verify." Reuse existing `print_success`/`print_error` from `lib/common.sh` if sourcing is possible, or inline simple ANSI helpers. |
+| **Uninstall command** | Symmetry with install. If you can add in one command, users expect to remove in one command. Prevents "how do I clean this up?" support burden. | LOW | Remove all files the installer created. Unmerge ralph-specific entries from settings.local.json (existing `_remove_hook()` pattern). Do NOT remove `.ralphrc` if user has customized it -- warn instead. Write a `.ralph/.installed-files` manifest during install to know exactly what to remove. |
 
 ### Differentiators (Competitive Advantage)
 
-Features that go beyond basic autopilot and make gsd-ralph the preferred way to run GSD autonomously. These are where the product competes with "just run `claude -p` yourself."
+Features that go beyond basic installation and distinguish gsd-ralph's installer from alternatives.
 
-| Feature | Value Proposition | Complexity | Dependencies | Notes |
-|---------|-------------------|------------|--------------|-------|
-| **Progress monitoring via hooks** | Unlike raw `claude -p`, gsd-ralph can show what Claude is doing: which files it is editing, which plan it is on, whether tests are passing. This is the difference between "fire and forget with anxiety" and "fire and forget with confidence." | MEDIUM | Claude Code hooks (PostToolUse, Stop), stream-json output | Two approaches: (1) Use `--output-format stream-json --verbose` and parse the stream for tool use events. (2) Register PostToolUse hooks that log activity to a file, and run a separate `tail -f` on that file. Approach (1) is simpler. Parse stream events for `tool_name`, `tool_input.file_path`, and `tool_result` to show a live activity feed. Copilot CLI shows "premium request consumption in real time" -- gsd-ralph should show task/plan progress. |
-| **Session resume on failure** | If Claude hits an error, times out, or the process is killed, resume from where it left off instead of starting over. This is a major time and cost saver. | MEDIUM | Session ID capture, `--resume` flag | Capture `session_id` from `--output-format json` response. On failure/timeout, re-invoke with `claude -p "Continue from where you left off" --resume $SESSION_ID`. Ralph v1.x does this with `SESSION_CONTINUITY=true` and `--resume`. For v2.0, this is simpler: just persist the session_id in a state file (`.ralph/session.json` or `.planning/STATE.md`) and use `--continue` or `--resume $ID` on re-run. |
-| **Circuit breaker / safety limits** | Prevent runaway execution that burns API credits or makes destructive changes in a loop. The user walked away -- the tool must be self-limiting. | MEDIUM | Session output monitoring, execution time tracking | Three layers: (1) `--max-turns N` as hard ceiling (Claude Code native). (2) Execution time limit via `timeout` command wrapping the claude invocation. (3) Post-execution check: if output indicates repeated failures or no progress, do not auto-retry. Ralph v1.x's circuit breaker (CB_NO_PROGRESS_THRESHOLD=3, CB_SAME_ERROR_THRESHOLD=5) is well-designed. Port the concept but simplify: track consecutive no-progress invocations, stop after threshold. |
-| **Dry-run / preview mode** | Show what the autopilot would do without actually doing it: what context it would inject, what tools it would allow, what branch it would create. Reduces launch anxiety. | LOW | GSD context assembly, flag parsing | Assemble the full prompt and print it. Show the `claude` command that would be executed. Show the worktree name. Do not invoke Claude. v1.x had `--dry-run` on execute -- same concept, simpler implementation. |
-| **Multi-phase orchestration** | Run multiple phases sequentially: "execute phase 3, merge, then execute phase 4." Not parallelism (that is v2.1+), but chaining. | HIGH | Completion detection, merge automation, phase ordering | This is where gsd-ralph transcends "just a wrapper." After phase N completes, auto-merge, auto-verify (run tests), and if passing, auto-launch phase N+1. Requires: reliable completion detection, merge conflict handling (at minimum, detect and stop), and test execution. Defer to v2.1+ unless completion detection is highly reliable. |
-| **Configurable response strategy** | When Claude asks a clarifying question (AskUserQuestion), provide a configurable default response strategy instead of just "approve everything." | HIGH | Agent SDK canUseTool callback or hook-based interception | PROJECT.md explicitly lists "Intelligent response strategies" as v2.1+ scope. For v2.0, the strategy is simple: auto-approve all tool calls, auto-respond "proceed with your best judgment" to any AskUserQuestion. The Agent SDK `canUseTool` callback is the proper mechanism for this, but requires TypeScript/Python -- not Bash. For a Bash-only v2.0, use `--allowedTools` for tool approval and rely on Claude not asking questions in `-p` mode (which is the observed behavior -- Claude rarely uses AskUserQuestion in headless mode). |
+| Feature | Value Proposition | Complexity | Notes |
+|---------|-------------------|------------|-------|
+| **Claude Code plugin packaging** | The ecosystem-native distribution path. `/plugin install gsd-ralph@marketplace` gives users the familiar Claude Code UX: install, uninstall, enable/disable, auto-update, namespaced skills. Other Ralph tools (ralph-loop-setup, flow-next) already use this pattern. | MEDIUM | Requires: `.claude-plugin/plugin.json` manifest, restructuring files to match plugin directory layout (skills/, hooks/, commands/ at plugin root), hosting as GitHub repo with `marketplace.json`. Plugin system handles file placement, scope selection (user/project/local), and lifecycle. This wraps the same install logic. |
+| **Upgrade-in-place** | `install.sh --upgrade` updates scripts, templates, and SKILL.md without touching user configuration (`.ralphrc`, custom hooks). GSD does "wipe and replace" for managed directories while preserving local modifications. Saves users from manual diffing on updates. | MEDIUM | Categorize files as "managed" (replaced on upgrade: scripts/, lib/, bin/, templates/, SKILL.md) vs "user-owned" (preserved: .ralphrc). On upgrade: replace all managed files, skip user-owned files, re-merge settings.local.json. Track installed version in `.ralph/.version` to detect upgrades. |
+| **Dry-run mode** | `install.sh --dry-run` shows exactly what files would be installed and what config would be merged, without changing anything. Builds trust with cautious users. Matches existing `--dry-run` pattern in ralph-launcher. | LOW | Walk through all install steps, print what would happen (file paths, settings changes), skip actual writes. Easy to implement: wrap each write operation in an `if ! $DRY_RUN` guard. |
+| **Version-pinned installation** | `install.sh --version 2.1.0` installs a specific tagged release. Important for teams needing consistent versions across repos. Plugin system supports version pinning natively. | LOW | For script-based install: download from GitHub tagged release. For plugin: version in plugin.json manifest. Tag each release on GitHub. |
+| **GSD integration detection** | Auto-detect whether GSD is installed globally (`~/.claude/commands/gsd/`) vs locally (`.claude/commands/gsd/`), whether `.planning/` exists, and whether the project is a git repo. Adapt install behavior and messages accordingly. | LOW | Simple directory/file existence checks. If `.planning/` is missing, warn "This doesn't look like a GSD project. Run `/gsd:new-project` first." If no git repo, error "gsd-ralph requires a git repository." |
+| **Install manifest for clean uninstall** | Write `.ralph/.installed-files` during install listing every file created/modified. Uninstall reads this manifest instead of hardcoding file paths. Handles version skew gracefully -- uninstall always removes exactly what was installed, even if the file list changed between versions. | LOW | Simple: write one filepath per line to manifest during install. On uninstall: read manifest, remove each file, remove empty directories. Append settings.local.json entries with markers for clean removal. |
 
 ### Anti-Features (Commonly Requested, Often Problematic)
 
-Features that seem good but create problems. Explicitly NOT building these.
+Features that seem good but create problems for a CLI installer in this domain.
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| **Custom worktree management** | v1.x had a full worktree registry, custom creation/cleanup, and branch naming. Users may expect this pattern to continue. | Claude Code's `--worktree` flag handles creation, isolation, and cleanup natively. Custom management duplicates logic, creates conflicts with Claude Code's worktree tracking, and breaks when Claude Code changes its worktree implementation. This is THE reason v1.x is being replaced. | Use `claude --worktree <name>` exclusively. Let Claude Code own the worktree lifecycle. |
-| **Standalone init/generate/execute/merge/cleanup commands** | v1.x users know this command structure. It maps to a familiar lifecycle. | These commands duplicate GSD's native lifecycle (plan-phase, execute-phase, verify-work). The v2.0 insight is that GSD already has these commands -- gsd-ralph should not reimplement them. Maintaining parallel command sets means double the maintenance and inevitable divergence. | One entry point: `--ralph` flag on existing GSD commands. GSD handles lifecycle; gsd-ralph handles autonomy. |
-| **Real-time AskUserQuestion interception in Bash** | Users want the autopilot to handle any question Claude asks, not just tool permissions. | AskUserQuestion interception requires the Agent SDK (Python/TypeScript) with `canUseTool` callbacks. Building this in Bash would require parsing stream-json output for tool_use events, detecting AskUserQuestion tool calls, and somehow injecting responses -- which is architecturally fragile and races against Claude's execution. Claude Code in `-p` mode with `--allowedTools` rarely triggers AskUserQuestion because there is no interactive user to ask. | For v2.0: rely on `-p` mode's non-interactive behavior. For v2.1+: if AskUserQuestion interception is needed, build a thin TypeScript/Python wrapper using the Agent SDK. |
-| **GUI dashboard or web interface** | "I want to see progress in a browser" or "show me a terminal UI with panels." | Target users are terminal-native developers. A GUI adds a runtime dependency (Node server, electron, etc.), deployment complexity, and maintenance burden for a niche audience. Copilot CLI and Claude Code are both terminal-first for a reason. | Terminal output with `--verbose` streaming. Optional `tail -f` on a log file for a second terminal pane. Desktop notifications for completion. |
-| **Multi-repo support** | "I have a monorepo setup" or "I want to orchestrate across repos." | GSD operates within a single git repo. Claude Code's worktree isolation operates within a single repo. Multi-repo adds coordination complexity (cross-repo dependencies, merge ordering, divergent branch states) that is out of scope for a thin integration layer. | Single repo only. For multi-repo projects, run gsd-ralph separately in each repo. |
-| **Custom LLM provider support** | "I want to use GPT-4 or Gemini instead of Claude." | gsd-ralph is specifically the bridge between GSD and Ralph/Claude Code. Claude Code only supports Anthropic models. Adding provider abstraction defeats the purpose and complicates the tool for zero real-world usage. | Coupled to Claude Code intentionally. If someone wants a different LLM, they need a different tool. |
-| **Parallel plan execution within a phase** | "Run all plans in a wave simultaneously." | Parallel execution requires merge conflict management, resource coordination (API rate limits across N concurrent sessions), and progress aggregation across multiple worktrees. This is a significant complexity multiplier. v1.x attempted parallel worktrees and it was the primary source of merge conflicts. | Sequential execution for v2.0. Parallel execution is explicitly scoped to v2.1+ in PROJECT.md. Claude Code's agent teams feature may be a better foundation than custom parallel orchestration. |
+| **Interactive configuration wizard** | "Let me customize everything during install" | Adds complexity, slows install, creates untestable permutations across prompt choices. gsd-ralph's `.ralphrc` already has well-documented defaults that work for most projects. Interactive prompts also break non-interactive contexts (CI/CD, scripts). | Install with sensible defaults. Print "Edit `.ralphrc` to customize behavior." after install. User tweaks config after the fact. |
+| **Auto-install prerequisites** | "Just install GSD and Claude Code for me too" | gsd-ralph should not own the install lifecycle of upstream dependencies. Version conflicts, permission issues, and breaking changes in GSD or Claude Code are not gsd-ralph's responsibility. Upstream tools have their own tested installers. | Detect missing prerequisites, print exact install commands with URLs, exit with clear error. Let user run upstream installers themselves. |
+| **Global system-wide installation** | "Install gsd-ralph once for all my projects" | gsd-ralph needs per-repo files: `.ralphrc` (project-specific config), `scripts/` (executed in project context), SKILL.md (loaded per-project). A global install would still need per-repo initialization, creating a confusing "installed but not working" state. | Per-repo installation is correct. For "available everywhere" without per-repo files, the Claude Code plugin system (user-scope install) handles this -- but `.ralphrc` still needs per-repo init. |
+| **Curl-pipe-bash installer** | "curl https://... \| bash" is the simplest possible install | Security concerns (MITM attacks, partial downloads, no integrity verification). Not the Claude Code ecosystem pattern. Requires hosting infrastructure. npm/plugin approaches provide safer distribution with caching and checksums. | Use bash install script that user downloads first (can inspect), or Claude Code plugin system (primary long-term), or npx package (secondary). |
+| **GUI/web-based installer** | "Point and click to install" | Target users are terminal-native (PROJECT.md: "CLI only, target users are terminal-native"). GUI adds platform-specific complexity, runtime dependencies, and maintenance burden for zero value to the target audience. | CLI-only installation. The one-command pattern IS the UX for terminal-native users. |
+| **Auto-update on every launch** | "Always run latest version automatically" | Breaks reproducibility. Updates during critical autonomous runs can introduce bugs mid-execution. Surprise behavior changes violate the principle of least astonishment. GSD's approach (wipe and replace on explicit `npx get-shit-done-cc`) is better. | Explicit `--upgrade` command. Plugin system's auto-update is opt-in and happens at Claude Code startup (not mid-run). Users control when updates happen. |
+| **npm packaging for a Bash tool** | "Publish to npm so users can `npx gsd-ralph install`" | gsd-ralph is a Bash tool with zero Node.js dependencies. Publishing to npm adds a package.json, node_modules concern, npm registry dependency, and the conceptual mismatch of distributing Bash scripts via a JavaScript package manager. GSD does this because it needs cross-platform CLI argument parsing from npm packages. gsd-ralph does not. | Distribute via GitHub releases (bash script download) or Claude Code plugin system. Both are more natural for a Bash tool than npm. If npx is desired later, it can be a thin wrapper that downloads and runs the bash installer. |
 
 ---
 
 ## Feature Dependencies
 
 ```
-[--ralph flag parsing]
+[Prerequisite Detection]
     |
-    +--requires--> [GSD context injection]
-    |                  (flag triggers context assembly before Claude launch)
+    v
+[File Copy/Install Core]
     |
-    +--requires--> [Auto-permission config]
-    |                  (reads .ralphrc or skill config for ALLOWED_TOOLS)
+    +---> [Settings Merge (settings.local.json)]
+    |         |
+    |         +---> [Hook Registration (PreToolUse)]
+    |         |
+    |         +---> [Permission Entries (allow array)]
     |
-    +--enables---> [Session invocation via claude -p]
-                       (assembled context + permissions = launchable command)
+    +---> [.ralphrc Generation (from template)]
+    |
+    +---> [SKILL.md Installation]
+    |
+    +---> [Install Manifest (.ralph/.installed-files)]
+    |
+    v
+[Post-Install Verification]
+    |
+    v
+[Success Output with Next Steps]
 
-[Session invocation via claude -p]
-    |
-    +--requires--> [Worktree isolation via --worktree]
-    |                  (must isolate before execution starts)
-    |
-    +--enables---> [Execution completion detection]
-    |                  (session output provides completion signal)
-    |
-    +--enables---> [Progress monitoring via hooks/stream]
-                       (stream-json output feeds progress display)
+[Uninstall Command] --reads--> [Install Manifest]
+                    --reverses--> [File Copy/Install Core]
+                    --reverses--> [Settings Merge]
 
-[Execution completion detection]
-    |
-    +--enables---> [Terminal notification]
-    |                  (fires on completion or failure)
-    |
-    +--enables---> [Session resume on failure]
-    |                  (completion vs failure determines resume action)
-    |
-    +--enables---> [Circuit breaker]
-    |                  (no-progress detection requires completion assessment)
-    |
-    +--enables---> [Multi-phase orchestration]
-                       (phase N completion triggers phase N+1)
+[Plugin Distribution] --wraps--> [File Copy/Install Core]
+                      --wraps--> [Settings Merge]
+                      --adds--> [plugin.json manifest]
+                      --adds--> [marketplace.json entry]
 
-[Dry-run / preview] --independent-- (no runtime dependencies, can ship in any order)
+[Upgrade-in-Place] --depends--> [File Copy/Install Core]
+                   --reads--> [.ralph/.version]
+                   --distinguishes--> [Managed vs User-owned files]
 
-[Configurable response strategy] --conflicts-- [Bash-only implementation]
-    (Agent SDK canUseTool requires TypeScript/Python runtime)
+[Dry-Run Mode] --wraps--> [File Copy/Install Core]
+               --wraps--> [Settings Merge]
+               --independent (no runtime deps, can ship in any order)
 ```
 
 ### Dependency Notes
 
-- **`--ralph` flag is the root dependency**: Everything flows from the entry point. Without flag parsing, nothing else can trigger. Build this first.
-- **GSD context injection is the most reusable piece**: The prompt assembly logic serves both the skill-based and wrapper-based approaches. It also serves dry-run mode. Build it early, test it independently.
-- **Worktree isolation is zero-cost**: Claude Code handles it. The "implementation" is adding `--worktree` to the claude invocation. No custom code needed.
-- **Completion detection gates all post-execution features**: Session resume, circuit breaker, multi-phase orchestration, and notifications all depend on knowing whether execution succeeded. Invest here.
-- **Progress monitoring is optional but high-value**: Can ship v2.0 without it and add in v2.0.x. The user can always check the worktree manually.
-- **Configurable response strategy conflicts with Bash**: If v2.0 stays Bash-only, this feature requires a TypeScript/Python companion. Defer to v2.1+ unless the team is willing to add a Node/Python runtime dependency.
+- **Prerequisite Detection must come first:** All subsequent steps assume GSD, Claude Code, jq, and git are present. Fail fast with clear messages before touching any files.
+- **File Copy is the core operation:** Everything else (settings merge, verification, manifest) depends on files being in place. Settings merge specifically requires hook scripts to already exist at their target paths before settings.local.json can reference them.
+- **Install Manifest enables clean uninstall:** Without tracking what was installed, uninstall must hardcode file paths -- fragile across versions. Write the manifest as part of the install process, not as a separate step.
+- **Plugin Distribution wraps Install Core:** The plugin is a packaging/distribution format. The actual install logic (file copy, config merge) is the same whether run from a bash script or via `/plugin install`. Build the script first, wrap in plugin format later.
+- **Upgrade-in-Place requires version tracking:** Must compare installed version vs available version to decide what to update. A `.ralph/.version` file serves this purpose.
+- **Dry-Run is independent:** Can be implemented at any time by wrapping write operations in conditionals. No dependencies on other features.
 
 ---
 
 ## MVP Definition
 
-### Launch With (v2.0)
+### Launch With (v2.1)
 
-Minimum viable autopilot -- what is needed to validate the concept of "add `--ralph` and walk away."
+Minimum viable installer -- what's needed so users can install gsd-ralph in one command.
 
-- [ ] **`--ralph` flag entry point** -- the single product entry point; without it, there is no product
-- [ ] **GSD context injection** -- assemble phase/plan context into a prompt Claude can execute against
-- [ ] **Auto-permission via `--allowedTools`** -- pass configured tool permissions to `claude -p` so execution is uninterrupted
-- [ ] **Session invocation (`claude -p`)** -- actually launch Claude Code in headless mode with the assembled prompt
-- [ ] **Worktree isolation (`--worktree`)** -- isolate autonomous work from the user's working tree; zero custom code, just pass the flag
-- [ ] **Completion detection (basic)** -- detect success vs failure from claude's exit code and `--output-format json` result field
-- [ ] **Terminal notification** -- bell on completion/failure so the user knows to come back
-- [ ] **Dry-run mode** -- show what would be launched without launching; builds confidence and aids debugging
+- [ ] **Prerequisite detection** -- Check for claude, GSD commands, jq, git, bash >= 3.2. Print actionable fix instructions for each missing prerequisite. Exit early on hard failures.
+- [ ] **File copy/install core** -- Copy scripts/, lib/, bin/, templates/, and SKILL.md to target repo. Use `mkdir -p` for directories. Handle file permissions (`chmod +x` for scripts and bin entries). Idempotent: overwrite managed files, skip identical files with "already up to date."
+- [ ] **Non-destructive settings.local.json merge** -- Add ralph hook config and permission entries to existing settings without overwriting other content. Generalize existing `_install_hook()` jq-merge pattern to also handle `permissions.allow` array.
+- [ ] **.ralphrc generation** -- Copy `templates/ralphrc.template` to `.ralphrc` if not present. If `.ralphrc` already exists, skip (user-owned). Print message about customization.
+- [ ] **Install manifest** -- Write `.ralph/.installed-files` listing every file created/modified. Enables clean uninstall.
+- [ ] **Post-install verification** -- Verify key files exist, run `bin/gsd-ralph --version`, validate .ralphrc syntax. Print success summary with next-step guidance.
+- [ ] **Uninstall command** -- Read install manifest, remove all listed files, unmerge settings.local.json entries, clean up empty directories. Warn about user-modified files.
+- [ ] **Clear output** -- Colored step-by-step output with final summary.
 
-### Add After Validation (v2.0.x)
+### Add After Validation (v2.1.x)
 
-Features to add once the core autopilot loop is working reliably.
+Features to add once the install script is proven and users are installing successfully.
 
-- [ ] **Session resume on failure** -- capture session_id, re-invoke with `--resume` on timeout/crash; trigger: users report lost work due to mid-execution failures
-- [ ] **Circuit breaker** -- stop after N no-progress iterations; trigger: users report runaway API spend
-- [ ] **Progress monitoring** -- parse stream-json or use PostToolUse hooks to show activity; trigger: users report anxiety about what Claude is doing
-- [ ] **Max-turns configuration** -- expose `--max-turns` setting in .ralphrc for per-project tuning; trigger: users need different budgets for different project sizes
+- [ ] **Claude Code plugin packaging** -- Structure gsd-ralph as a Claude Code plugin with `.claude-plugin/plugin.json`, publish to a GitHub marketplace repo. Trigger: when install script is stable and the team wants broader distribution.
+- [ ] **Upgrade-in-place** -- `--upgrade` flag replacing managed files while preserving user config. Requires `.ralph/.version` tracking. Trigger: when v2.1.1 or v2.2 ships and users need to update.
+- [ ] **Dry-run mode** -- `--dry-run` flag showing what would be installed without modifying anything. Trigger: user feedback requesting preview capability.
+- [ ] **Version pinning** -- `--version X.Y.Z` flag installing from specific GitHub tagged release. Trigger: team usage requiring version consistency.
 
-### Future Consideration (v2.1+)
+### Future Consideration (v2.2+)
 
-Features to defer until v2.0 is proven and the team has usage data.
+Features to defer until the distribution pattern is established.
 
-- [ ] **Multi-phase orchestration** -- chain phase execution automatically; defer because it requires highly reliable completion detection and merge automation
-- [ ] **Configurable response strategies** -- context-aware answers to AskUserQuestion; defer because it requires Agent SDK (TypeScript/Python) and is a significant complexity jump
-- [ ] **Parallel plan execution** -- multiple worktrees within a phase; defer because it was the primary source of v1.x complexity and merge conflicts
-- [ ] **Agent teams integration** -- use Claude Code's agent teams for coordinated multi-agent work; defer because the feature is still experimental and disabled by default
+- [ ] **Marketplace submission** -- Submit plugin to Anthropic's claude-plugins-official. Requires plugin stability, documentation, and community validation.
+- [ ] **Auto-update via plugin system** -- Leverage marketplace auto-update for automatic version updates at Claude Code startup.
+- [ ] **Multi-repo batch installer** -- Install gsd-ralph across multiple repos in one command. Adds orchestration complexity for marginal value.
 
 ---
 
 ## Feature Prioritization Matrix
 
-| Feature | User Value | Implementation Cost | Priority | Phase |
-|---------|------------|---------------------|----------|-------|
-| `--ralph` flag parsing | HIGH | LOW | P1 | v2.0 |
-| GSD context injection | HIGH | MEDIUM | P1 | v2.0 |
-| Auto-permission (`--allowedTools`) | HIGH | LOW | P1 | v2.0 |
-| Session invocation (`claude -p`) | HIGH | LOW | P1 | v2.0 |
-| Worktree isolation (`--worktree`) | HIGH | LOW | P1 | v2.0 |
-| Completion detection (basic) | HIGH | MEDIUM | P1 | v2.0 |
-| Terminal notification | MEDIUM | LOW | P1 | v2.0 |
-| Dry-run mode | MEDIUM | LOW | P1 | v2.0 |
-| Session resume | HIGH | MEDIUM | P2 | v2.0.x |
-| Circuit breaker | HIGH | MEDIUM | P2 | v2.0.x |
-| Progress monitoring | MEDIUM | MEDIUM | P2 | v2.0.x |
-| Max-turns config | LOW | LOW | P2 | v2.0.x |
-| Multi-phase orchestration | HIGH | HIGH | P3 | v2.1+ |
-| Response strategies | MEDIUM | HIGH | P3 | v2.1+ |
-| Parallel execution | HIGH | HIGH | P3 | v2.1+ |
-| Agent teams integration | MEDIUM | HIGH | P3 | v2.1+ |
+| Feature | User Value | Implementation Cost | Priority |
+|---------|------------|---------------------|----------|
+| Prerequisite detection | HIGH | LOW | P1 |
+| File copy/install core | HIGH | MEDIUM | P1 |
+| Settings.local.json merge | HIGH | MEDIUM | P1 |
+| .ralphrc generation | HIGH | LOW | P1 |
+| Install manifest | MEDIUM | LOW | P1 |
+| Post-install verification | HIGH | LOW | P1 |
+| Uninstall command | MEDIUM | LOW | P1 |
+| Clear output | MEDIUM | LOW | P1 |
+| Plugin packaging | HIGH | MEDIUM | P2 |
+| Upgrade-in-place | MEDIUM | MEDIUM | P2 |
+| Dry-run mode | LOW | LOW | P2 |
+| Version pinning | LOW | LOW | P3 |
+| Marketplace submission | MEDIUM | LOW | P3 |
 
 **Priority key:**
-- P1: Must have for v2.0 launch
-- P2: Should have, add when core is proven
+- P1: Must have for v2.1 launch
+- P2: Should have, add in v2.1.x
 - P3: Nice to have, future consideration
 
 ---
 
-## Competitor / Reference Feature Analysis
+## Competitor / Reference Installer Analysis
 
-| Feature | Ralph (frankbria) | Copilot CLI Autopilot | Claude Code Headless | gsd-ralph v2.0 |
-|---------|-------------------|-----------------------|----------------------|-----------------|
-| **Entry point** | `ralph` command runs loop | `--autopilot` flag | `claude -p` flag | `--ralph` flag on GSD commands |
-| **Permission model** | `.ralphrc` ALLOWED_TOOLS | `--allow-all` at mode entry | `--allowedTools` explicit list | Read `.ralphrc`, pass to `--allowedTools` |
-| **Execution model** | Bash loop re-invoking `claude -p` with `--resume` | Agent continues N steps autonomously | Single invocation, agent loop internal | Single `claude -p` invocation per phase (not a re-invocation loop) |
-| **Completion detection** | Dual-condition: heuristic + EXIT_SIGNAL | Agent determines completion or `--max-autopilot-continues` | Agent determines completion or `--max-turns` | Claude Code's internal completion + exit code + `--max-turns` safety net |
-| **Worktree isolation** | None (works in current directory) | None | `--worktree` flag | `--worktree` flag (Claude Code native) |
-| **Progress monitoring** | `.ralph/fix_plan.md` checkbox tracking, `ralph_monitor.sh` dashboard | Premium request count display | `--output-format stream-json` | Stream-json parsing (v2.0.x) |
-| **Session resume** | `--resume $SESSION_ID` across loop iterations | Not documented | `--resume $SESSION_ID` or `--continue` | Capture session_id, `--resume` on re-run (v2.0.x) |
-| **Circuit breaker** | CB_NO_PROGRESS_THRESHOLD, CB_SAME_ERROR_THRESHOLD, cooldown | `--max-autopilot-continues` | `--max-turns` | `--max-turns` + post-execution no-progress check (v2.0.x) |
-| **Planning context** | `.ralph/PROMPT.md` + `.ralph/fix_plan.md` | User prompt + codebase analysis | User prompt + CLAUDE.md | GSD phase plans + PROJECT.md + STATE.md assembled into prompt |
-| **Notification** | Terminal bell on completion | Not documented | Not built-in | Terminal bell + macOS notification (v2.0) |
+| Feature | GSD (npx installer) | ralph-loop-setup (plugin) | flow-next (plugin) | gsd-ralph v2.1 (planned) |
+|---------|---------------------|---------------------------|--------------------|----|
+| **Distribution** | npm package via npx | Claude Code plugin marketplace | Claude Code plugin marketplace | Bash install script (v2.1), plugin (v2.1.x) |
+| **Install command** | `npx get-shit-done-cc --claude --local` | `/plugin install ralph-loop-setup` | `/plugin marketplace add gmickel/...` + `/flow-next:setup` | `./install.sh` or `bash <(curl -sL ...)` |
+| **Non-interactive mode** | Yes (flags: `--claude --global`) | N/A (plugin install is non-interactive) | N/A | Yes (no prompts by default) |
+| **Prerequisite check** | Implicit (npx handles Node) | Not documented | Not documented | Explicit: claude, GSD, jq, git, bash >= 3.2 |
+| **Idempotency** | Yes (wipe and replace managed dirs) | Not documented | Not documented | Yes (check-before-write, skip identical) |
+| **Uninstall** | Not documented | `/plugin uninstall` (native) | `/plugin uninstall` (native) | `./install.sh --uninstall` + manifest-based cleanup |
+| **Settings merge** | Overwrites managed dirs only | Plugin system merges hooks | Plugin system merges hooks | jq-based non-destructive merge (proven pattern) |
+| **Post-install verification** | User runs `/gsd:help` | User tests skill commands | User runs `/flow-next:setup` | Automated: file checks + version command + config validation |
+| **Upgrade** | Re-run `npx get-shit-done-cc` | Plugin marketplace auto-update | Plugin marketplace auto-update | `--upgrade` flag (v2.1.x) |
 
-### Key Insight from Comparison
+### Key Insight from Analysis
 
-Ralph v1.x and gsd-ralph v1.x both built custom execution loops (Bash while-loops invoking `claude -p` repeatedly). Copilot CLI's autopilot and Claude Code's agent loop now handle this internally -- the agent continues autonomously for N turns without needing external re-invocation. The v2.0 architecture should NOT re-implement the execution loop. Instead, it should:
+The Claude Code plugin system is the RIGHT long-term distribution mechanism -- it provides install/uninstall/upgrade/enable/disable lifecycle management for free. However, gsd-ralph has unique requirements that make a pure plugin insufficient for v2.1:
 
-1. Assemble the right prompt with GSD context
-2. Launch `claude -p` once with proper flags (`--worktree`, `--allowedTools`, `--max-turns`)
-3. Wait for completion
-4. React to the result (notify, resume, chain)
+1. **Per-repo `.ralphrc` configuration** -- Plugins install to user/project/local scope, but `.ralphrc` needs project-specific customization (PROJECT_NAME, ALLOWED_TOOLS). A plugin can install the template but cannot customize it per-project without a setup step.
+2. **Bash scripts in `scripts/` and `lib/`** -- Plugin directory structure supports skills/, commands/, hooks/, and agents/. Arbitrary script directories are not standard plugin components. The scripts must be accessible at known paths for `ralph-launcher.sh` to source them.
+3. **`bin/` executables in PATH** -- The `gsd-ralph` and `ralph-stop` binaries need to be in PATH or discoverable. Plugins don't handle PATH management.
 
-This is fundamentally simpler than v1.x's architecture and is the correct approach because Claude Code's internal agent loop handles iteration, tool use, and completion detection better than any external Bash wrapper can.
+The pragmatic v2.1 approach: build a bash install script first (handles all three issues natively), then wrap it as a plugin setup skill for v2.1.x (the plugin provides distribution and lifecycle; a setup command within the plugin handles per-repo initialization).
 
 ---
 
-## Implementation Approach Notes
+## What Files Need to Be Installed
 
-### GSD Skill vs. Shell Wrapper
+Based on analysis of the existing gsd-ralph codebase (~40 files across 5 directories):
 
-The `--ralph` flag can be implemented via two approaches:
+### Managed Files (replaced on upgrade, always overwritten)
 
-**Approach A: GSD Skill (Recommended)**
-Create `.claude/skills/ralph/SKILL.md` with:
-- `name: ralph`
-- `disable-model-invocation: true` (user-only trigger)
-- `context: fork` (runs in subagent for isolation)
-- Skill content: instructions for autonomous phase execution
+| Source Path | Target Path | Purpose |
+|-------------|-------------|---------|
+| `scripts/ralph-launcher.sh` | `scripts/ralph-launcher.sh` | Core loop engine (592 LOC) |
+| `scripts/assemble-context.sh` | `scripts/assemble-context.sh` | GSD context assembly |
+| `scripts/validate-config.sh` | `scripts/validate-config.sh` | Config validation |
+| `scripts/ralph-hook.sh` | `scripts/ralph-hook.sh` | PreToolUse hook for AskUserQuestion denial |
+| `scripts/ralph-execute.sh` | `scripts/ralph-execute.sh` | Phase execution setup |
+| `scripts/ralph-merge.sh` | `scripts/ralph-merge.sh` | Branch merge logic |
+| `scripts/ralph-status.sh` | `scripts/ralph-status.sh` | Phase status display |
+| `scripts/ralph-worktrees.sh` | `scripts/ralph-worktrees.sh` | Worktree isolation |
+| `scripts/ralph-cleanup.sh` | `scripts/ralph-cleanup.sh` | Worktree/branch cleanup |
+| `lib/common.sh` | `lib/common.sh` | Shared utilities |
+| `lib/config.sh` | `lib/config.sh` | Configuration loading |
+| `lib/discovery.sh` | `lib/discovery.sh` | Plan/phase discovery |
+| `lib/frontmatter.sh` | `lib/frontmatter.sh` | YAML frontmatter parsing |
+| `lib/prompt.sh` | `lib/prompt.sh` | Prompt generation |
+| `lib/push.sh` | `lib/push.sh` | Git push utilities |
+| `lib/safety.sh` | `lib/safety.sh` | Safe file operations |
+| `lib/strategy.sh` | `lib/strategy.sh` | Execution strategy |
+| `lib/templates.sh` | `lib/templates.sh` | Template expansion |
+| `lib/commands/*.sh` | `lib/commands/*.sh` | Command implementations (6 files) |
+| `lib/merge/*.sh` | `lib/merge/*.sh` | Merge utilities (6 files) |
+| `lib/cleanup/registry.sh` | `lib/cleanup/registry.sh` | Cleanup registry |
+| `bin/gsd-ralph` | `bin/gsd-ralph` | CLI entry point |
+| `bin/ralph-stop` | `bin/ralph-stop` | Graceful stop command |
+| `templates/*.template` | `templates/*.template` | Prompt/config templates (7 files) |
+| `.claude/skills/gsd-ralph-autopilot/SKILL.md` | `.claude/skills/gsd-ralph-autopilot/SKILL.md` | Autonomous behavior rules |
 
-Pro: Native to GSD ecosystem, inherits GSD's context management, auto-discovered.
-Con: Skill system was designed for Claude's use, not for wrapping external commands.
+### User-Owned Files (created if missing, never overwritten on upgrade)
 
-**Approach B: Shell Wrapper**
-A Bash script (or function) that:
-1. Parses `--ralph` from the GSD command arguments
-2. Assembles context from `.planning/`
-3. Invokes `claude --worktree <name> -p "$PROMPT" --allowedTools "$TOOLS"`
+| File | Purpose | Default Source |
+|------|---------|----------------|
+| `.ralphrc` | Project-level Ralph configuration | `templates/ralphrc.template` |
 
-Pro: Simple, testable, independent of GSD's internal skill system.
-Con: Not integrated into GSD's extension points, requires separate installation.
+### Merged Files (non-destructively updated)
 
-**Approach C: GSD Hook (Hybrid)**
-Register hooks in `.claude/settings.json` that trigger on specific GSD events:
-- `PreToolUse` matcher on GSD skill invocations
-- `Stop` hook to handle post-execution
+| File | What Gets Merged | Merge Strategy |
+|------|------------------|----------------|
+| `.claude/settings.local.json` | PreToolUse hook for ralph-hook.sh, permission allow entries for ralph scripts | jq-based array merge: add ralph-specific entries to existing arrays, do not replace. Existing `_install_hook()` / `_remove_hook()` patterns from ralph-launcher.sh. |
 
-Pro: Hooks are the official extension mechanism.
-Con: Hooks are reactive (fire on events), not proactive (cannot initiate execution).
+### Metadata Files (created by installer, managed by installer)
 
-**Recommendation: Start with Approach B (Shell Wrapper) for v2.0 MVP.** It is the simplest to build, test, and debug. Migrate to Approach A (GSD Skill) once the core logic is proven. The shell wrapper can be encapsulated as a skill later without changing the core logic.
-
-### Prompt Assembly Strategy
-
-The prompt for `claude -p` must include:
-1. **Role**: "You are executing GSD phase N autonomously. Follow GSD conventions."
-2. **Project context**: PROJECT.md content (what the project is, constraints)
-3. **Phase plans**: The specific plan files for this phase, in dependency order
-4. **State**: Current STATE.md (what has been done, what remains)
-5. **Verification**: How to verify completion (test commands, build commands)
-6. **Conventions**: GSD commit format, branch naming, file organization
-
-This prompt replaces v1.x's `PROTOCOL-PROMPT.md.template` with a dynamically assembled equivalent. The key difference: v1.x generated a file that Ralph read; v2.0 passes the prompt directly to `claude -p`.
+| File | Purpose |
+|------|---------|
+| `.ralph/.installed-files` | Manifest of all files installed (for clean uninstall) |
+| `.ralph/.version` | Installed version (for upgrade detection) |
 
 ---
 
 ## Sources
 
-- [Claude Code headless mode documentation](https://code.claude.com/docs/en/headless) -- HIGH confidence, official docs
-- [Claude Code hooks reference](https://code.claude.com/docs/en/hooks) -- HIGH confidence, official docs
-- [Claude Code skills documentation](https://code.claude.com/docs/en/skills) -- HIGH confidence, official docs
-- [Claude Agent SDK: Handle approvals and user input](https://platform.claude.com/docs/en/agent-sdk/user-input) -- HIGH confidence, official docs
-- [Claude Code agent teams](https://code.claude.com/docs/en/agent-teams) -- HIGH confidence, official docs
-- [GitHub Copilot CLI autopilot documentation](https://docs.github.com/en/copilot/concepts/agents/copilot-cli/autopilot) -- HIGH confidence, official docs
-- [Ralph for Claude Code (frankbria/ralph-claude-code)](https://github.com/frankbria/ralph-claude-code) -- MEDIUM confidence, community project
-- [GSD (get-shit-done)](https://github.com/gsd-build/get-shit-done) -- MEDIUM confidence, project README
-- [gsd-skill-creator (Tibsfox)](https://github.com/Tibsfox/gsd-skill-creator) -- MEDIUM confidence, reference implementation
-- [ClaudeLog: What is --max-turns](https://claudelog.com/faqs/what-is-max-turns-in-claude-code/) -- MEDIUM confidence, community documentation
-- [ClaudeLog: AskUserQuestion tool](https://claudelog.com/faqs/what-is-ask-user-question-tool-in-claude-code/) -- MEDIUM confidence, community documentation
+- [Claude Code Plugin Documentation](https://code.claude.com/docs/en/plugins) -- Plugin structure, manifest format, installation mechanism, migration from standalone (HIGH confidence)
+- [Claude Code Discover and Install Plugins](https://code.claude.com/docs/en/discover-plugins) -- Marketplace workflow, installation scopes, team configuration, auto-update (HIGH confidence)
+- [GSD get-shit-done-cc npm package](https://www.npmjs.com/package/get-shit-done-cc) -- npx installer pattern, file structure, non-interactive flags (HIGH confidence)
+- [GSD GitHub repository](https://github.com/gsd-build/get-shit-done) -- Installation flow, directory structure, wipe-and-replace strategy (MEDIUM confidence)
+- [ralph-loop-setup plugin](https://github.com/MarioGiancini/ralph-loop-setup) -- Plugin-based Ralph installer, skill structure, files created (MEDIUM confidence)
+- [gmickel-claude-marketplace flow-next](https://github.com/gmickel/gmickel-claude-marketplace) -- Plugin marketplace distribution, Ralph autonomous mode packaging (MEDIUM confidence)
+- [Homebrew install idempotency issue #559](https://github.com/Homebrew/install/issues/559) -- User frustration with non-idempotent installers (HIGH confidence)
+- [Idempotent Bash scripts by Fatih Arslan](https://arslan.io/2019/07/03/how-to-write-idempotent-bash-scripts/) -- Guard clauses, state checks, mkdir -p patterns (HIGH confidence)
+- [Shopify CLI error handling principles](https://shopify.github.io/cli/cli/error_handling.html) -- Error types (AbortError, BugError), user-facing error UX (MEDIUM confidence)
+- [Claude Code settings merge behavior](https://www.eesel.ai/blog/settings-json-claude-code) -- Settings scopes, merge semantics, local vs project vs user (MEDIUM confidence)
+- [anthropics/claude-plugins-official](https://github.com/anthropics/claude-plugins-official) -- Official marketplace structure and plugin listing format (HIGH confidence)
 
 ---
-*Feature research for: gsd-ralph v2.0 Autopilot Core*
-*Researched: 2026-03-09*
+*Feature research for: gsd-ralph v2.1 Easy Install*
+*Researched: 2026-03-10*
