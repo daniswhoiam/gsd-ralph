@@ -1,7 +1,7 @@
 # Requirements: gsd-ralph
 
 **Defined:** 2026-03-10
-**Core Value:** Add `--ralph` to any GSD command and walk away — Ralph drives, GSD works, code ships.
+**Core Value:** Add `--ralph` to any GSD command and walk away -- Ralph drives, GSD works, code ships.
 
 ## v2.2 Requirements
 
@@ -35,7 +35,7 @@ Deferred to v2.3+. Tracked but not in current roadmap.
 
 ### Other Deferred
 
-- **ORCH-01**: Multi-phase orchestration (chain phase N → N+1)
+- **ORCH-01**: Multi-phase orchestration (chain phase N -> N+1)
 - **RESM-01**: Session resume on failure via `--resume`
 - **LIFE-01**: Uninstall/upgrade lifecycle (manifest-based removal, in-place upgrade)
 
@@ -54,20 +54,20 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TMUX-01 | — | Pending |
-| TMUX-02 | — | Pending |
-| TMUX-03 | — | Pending |
-| TMUX-04 | — | Pending |
-| CTRL-01 | — | Pending |
-| CTRL-02 | — | Pending |
-| RSLN-01 | — | Pending |
-| RSLN-02 | — | Pending |
+| TMUX-01 | Phase 17 | Pending |
+| TMUX-02 | Phase 17 | Pending |
+| TMUX-03 | Phase 17 | Pending |
+| TMUX-04 | Phase 19 | Pending |
+| CTRL-01 | Phase 18 | Pending |
+| CTRL-02 | Phase 17 | Pending |
+| RSLN-01 | Phase 18 | Pending |
+| RSLN-02 | Phase 18 | Pending |
 
 **Coverage:**
 - v2.2 requirements: 8 total
-- Mapped to phases: 0
-- Unmapped: 8 ⚠️
+- Mapped to phases: 8
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-10*
-*Last updated: 2026-03-10 after initial definition*
+*Last updated: 2026-03-10 after roadmap creation*
