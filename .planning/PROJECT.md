@@ -50,22 +50,32 @@ Add `--ralph` to any GSD command and walk away — Ralph drives, GSD works, code
 
 ### Active
 
-(No active requirements — next milestone not yet defined)
+See `.planning/REQUIREMENTS.md` for v2.2 requirements.
 
 ### Out of Scope
 
-- Intelligent response strategies (context-aware checkpoint answers) — v2.2+
-- Parallel plan execution via multiple worktrees — v2.2+
-- Multi-phase orchestration (chain phase N → N+1) — v2.2+
-- Session resume on failure via `--resume` — v2.2+
-- Real-time progress display via stream-json parsing — v2.2+
-- Uninstall/upgrade lifecycle (manifest-based removal, in-place upgrade) — v2.2+
+- Intelligent response strategies (context-aware checkpoint answers) — v2.3+
+- Parallel plan execution via multiple worktrees — v2.3+
+- Multi-phase orchestration (chain phase N → N+1) — v2.3+
+- Session resume on failure via `--resume` — v2.3+
+- Real-time progress display via stream-json parsing — v2.3
+- Uninstall/upgrade lifecycle (manifest-based removal, in-place upgrade) — v2.3+
 - Custom LLM provider support — coupled to Claude Code intentionally
 - GUI or web dashboard — CLI only, target users are terminal-native
 - Multi-repo support — single git repo only
 - v1.x standalone CLI features (init, generate, execute, merge, cleanup) — superseded by GSD native commands
 - Claude Code plugin packaging — namespacing breaks `/gsd:ralph` command
 - npm/npx package — pure Bash; npm adds conceptual mismatch
+
+## Current Milestone: v2.2 Ralph Visibility
+
+**Goal:** Give Ralph operators real-time visibility into what Claude is doing via tmux panes.
+
+**Target features:**
+- tmux pane management so Claude's output streams visibly during Ralph execution
+- Minimal status output in the control terminal (iteration count, elapsed time, state)
+- Graceful fallback when tmux is unavailable (current headless behavior)
+- Existing loop engine, circuit breakers, and completion detection unchanged
 
 ## Context
 
@@ -110,4 +120,4 @@ Key components:
 | v2.1: Uninstall/upgrade deferred to v2.2 | Keep v2.1 scope tight — install-only | ✓ Good — shipped on time |
 
 ---
-*Last updated: 2026-03-10 after v2.1 milestone*
+*Last updated: 2026-03-10 after v2.2 milestone start*

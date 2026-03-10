@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.1
-milestone_name: Easy Install
-status: archived
-stopped_at: Milestone v2.1 archived
-last_updated: "2026-03-10T21:10:00Z"
-last_activity: 2026-03-10 -- Archived milestone v2.1 Easy Install
+milestone: v2.2
+milestone_name: Ralph Visibility
+status: defining_requirements
+stopped_at: Defining requirements
+last_updated: "2026-03-10T21:30:00Z"
+last_activity: 2026-03-10 -- Milestone v2.2 started
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 4
-  completed_plans: 4
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -21,22 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-10)
 
 **Core value:** Add `--ralph` to any GSD command and walk away -- Ralph drives, GSD works, code ships.
-**Current focus:** Planning next milestone
+**Current focus:** v2.2 Ralph Visibility -- real-time tmux-based output for Ralph execution
 
 ## Current Position
 
-Phase: All phases complete
-Status: v2.1 Milestone Archived
-Last activity: 2026-03-10 -- Archived milestone v2.1 Easy Install
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-10 — Milestone v2.2 started
 
 ## Performance Metrics
-
-**v2.1 Velocity:**
-- Total plans completed: 4
-- Timeline: 1 day (Mar 10, 2026)
-- Commits: 30
-- Codebase: ~1,100 LOC Bash + ~2,400 LOC Bats tests
-- Tests: 356 passing, 0 failures
 
 **Historical:**
 - v1.0: 13 plans in 7 days
@@ -50,6 +44,12 @@ Last activity: 2026-03-10 -- Archived milestone v2.1 Easy Install
 
 See PROJECT.md Key Decisions table for full list.
 
+### Key Discovery (v2.2 research)
+
+- `claude --tmux` requires `--worktree` (already used) but fails with `-p` ("open terminal failed: not a terminal")
+- Architecture: launcher manages tmux pane itself, runs `claude -p --output-format text` inside it
+- Control terminal keeps loop engine; tmux pane provides visibility
+
 ### Pending Todos
 
 - Fix: assemble-context.sh crashes when no active phase (grep fails with pipefail)
@@ -60,6 +60,6 @@ See PROJECT.md Key Decisions table for full list.
 
 ## Session Continuity
 
-Last session: 2026-03-10T21:10:00Z
-Stopped at: Milestone v2.1 archived
-Next step: Start next milestone with `/gsd:new-milestone`
+Last session: 2026-03-10T21:30:00Z
+Stopped at: Defining v2.2 requirements
+Next step: Complete requirements definition and roadmap creation
