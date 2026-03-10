@@ -32,6 +32,7 @@ MAX_TURNS="$DEFAULT_MAX_TURNS"
 PERMISSION_TIER="$DEFAULT_PERMISSION_TIER"
 DRY_RUN=false
 GSD_COMMAND=""
+RALPH_ENABLED=true
 
 # --- Phase 12 constants ---
 DEFAULT_TIMEOUT_MINUTES=30
@@ -101,6 +102,11 @@ read_config() {
         cfg_timeout=$(jq -r '.ralph.timeout_minutes // empty' "$CONFIG_FILE" 2>/dev/null)
         if [ -n "$cfg_timeout" ]; then
             TIMEOUT_MINUTES="$cfg_timeout"
+        fi
+        local cfg_enabled
+        cfg_enabled=$(jq -r 'if .ralph.enabled == false then "false" else empty end' "$CONFIG_FILE" 2>/dev/null)
+        if [ "$cfg_enabled" = "false" ]; then
+            RALPH_ENABLED=false
         fi
     fi
 }
@@ -539,6 +545,12 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
 
     # Read config (may adjust MAX_TURNS, PERMISSION_TIER)
     read_config
+
+    # Check if Ralph is disabled
+    if [ "$RALPH_ENABLED" = "false" ]; then
+        echo "Ralph is disabled (ralph.enabled=false in config.json). Exiting."
+        exit 0
+    fi
 
     # Validate config
     if command -v validate_ralph_config >/dev/null 2>&1; then
