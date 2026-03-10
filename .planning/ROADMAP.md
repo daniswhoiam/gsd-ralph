@@ -41,7 +41,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 10: Core Architecture and Autonomous Behavior** - Foundational artifacts that define what gsd-ralph does vs. what GSD/Claude Code do (completed 2026-03-09)
 - [x] **Phase 11: Shell Launcher and Headless Invocation** - The working autopilot: `--ralph` flag, loop execution, permission tiers, worktree isolation (completed 2026-03-10)
-- [ ] **Phase 12: Defense-in-Depth and Observability** - Hardening with circuit breakers, AskUserQuestion denial hook, progress monitoring, audit logging
+- [x] **Phase 12: Defense-in-Depth and Observability** - Hardening with circuit breakers, AskUserQuestion denial hook, progress monitoring, audit logging (completed 2026-03-10)
 
 ## Phase Details
 
@@ -85,11 +85,11 @@ Plans:
   2. A PreToolUse hook denies AskUserQuestion calls as defense-in-depth, providing guidance feedback to the Claude instance instead of silently failing
   3. User can observe real-time progress during an autonomous run by parsing `stream-json` output (iteration count, current activity, elapsed time)
   4. All auto-approved decisions are logged to an audit file that the user can review after the run completes
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
-- [ ] 12-01-PLAN.md -- Circuit breaker, graceful stop, progress display, audit lifecycle, config validation
-- [ ] 12-02-PLAN.md -- PreToolUse hook for AskUserQuestion denial + hook auto-install/remove lifecycle
+- [x] 12-01-PLAN.md -- Circuit breaker, graceful stop, progress display, audit lifecycle, config validation
+- [x] 12-02-PLAN.md -- PreToolUse hook for AskUserQuestion denial + hook auto-install/remove lifecycle
 
 ## Progress
 
@@ -109,4 +109,4 @@ Phases execute in numeric order: 10 -> 11 -> 12
 | 9. CLI Guidance | v1.1 | 2/2 | Complete | 2026-02-23 |
 | 10. Core Architecture and Autonomous Behavior | 2/2 | Complete    | 2026-03-09 | - |
 | 11. Shell Launcher and Headless Invocation | 2/2 | Complete    | 2026-03-10 | - |
-| 12. Defense-in-Depth and Observability | 1/2 | In Progress|  | - |
+| 12. Defense-in-Depth and Observability | 2/2 | Complete   | 2026-03-10 | 2026-03-10 |

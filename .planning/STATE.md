@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Autopilot Core
-status: executing
-stopped_at: Completed 12-01-PLAN.md
-last_updated: "2026-03-10T14:12:07.025Z"
-last_activity: 2026-03-10 -- Completed 12-01 circuit breaker, graceful stop, progress display, audit lifecycle
+status: completed
+stopped_at: Completed 12-02-PLAN.md
+last_updated: "2026-03-10T14:25:19.398Z"
+last_activity: 2026-03-10 -- Completed 12-02 PreToolUse hook, hook lifecycle, requirements traceability
 progress:
   total_phases: 3
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 6
-  completed_plans: 5
-  percent: 83
+  completed_plans: 6
+  percent: 100
 ---
 
 # Project State
@@ -21,17 +21,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-09)
 
 **Core value:** Add `--ralph` to any GSD command and walk away -- Ralph drives, GSD works, code ships.
-**Current focus:** Phase 12 - Defense-in-Depth and Observability
+**Current focus:** v2.0 Autopilot Core -- all phases complete
 
 ## Current Position
 
 Milestone: v2.0 Autopilot Core
 Phase: 12 of 12 (Defense-in-Depth and Observability)
-Plan: 1 of 2 in current phase
-Status: Executing
-Last activity: 2026-03-10 -- Completed 12-01 circuit breaker, graceful stop, progress display, audit lifecycle
+Plan: 2 of 2 in current phase
+Status: Complete
+Last activity: 2026-03-10 -- Completed 12-02 PreToolUse hook, hook lifecycle, requirements traceability
 
-Progress: [████████████████████░░░░] 83% (v1.0 + v1.1 complete; v2.0 Phase 12: 1/2 plans done)
+Progress: [████████████████████████] 100% (v1.0 + v1.1 + v2.0 complete)
 
 ## Performance Metrics
 
@@ -48,11 +48,12 @@ Progress: [████████████████████░░░
 - Codebase: 9,693 LOC total, 211 tests
 
 **v2.0 Velocity:**
-- Total plans completed: 3
+- Total plans completed: 4
 - Target: ~200-400 LOC (thin integration layer)
 - 11-01: 3min, 2 tasks, 5 files, 22 tests
 - 11-02: 6min, 1 task, 3 files, 37 tests
 - 12-01: 9min, 1 task, 7 files, 58 tests
+- 12-02: 9min, 2 tasks, 6 files, 72 tests
 
 ## Accumulated Context
 
@@ -80,6 +81,11 @@ Recent decisions affecting current work:
 - [Phase 12-01]: Graceful stop auto-removes sentinel file after detection to prevent stale state
 - [Phase 12-01]: Audit log truncated at each run start to keep logs scoped to current session
 - [Phase 12-01]: Progress line format: Ralph: Iter N done (Xm Ys) | Total: Xm Ys | state | exit=N
+- [Phase 12-02]: Hook uses jq for both JSON parsing (stdin) and JSON output (deny decision)
+- [Phase 12-02]: Trap-based cleanup replaces explicit _print_audit_summary calls at each exit path
+- [Phase 12-02]: settings.local.json merge/unmerge via jq preserves existing permissions and hooks
+- [Phase 12-02]: RALPH_AUDIT_FILE env var shared between launcher and hook for unified audit logging
+- [Phase 12]: Hook uses jq for both JSON parsing and output; Trap-based cleanup replaces explicit audit summary calls; settings.local.json merge/unmerge via jq preserves existing content
 
 ### Pending Todos
 
@@ -93,6 +99,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-03-10T14:12:00.920Z
-Stopped at: Completed 12-01-PLAN.md
-Next step: Execute Phase 12 Plan 02 (hook script and audit integration)
+Last session: 2026-03-10T14:25:19.395Z
+Stopped at: Completed 12-02-PLAN.md
+Next step: v2.0 Autopilot Core milestone complete -- all phases and plans executed
