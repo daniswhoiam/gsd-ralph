@@ -71,6 +71,33 @@ teardown() {
     [ "$PERMISSION_TIER" = "default" ]
 }
 
+@test "read_config sets RALPH_ENABLED to false when config says false" {
+    create_ralph_config false 50 "default"
+    PROJECT_ROOT="$TEST_TEMP_DIR"
+    CONFIG_FILE="$PROJECT_ROOT/.planning/config.json"
+    RALPH_ENABLED=true
+    read_config
+    [ "$RALPH_ENABLED" = "false" ]
+}
+
+@test "read_config leaves RALPH_ENABLED as true when config says true" {
+    create_ralph_config true 50 "default"
+    PROJECT_ROOT="$TEST_TEMP_DIR"
+    CONFIG_FILE="$PROJECT_ROOT/.planning/config.json"
+    RALPH_ENABLED=true
+    read_config
+    [ "$RALPH_ENABLED" = "true" ]
+}
+
+@test "read_config leaves RALPH_ENABLED as true when enabled field is missing" {
+    create_ralph_config_raw '{"ralph": {"max_turns": 50}}'
+    PROJECT_ROOT="$TEST_TEMP_DIR"
+    CONFIG_FILE="$PROJECT_ROOT/.planning/config.json"
+    RALPH_ENABLED=true
+    read_config
+    [ "$RALPH_ENABLED" = "true" ]
+}
+
 # --- build_prompt tests ---
 
 @test "build_prompt translates execute-phase N into natural language prompt" {
@@ -875,4 +902,19 @@ MOCKEOF
     # hooks key should be gone entirely (not an empty object)
     run jq -r '.hooks // "absent"' "$TEST_TEMP_DIR/.claude/settings.local.json"
     assert_output "absent"
+}
+
+# ============================================================
+# Plan 13-01: Config enforcement tests
+# ============================================================
+
+@test "launcher exits early with message when ralph.enabled is false" {
+    create_ralph_config false 50 "default"
+    # Need a minimal valid environment for the launcher to run
+    PROJECT_ROOT="$TEST_TEMP_DIR"
+
+    # Run the launcher script directly (not sourced) with a GSD command
+    run bash "$REAL_PROJECT_ROOT/scripts/ralph-launcher.sh" execute-phase 11
+    assert_success  # exit 0, not error
+    assert_output --partial "disabled"
 }
