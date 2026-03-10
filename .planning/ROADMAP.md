@@ -68,7 +68,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans:** 1/1 plans complete
 
 Plans:
-- [ ] 14-01-PLAN.md -- Add RALPH_SCRIPTS_DIR auto-detection, replace hardcoded paths, full regression
+- [x] 14-01-PLAN.md -- Add RALPH_SCRIPTS_DIR auto-detection, replace hardcoded paths, full regression
 
 ### Phase 15: Core Installer
 **Goal**: User can install gsd-ralph into any GSD project with a single terminal command and have a working Ralph setup immediately
@@ -80,7 +80,11 @@ Plans:
   3. Running the installer a second time in the same repo produces no changes and no errors (idempotent)
   4. After install, running `/gsd:ralph execute-phase N --dry-run` in the target repo produces valid output (full workflow functional)
   5. Installer prints colored summary with count of files installed and explicit next-step instructions
-**Plans**: TBD
+**Plans:** 2 plans
+
+Plans:
+- [ ] 15-01-PLAN.md -- TDD installer prerequisites, file copy manifest, path adjustment, and idempotency
+- [ ] 15-02-PLAN.md -- TDD config merge, post-install verification, and summary output
 
 ### Phase 16: End-to-End Validation
 **Goal**: Automated test suite proves the complete install-then-use workflow works in realistic target repos with varying initial states
@@ -113,6 +117,6 @@ Phases execute in numeric order: 14 -> 15 -> 16
 | 11. Shell Launcher | v2.0 | 2/2 | Complete | 2026-03-10 |
 | 12. Defense-in-Depth | v2.0 | 2/2 | Complete | 2026-03-10 |
 | 13. Audit Path Fix | v2.0 | 1/1 | Complete | 2026-03-10 |
-| 14. Location-Independent Scripts | 1/1 | Complete    | 2026-03-10 | - |
-| 15. Core Installer | v2.1 | 0/? | Not started | - |
+| 14. Location-Independent Scripts | v2.1 | 1/1 | Complete | 2026-03-10 |
+| 15. Core Installer | v2.1 | 0/2 | Not started | - |
 | 16. End-to-End Validation | v2.1 | 0/? | Not started | - |
