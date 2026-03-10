@@ -33,7 +33,7 @@ Requirements for the Autopilot Core rewrite. Each maps to roadmap phases.
 - [x] **OBSV-01**: System detects iteration completion/failure from exit code and output
 - [x] **OBSV-02**: Terminal bell on loop completion or failure
 - [x] **OBSV-03**: Real-time progress display by parsing stream-json output *(Deferred to v2.1 per user decision. Per-iteration summary satisfies v2.0 visibility intent)*
-- [ ] **OBSV-04**: Auto-approved decisions logged to audit file for post-run review *(integration fix in Phase 13)*
+- [x] **OBSV-04**: Auto-approved decisions logged to audit file for post-run review *(integration fix in Phase 13)*
 
 ## Future Requirements
 
@@ -84,7 +84,7 @@ Deferred to v2.1+. Tracked but not in current roadmap.
 | OBSV-01 | Phase 11 | Complete |
 | OBSV-02 | Phase 11 | Complete |
 | OBSV-03 | Phase 12 | Complete |
-| OBSV-04 | Phase 13 | Pending |
+| OBSV-04 | Phase 13 | Complete |
 
 **Coverage:**
 - v2.0 requirements: 16 total

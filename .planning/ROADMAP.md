@@ -42,7 +42,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 10: Core Architecture and Autonomous Behavior** - Foundational artifacts that define what gsd-ralph does vs. what GSD/Claude Code do (completed 2026-03-09)
 - [x] **Phase 11: Shell Launcher and Headless Invocation** - The working autopilot: `--ralph` flag, loop execution, permission tiers, worktree isolation (completed 2026-03-10)
 - [x] **Phase 12: Defense-in-Depth and Observability** - Hardening with circuit breakers, AskUserQuestion denial hook, progress monitoring, audit logging (completed 2026-03-10)
-- [ ] **Phase 13: Audit Path Fix and Config Enforcement** - Close audit integration gap (split audit log) and enforce ralph.enabled config field
+- [x] **Phase 13: Audit Path Fix and Config Enforcement** - Close audit integration gap (split audit log) and enforce ralph.enabled config field (completed 2026-03-10)
 
 ## Phase Details
 
@@ -123,4 +123,4 @@ Phases execute in numeric order: 10 -> 11 -> 12
 | 10. Core Architecture and Autonomous Behavior | 2/2 | Complete    | 2026-03-09 | - |
 | 11. Shell Launcher and Headless Invocation | 2/2 | Complete    | 2026-03-10 | - |
 | 12. Defense-in-Depth and Observability | 2/2 | Complete    | 2026-03-10 | 2026-03-10 |
-| 13. Audit Path Fix and Config Enforcement | v2.0 | 0/1 | Pending | - |
+| 13. Audit Path Fix and Config Enforcement | 1/1 | Complete   | 2026-03-10 | - |

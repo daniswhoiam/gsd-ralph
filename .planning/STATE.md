@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Autopilot Core
 status: completed
-stopped_at: Completed 12-02-PLAN.md
-last_updated: "2026-03-10T14:42:47.275Z"
-last_activity: 2026-03-10 -- Completed 12-02 PreToolUse hook, hook lifecycle, requirements traceability
+stopped_at: Completed 13-01-PLAN.md
+last_updated: "2026-03-10T16:12:19.764Z"
+last_activity: 2026-03-10 -- Completed 13-01 audit path fix and config enforcement
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 6
-  completed_plans: 6
+  total_phases: 4
+  completed_phases: 4
+  total_plans: 7
+  completed_plans: 7
   percent: 100
 ---
 
@@ -21,17 +21,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-09)
 
 **Core value:** Add `--ralph` to any GSD command and walk away -- Ralph drives, GSD works, code ships.
-**Current focus:** v2.0 Autopilot Core -- all phases complete
+**Current focus:** Gap closure phase 13 -- audit path fix and config enforcement
 
 ## Current Position
 
 Milestone: v2.0 Autopilot Core
-Phase: 12 of 12 (Defense-in-Depth and Observability)
-Plan: 2 of 2 in current phase
+Phase: 13 (Audit Path Fix and Config Enforcement)
+Plan: 1 of 1 in current phase
 Status: Complete
-Last activity: 2026-03-10 -- Completed 12-02 PreToolUse hook, hook lifecycle, requirements traceability
+Last activity: 2026-03-10 -- Completed 13-01 audit path fix and config enforcement
 
-Progress: [████████████████████████] 100% (v1.0 + v1.1 + v2.0 complete)
+Progress: [██████████] 100% (v1.0 + v1.1 + v2.0 + gap closure complete)
 
 ## Performance Metrics
 
@@ -54,6 +54,9 @@ Progress: [███████████████████████
 - 11-02: 6min, 1 task, 3 files, 37 tests
 - 12-01: 9min, 1 task, 7 files, 58 tests
 - 12-02: 9min, 2 tasks, 6 files, 72 tests
+
+**Gap Closure:**
+- 13-01: 10min, 2 tasks, 2 files, 5 new tests
 
 ## Accumulated Context
 
@@ -86,6 +89,9 @@ Recent decisions affecting current work:
 - [Phase 12-02]: settings.local.json merge/unmerge via jq preserves existing permissions and hooks
 - [Phase 12-02]: RALPH_AUDIT_FILE env var shared between launcher and hook for unified audit logging
 - [Phase 12]: Hook uses jq for both JSON parsing and output; Trap-based cleanup replaces explicit audit summary calls; settings.local.json merge/unmerge via jq preserves existing content
+- [Phase 13-01]: jq == false equality check for JSON boolean false (// operator treats false as falsy)
+- [Phase 13-01]: Export RALPH_AUDIT_FILE inside run_loop, not at script top level, to avoid test leaking
+- [Phase 13-01]: ralph.enabled=false exits 0 (intentional disable is not an error)
 
 ### Pending Todos
 
@@ -99,6 +105,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-03-10T14:25:19.395Z
-Stopped at: Completed 12-02-PLAN.md
-Next step: v2.0 Autopilot Core milestone complete -- all phases and plans executed
+Last session: 2026-03-10T16:12:14.911Z
+Stopped at: Completed 13-01-PLAN.md
+Next step: Phase 13 gap closure complete -- no further plans
