@@ -154,7 +154,15 @@ create_mock_audit_log() {
 # Usage: create_mock_settings_local [content]
 # Default content: {"permissions":{"allow":[]}}
 create_mock_settings_local() {
-    local content="${1:-{\"permissions\":{\"allow\":[]}}}"
+    local content="${1:-}"
     mkdir -p "$TEST_TEMP_DIR/.claude"
-    echo "$content" > "$TEST_TEMP_DIR/.claude/settings.local.json"
+    if [ -z "$content" ]; then
+        cat > "$TEST_TEMP_DIR/.claude/settings.local.json" <<'JSONEOF'
+{"permissions":{"allow":[]}}
+JSONEOF
+    else
+        cat > "$TEST_TEMP_DIR/.claude/settings.local.json" <<JSONEOF
+$content
+JSONEOF
+    fi
 }

@@ -333,6 +333,55 @@ _print_audit_summary() {
     fi
 }
 
+# Install PreToolUse hook for AskUserQuestion denial into settings.local.json
+# Merges hook config into existing settings, preserving other content
+_install_hook() {
+    local settings_file="$PROJECT_ROOT/.claude/settings.local.json"
+    local hook_script="$PROJECT_ROOT/scripts/ralph-hook.sh"
+
+    # Create .claude/ directory if needed
+    mkdir -p "$PROJECT_ROOT/.claude"
+
+    # Read existing settings or start with empty object
+    local existing="{}"
+    if [ -f "$settings_file" ]; then
+        existing=$(cat "$settings_file")
+    fi
+
+    # Merge hook config into existing settings
+    echo "$existing" | jq --arg cmd "$hook_script" '
+        .hooks.PreToolUse = (.hooks.PreToolUse // []) + [{
+            matcher: "AskUserQuestion",
+            hooks: [{
+                type: "command",
+                command: $cmd
+            }]
+        }]
+    ' > "$settings_file"
+}
+
+# Remove ralph-specific PreToolUse hook from settings.local.json
+# Preserves other hooks and settings; cleans up empty containers
+_remove_hook() {
+    local settings_file="$PROJECT_ROOT/.claude/settings.local.json"
+
+    if [ ! -f "$settings_file" ]; then
+        return 0
+    fi
+
+    jq 'if .hooks.PreToolUse then
+        .hooks.PreToolUse = [.hooks.PreToolUse[] | select(.hooks[0].command | test("ralph-hook") | not)]
+        | if (.hooks.PreToolUse | length) == 0 then del(.hooks.PreToolUse) else . end
+        | if (.hooks | length) == 0 then del(.hooks) else . end
+    else . end' "$settings_file" > "$settings_file.tmp" && mv "$settings_file.tmp" "$settings_file"
+}
+
+# Cleanup function called via trap on EXIT/INT/TERM
+_cleanup() {
+    _remove_hook
+    _print_audit_summary "$AUDIT_FILE"
+}
+
 # Execute a single iteration: assemble context, build command, run claude -p
 # Args: $1 = prompt, $2 = max_turns, $3 = permission_tier
 # Returns: exit code from claude -p invocation
@@ -405,16 +454,16 @@ run_loop() {
     local loop_start_epoch iteration=0
     loop_start_epoch=$(date +%s)
     _init_audit_log "$AUDIT_FILE"
+    _install_hook
+    trap _cleanup EXIT INT TERM
 
     while true; do
         # Check circuit breaker (wall-clock timeout)
         if ! _check_circuit_breaker "$TIMEOUT_MINUTES" "$loop_start_epoch"; then
-            _print_audit_summary "$AUDIT_FILE"
             return 1
         fi
         # Check graceful stop
         if ! _check_graceful_stop "$STOP_FILE"; then
-            _print_audit_summary "$AUDIT_FILE"
             return 1
         fi
 
@@ -447,7 +496,6 @@ run_loop() {
             printf '\a'
             echo "Ralph: Phase $target_phase complete."
             rm -f "$STOP_FILE"
-            _print_audit_summary "$AUDIT_FILE"
             return 0
         fi
 
@@ -475,7 +523,6 @@ run_loop() {
             # Retry also failed with no progress -- unrecoverable
             printf '\a'
             echo "Ralph: Unrecoverable failure after retry. Check logs." >&2
-            _print_audit_summary "$AUDIT_FILE"
             return 1
         fi
 
