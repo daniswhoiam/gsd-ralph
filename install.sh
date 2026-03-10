@@ -144,6 +144,105 @@ install_command_file() {
     INSTALLED=$((INSTALLED + 1))
 }
 
+# --- Config merge (INST-05) ---
+# Adds ralph config defaults to .planning/config.json without overwriting existing settings.
+# Args: config_file path
+merge_ralph_config() {
+    local config_file="$1"
+
+    # Check if ralph key already exists -- skip if present
+    if jq -e '.ralph' "$config_file" >/dev/null 2>&1; then
+        print_info "Ralph config already present in config.json"
+        return 0
+    fi
+
+    # Validate existing JSON before modifying
+    if ! jq '.' "$config_file" >/dev/null 2>&1; then
+        print_error "config.json contains invalid JSON -- cannot merge ralph config"
+        return 1
+    fi
+
+    # Create temp file in same directory for atomic mv (same filesystem)
+    local tmp_file
+    tmp_file="$(mktemp "$(dirname "$config_file")/config.json.XXXXXX")"
+
+    if jq '. + {"ralph":{"enabled":true,"max_turns":50,"permission_tier":"default","timeout_minutes":30}}' \
+        "$config_file" > "$tmp_file"; then
+        mv "$tmp_file" "$config_file"
+        print_success "Added ralph config to config.json"
+    else
+        rm -f "$tmp_file"
+        print_error "Failed to merge ralph config"
+        return 1
+    fi
+}
+
+# --- Post-install verification (INST-07) ---
+# Checks that all installed files exist, scripts are executable, and config has ralph key.
+# Returns error count (0 = success).
+verify_installation() {
+    local errors=0
+
+    # Scripts must exist and be executable
+    local script
+    for script in ralph-launcher.sh assemble-context.sh validate-config.sh ralph-hook.sh; do
+        local path="scripts/ralph/$script"
+        if [ ! -f "$path" ]; then
+            print_error "Missing: $path"
+            errors=$((errors + 1))
+        elif [ ! -x "$path" ]; then
+            print_error "Not executable: $path"
+            errors=$((errors + 1))
+        fi
+    done
+
+    # Non-script files must exist
+    local file
+    for file in ".claude/commands/gsd/ralph.md" ".claude/skills/gsd-ralph-autopilot/SKILL.md"; do
+        if [ ! -f "$file" ]; then
+            print_error "Missing: $file"
+            errors=$((errors + 1))
+        fi
+    done
+
+    # Config must have ralph key
+    if ! jq -e '.ralph' .planning/config.json >/dev/null 2>&1; then
+        print_error "Ralph config missing from .planning/config.json"
+        errors=$((errors + 1))
+    fi
+
+    return $errors
+}
+
+# --- Summary output (INST-08) ---
+# Prints a colored summary with file counts and next-step instructions.
+# Uses INSTALLED and SKIPPED counters set during file copy.
+print_summary() {
+    printf "\n"
+    printf "%s\n" "----------------------------------------"
+
+    if [ "$INSTALLED" -gt 0 ]; then
+        printf "${BOLD}${GREEN}Installation complete!${NC}\n"
+    else
+        printf "${BOLD}${GREEN}Already up to date!${NC}\n"
+    fi
+
+    printf "\n"
+
+    if [ "$INSTALLED" -gt 0 ]; then
+        printf "  Installed: %d files\n" "$INSTALLED"
+    fi
+    if [ "$SKIPPED" -gt 0 ]; then
+        printf "  Skipped:   %d files (already up to date)\n" "$SKIPPED"
+    fi
+
+    printf "\n"
+    printf "Next steps:\n"
+    printf "  1. Run /gsd:ralph execute-phase N --dry-run to verify\n"
+    printf "  2. See .claude/skills/gsd-ralph-autopilot/SKILL.md for autopilot behavior rules\n"
+    printf "%s\n" "----------------------------------------"
+}
+
 # --- Main execution ---
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     check_prerequisites || exit 1
@@ -163,10 +262,12 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     # Copy skill file
     install_file "$GSD_RALPH_REPO/.claude/skills/gsd-ralph-autopilot/SKILL.md" ".claude/skills/gsd-ralph-autopilot/SKILL.md" false
 
-    # Summary
-    if [ "$INSTALLED" -gt 0 ]; then
-        print_success "Installed $INSTALLED file(s), skipped $SKIPPED unchanged file(s)"
-    else
-        print_info "All $SKIPPED file(s) already up to date"
-    fi
+    # Merge ralph config into .planning/config.json
+    merge_ralph_config ".planning/config.json" || exit 1
+
+    # Post-install verification
+    verify_installation || { print_error "Verification failed"; exit 1; }
+
+    # Print summary with file counts and next steps
+    print_summary
 fi
