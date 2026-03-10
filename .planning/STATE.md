@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: Easy Install
-status: completed
-stopped_at: Completed 14-01-PLAN.md
-last_updated: "2026-03-10T18:07:24.318Z"
-last_activity: 2026-03-10 -- Completed 14-01 Location-Independent Scripts
+status: executing
+stopped_at: Completed 15-01-PLAN.md
+last_updated: "2026-03-10T18:48:05.273Z"
+last_activity: 2026-03-10 -- Completed 15-01 Core Installer (prerequisites + file copy)
 progress:
   total_phases: 3
   completed_phases: 1
-  total_plans: 1
-  completed_plans: 1
-  percent: 100
+  total_plans: 3
+  completed_plans: 2
+  percent: 67
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-10)
 
 **Core value:** Add `--ralph` to any GSD command and walk away -- Ralph drives, GSD works, code ships.
-**Current focus:** v2.1 Easy Install -- Phase 14 (Location-Independent Scripts)
+**Current focus:** v2.1 Easy Install -- Phase 15 (Core Installer)
 
 ## Current Position
 
-Phase: 14 of 16 (Location-Independent Scripts)
-Plan: 1 of 1 in current phase
-Status: Phase 14 complete
-Last activity: 2026-03-10 -- Completed 14-01 Location-Independent Scripts
+Phase: 15 of 16 (Core Installer)
+Plan: 1 of 2 in current phase
+Status: Executing Phase 15
+Last activity: 2026-03-10 -- Completed 15-01 Core Installer (prerequisites + file copy)
 
-Progress: [██████████] 100%
+Progress: [███████░░░] 67%
 
 ## Performance Metrics
 
@@ -39,7 +39,7 @@ Progress: [██████████] 100%
 - Timeline: 2 days (Mar 9-10, 2026)
 - Commits: 55
 - Codebase: 831 LOC Bash + 1,593 LOC Bats tests (2,424 total)
-- Tests: 319 passing, 0 failures
+- Tests: 335 passing, 0 failures (319 + 16 installer tests from Phase 15-01)
 
 **Historical:**
 - v1.0: 13 plans in 7 days
@@ -54,6 +54,10 @@ See PROJECT.md Key Decisions table for full list.
 - v2.1: Uninstall and upgrade deferred to v2.2 (keep v2.1 scope tight)
 - v2.1: Scripts install to `scripts/ralph/` in target repos (namespace avoids collisions)
 - v2.1: Copied proven BASH_SOURCE symlink resolution pattern from bin/gsd-ralph for RALPH_SCRIPTS_DIR (Phase 14)
+- v2.1: Collected all prerequisite failures before returning for better UX (Phase 15-01)
+- v2.1: Used cmp -s for idempotent file comparison -- POSIX standard, no hashing overhead (Phase 15-01)
+- v2.1: sed path adjustment for ralph.md generated to temp file first for idempotent comparison (Phase 15-01)
+- [Phase 15]: Collected all prerequisite failures before returning for better UX
 
 ### Pending Todos
 
@@ -65,6 +69,6 @@ See PROJECT.md Key Decisions table for full list.
 
 ## Session Continuity
 
-Last session: 2026-03-10T17:58:22.423Z
-Stopped at: Completed 14-01-PLAN.md
-Next step: `/gsd:plan-phase 15` or `/gsd:execute-phase 15`
+Last session: 2026-03-10T18:47:59.580Z
+Stopped at: Completed 15-01-PLAN.md
+Next step: Execute 15-02-PLAN.md (config merge, verification, summary output)
