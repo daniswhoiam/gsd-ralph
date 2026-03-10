@@ -16,11 +16,23 @@ set -euo pipefail
 # --- Project root detection ---
 PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
+# --- Resolve scripts directory (location-independent) ---
+if [ -z "${RALPH_SCRIPTS_DIR:-}" ]; then
+    _RALPH_SCRIPT_SOURCE="${BASH_SOURCE[0]}"
+    while [ -L "$_RALPH_SCRIPT_SOURCE" ]; do
+        _RALPH_SCRIPT_DIR="$(cd "$(dirname "$_RALPH_SCRIPT_SOURCE")" && pwd)"
+        _RALPH_SCRIPT_SOURCE="$(readlink "$_RALPH_SCRIPT_SOURCE")"
+        [[ "$_RALPH_SCRIPT_SOURCE" != /* ]] && _RALPH_SCRIPT_SOURCE="$_RALPH_SCRIPT_DIR/$_RALPH_SCRIPT_SOURCE"
+    done
+    RALPH_SCRIPTS_DIR="$(cd "$(dirname "$_RALPH_SCRIPT_SOURCE")" && pwd)"
+fi
+export RALPH_SCRIPTS_DIR
+
 # --- File paths ---
 CONFIG_FILE="$PROJECT_ROOT/.planning/config.json"
 STATE_FILE="$PROJECT_ROOT/.planning/STATE.md"
-CONTEXT_SCRIPT="$PROJECT_ROOT/scripts/assemble-context.sh"
-VALIDATE_SCRIPT="$PROJECT_ROOT/scripts/validate-config.sh"
+CONTEXT_SCRIPT="$RALPH_SCRIPTS_DIR/assemble-context.sh"
+VALIDATE_SCRIPT="$RALPH_SCRIPTS_DIR/validate-config.sh"
 
 # --- Constants ---
 DEFAULT_MAX_TURNS=50
@@ -343,7 +355,7 @@ _print_audit_summary() {
 # Merges hook config into existing settings, preserving other content
 _install_hook() {
     local settings_file="$PROJECT_ROOT/.claude/settings.local.json"
-    local hook_script="$PROJECT_ROOT/scripts/ralph-hook.sh"
+    local hook_script="$RALPH_SCRIPTS_DIR/ralph-hook.sh"
 
     # Create .claude/ directory if needed
     mkdir -p "$PROJECT_ROOT/.claude"
