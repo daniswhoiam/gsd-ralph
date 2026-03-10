@@ -770,6 +770,39 @@ line3"
     assert_output ""
 }
 
+@test "audit: run_loop exports RALPH_AUDIT_FILE with absolute path" {
+    create_mock_state_advanced 11 2 "Complete"
+    create_mock_assemble_context 0
+
+    # Mock claude that captures RALPH_AUDIT_FILE env var
+    mkdir -p "$TEST_TEMP_DIR/bin"
+    cat > "$TEST_TEMP_DIR/bin/claude" <<MOCKEOF
+#!/bin/bash
+echo "AUDIT_PATH=\$RALPH_AUDIT_FILE" >> "$TEST_TEMP_DIR/env-capture.log"
+echo '{"type":"result","result":"done","num_turns":5}'
+exit 0
+MOCKEOF
+    chmod +x "$TEST_TEMP_DIR/bin/claude"
+    export PATH="$TEST_TEMP_DIR/bin:$PATH"
+
+    PROJECT_ROOT="$TEST_TEMP_DIR"
+    STATE_FILE="$TEST_TEMP_DIR/.planning/STATE.md"
+    CONTEXT_SCRIPT="$TEST_TEMP_DIR/scripts/assemble-context.sh"
+    STOP_FILE="$TEST_TEMP_DIR/.ralph/.stop"
+    AUDIT_FILE="$TEST_TEMP_DIR/.ralph/audit.log"
+    MAX_TURNS=50
+    PERMISSION_TIER="default"
+    TIMEOUT_MINUTES=30
+
+    run run_loop "execute-phase 11"
+    assert_success
+
+    # Verify RALPH_AUDIT_FILE was exported with absolute path to subprocess
+    assert_file_exists "$TEST_TEMP_DIR/env-capture.log"
+    run cat "$TEST_TEMP_DIR/env-capture.log"
+    assert_output --partial "AUDIT_PATH=$TEST_TEMP_DIR/.ralph/audit.log"
+}
+
 # ============================================================
 # Plan 12-02: Hook install/remove lifecycle tests
 # ============================================================
