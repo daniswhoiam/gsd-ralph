@@ -60,3 +60,25 @@ Plan: 1 of 2
 Status: Executing
 EOF
 }
+
+# Helper: create a mock `claude` executable in PATH for testing
+# Usage: create_mock_claude_command [exit_code] [output]
+create_mock_claude_command() {
+    local exit_code="${1:-0}"
+    local output="${2:-{\"type\":\"result\",\"result\":\"done\",\"num_turns\":5}}"
+    mkdir -p "$TEST_TEMP_DIR/bin"
+    cat > "$TEST_TEMP_DIR/bin/claude" <<MOCKEOF
+#!/bin/bash
+echo '$output'
+exit $exit_code
+MOCKEOF
+    chmod +x "$TEST_TEMP_DIR/bin/claude"
+    export PATH="$TEST_TEMP_DIR/bin:$PATH"
+}
+
+# Helper: create a temp context file for testing
+# Usage: create_context_file [content]
+create_context_file() {
+    local content="${1:-# Test Context}"
+    echo "$content" > "$TEST_TEMP_DIR/context.md"
+}
