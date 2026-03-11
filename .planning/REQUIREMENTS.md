@@ -21,21 +21,21 @@ Requirements for Execution Mode Benchmarking Suite milestone. Each maps to roadm
 - [x] **HARN-01**: `bench-reset.sh` creates isolated git worktree per run with `git clean -fdx` and checksum verification
 - [ ] **HARN-02**: `bench-run.sh` orchestrates the full pipeline: reset -> scaffold -> invoke -> capture metrics -> eval -> write result JSON
 - [x] **HARN-03**: `bench-eval.sh` runs behavioral (not structural) correctness checks per challenge
-- [ ] **HARN-04**: Mode abstraction layer (`lib/modes/*.sh`) provides identical function contracts across all modes
+- [x] **HARN-04**: Mode abstraction layer (`lib/modes/*.sh`) provides identical function contracts across all modes
 - [x] **HARN-05**: Challenge definitions are declarative JSON files with prompt, starting tag, time cap, and check reference
-- [ ] **HARN-06**: Time caps per challenge are enforced by the harness as safety valves
+- [x] **HARN-06**: Time caps per challenge are enforced by the harness as safety valves
 - [ ] **HARN-07**: Each run produces a structured JSON result file in `benchmarks/results/`
 
 ### Execution Modes
 
-- [ ] **MODE-01**: CC mode invokes `claude -p` directly with `--output-format json`
+- [x] **MODE-01**: CC mode invokes `claude -p` directly with `--output-format json`
 - [ ] **MODE-02**: CC+GSD mode runs with GSD planning context as a human-in-the-loop methodology (N=1-2)
 - [ ] **MODE-03**: CC+Ralph mode invokes `ralph-launcher.sh` with GSD scaffolding in the challenge worktree
 - [ ] **MODE-04**: CC+gsd-ralph mode invokes the Agent tool-based `/gsd:ralph` in headless mode
 
 ### Metrics & Reporting
 
-- [ ] **METR-01**: Wall-clock time, token counts (input + output), and correctness score captured per run
+- [x] **METR-01**: Wall-clock time, token counts (input + output), and correctness score captured per run
 - [ ] **METR-02**: Token efficiency metric computed as correctness / total_tokens * 1000
 - [ ] **METR-03**: Pass^k reliability metric tracks whether ALL k runs achieve >= 80% correctness
 - [ ] **METR-04**: Quality-adjusted speed computed as (correctness * regression_score) / wall_clock_seconds
@@ -97,15 +97,15 @@ Which phases cover which requirements. Updated during roadmap creation.
 | HARN-01 | Phase 22 | Complete |
 | HARN-02 | Phase 22 | Pending |
 | HARN-03 | Phase 21 | Complete |
-| HARN-04 | Phase 22 | Pending |
+| HARN-04 | Phase 22 | Complete |
 | HARN-05 | Phase 21 | Complete |
-| HARN-06 | Phase 22 | Pending |
+| HARN-06 | Phase 22 | Complete |
 | HARN-07 | Phase 22 | Pending |
-| MODE-01 | Phase 22 | Pending |
+| MODE-01 | Phase 22 | Complete |
 | MODE-02 | Phase 23 | Pending |
 | MODE-03 | Phase 23 | Pending |
 | MODE-04 | Phase 23 | Pending |
-| METR-01 | Phase 22 | Pending |
+| METR-01 | Phase 22 | Complete |
 | METR-02 | Phase 24 | Pending |
 | METR-03 | Phase 24 | Pending |
 | METR-04 | Phase 24 | Pending |
