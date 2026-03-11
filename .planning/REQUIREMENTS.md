@@ -18,7 +18,7 @@ Requirements for Execution Mode Benchmarking Suite milestone. Each maps to roadm
 
 ### Harness Infrastructure
 
-- [ ] **HARN-01**: `bench-reset.sh` creates isolated git worktree per run with `git clean -fdx` and checksum verification
+- [x] **HARN-01**: `bench-reset.sh` creates isolated git worktree per run with `git clean -fdx` and checksum verification
 - [ ] **HARN-02**: `bench-run.sh` orchestrates the full pipeline: reset -> scaffold -> invoke -> capture metrics -> eval -> write result JSON
 - [x] **HARN-03**: `bench-eval.sh` runs behavioral (not structural) correctness checks per challenge
 - [ ] **HARN-04**: Mode abstraction layer (`lib/modes/*.sh`) provides identical function contracts across all modes
@@ -94,7 +94,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CHAL-04 | Phase 20 | Complete |
 | CHAL-05 | Phase 21 | Complete |
 | CHAL-06 | Phase 21 | Complete |
-| HARN-01 | Phase 22 | Pending |
+| HARN-01 | Phase 22 | Complete |
 | HARN-02 | Phase 22 | Pending |
 | HARN-03 | Phase 21 | Complete |
 | HARN-04 | Phase 22 | Pending |

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: Execution Mode Benchmarking Suite
 status: executing
-stopped_at: Completed 21-02-PLAN.md (challenge definitions + eval driver)
-last_updated: "2026-03-11T12:08:37.027Z"
-last_activity: 2026-03-11 -- Executed Phase 21 Plan 02 (challenge definitions + eval driver)
+stopped_at: Completed 22-02-PLAN.md (CC mode + metrics extraction)
+last_updated: "2026-03-11T14:14:03.011Z"
+last_activity: 2026-03-11 -- Executed Phase 22 Plan 02 (CC mode + metrics extraction)
 progress:
   total_phases: 5
   completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
-  percent: 75
+  total_plans: 7
+  completed_plans: 6
+  percent: 86
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-11)
 
 **Core value:** Add `--ralph` to any GSD command and walk away -- Ralph drives, GSD works, code ships.
-**Current focus:** v2.2 Execution Mode Benchmarking Suite -- Phase 21 executing (Plan 01 complete)
+**Current focus:** v2.2 Execution Mode Benchmarking Suite -- Phase 22 executing (Plan 02 complete)
 
 ## Current Position
 
-Phase: 21 of 24 (Correctness Checks and Challenge Definitions)
-Plan: 2 of 2 (Plan 02 complete)
+Phase: 22 of 24 (Harness Core and CC Mode)
+Plan: 2 of 3 (Plan 02 complete)
 Status: Executing
-Last activity: 2026-03-11 -- Executed Phase 21 Plan 02 (challenge definitions + eval driver)
+Last activity: 2026-03-11 -- Executed Phase 22 Plan 02 (CC mode + metrics extraction)
 
-Progress: [████████░░] 75%
+Progress: [█████████░] 86%
 
 ## Performance Metrics
 
@@ -46,6 +46,9 @@ Progress: [████████░░] 75%
 |-------|------|----------|-------|-------|
 | 21 | 01 | 5min | 2 | 14 |
 | Phase 21 P02 | 8min | 2 tasks | 8 files |
+| 22 | 01 | 3min | 2 | 2 |
+| 22 | 02 | 2min | 2 | 2 |
+| Phase 22 P01 | 3min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -61,6 +64,10 @@ See PROJECT.md Key Decisions table for full list.
 - [Phase 21]: Each mutating check uses mktemp copy of .taskctl.json to avoid data corruption between assertions
 - [Phase 21]: Used pipefail-safe grep pattern: c=$(grep ...) || c=0 instead of c=$(grep ... || echo 0)
 - [Phase 21]: Declarative challenge JSON schema: id, name, number, starting_tag, prompt, time_cap_minutes, check_script, check_count, checks, measures
+- [Phase 22]: Redirect both stdout+stderr from git worktree add to prevent polluting function return values
+- [Phase 22]: CLI dual-mode pattern: scripts work both when sourced (function access) and executed directly (subcommand CLI)
+- [Phase 22]: Used --permission-mode auto (not --dangerously-skip-permissions) for safer CC mode benchmark runs
+- [Phase 22]: Token fields set to 0 in results; num_turns + total_cost_usd serve as efficiency proxies (--output-format json lacks per-token counts)
 
 ### Key Discovery (v2.2 benchmarking)
 
@@ -79,6 +86,6 @@ See PROJECT.md Key Decisions table for full list.
 
 ## Session Continuity
 
-Last session: 2026-03-11T12:04:18.074Z
-Stopped at: Completed 21-02-PLAN.md (challenge definitions + eval driver)
-Next step: Transition to Phase 22 (/gsd:transition)
+Last session: 2026-03-11T14:14:02.179Z
+Stopped at: Completed 22-01-PLAN.md (harness core library and worktree isolation)
+Next step: Execute 22-02-PLAN.md (CC mode invocation + metrics extraction)

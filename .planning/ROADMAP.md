@@ -124,7 +124,7 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 22-01-PLAN.md -- Common library (constants, logging, path resolution) and worktree isolation script (bench-reset.sh)
+- [x] 22-01-PLAN.md -- Common library (constants, logging, path resolution) and worktree isolation script (bench-reset.sh)
 - [ ] 22-02-PLAN.md -- CC mode invocation script (lib/modes/cc.sh) and metrics extraction library (lib/metrics.sh)
 - [ ] 22-03-PLAN.md -- Benchmark orchestrator (bench-run.sh) wiring the full pipeline end-to-end
 
@@ -188,6 +188,6 @@ Phases execute in numeric order: 20 -> 21 -> 22 -> 23 -> 24
 | 19. iTerm2 Native Panes | v2.3 | 0/0 | Deferred | - |
 | 20. Challenge Project | v2.2 | 2/2 | Complete | 2026-03-11 |
 | 21. Correctness Checks and Challenge Definitions | v2.2 | 2/2 | Complete | 2026-03-11 |
-| 22. Harness Core and CC Mode | v2.2 | 0/3 | Not started | - |
+| 22. Harness Core and CC Mode | 2/3 | In Progress|  | - |
 | 23. Remaining Execution Modes | v2.2 | 0/? | Not started | - |
 | 24. Report Generator and Full Benchmark Runs | v2.2 | 0/? | Not started | - |
