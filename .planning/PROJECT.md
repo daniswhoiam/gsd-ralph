@@ -54,11 +54,12 @@ See `.planning/REQUIREMENTS.md` for v2.2 requirements.
 
 ### Out of Scope
 
+- Ralph Visibility (tmux panes, iTerm2 native panes, control terminal status) — deferred to v2.3
 - Intelligent response strategies (context-aware checkpoint answers) — v2.3+
 - Parallel plan execution via multiple worktrees — v2.3+
 - Multi-phase orchestration (chain phase N → N+1) — v2.3+
 - Session resume on failure via `--resume` — v2.3+
-- Real-time progress display via stream-json parsing — v2.3
+- Real-time progress display via stream-json parsing — v2.3+
 - Uninstall/upgrade lifecycle (manifest-based removal, in-place upgrade) — v2.3+
 - Custom LLM provider support — coupled to Claude Code intentionally
 - GUI or web dashboard — CLI only, target users are terminal-native
@@ -67,15 +68,16 @@ See `.planning/REQUIREMENTS.md` for v2.2 requirements.
 - Claude Code plugin packaging — namespacing breaks `/gsd:ralph` command
 - npm/npx package — pure Bash; npm adds conceptual mismatch
 
-## Current Milestone: v2.2 Ralph Visibility
+## Current Milestone: v2.2 Execution Mode Benchmarking Suite
 
-**Goal:** Give Ralph operators real-time visibility into what Claude is doing via tmux panes.
+**Goal:** Build an automated benchmarking suite that runs standardized software engineering challenges across all 4 execution modes, captures structured metrics, and produces a comparison report.
 
 **Target features:**
-- tmux pane management so Claude's output streams visibly during Ralph execution
-- Minimal status output in the control terminal (iteration count, elapsed time, state)
-- Graceful fallback when tmux is unavailable (current headless behavior)
-- Existing loop engine, circuit breakers, and completion detection unchanged
+- `taskctl` challenge project (Bash CLI) with planted bugs, missing tests, messy code
+- 5 benchmark challenges: fix bug, add feature, add test coverage, refactor, multi-file integration
+- Harness scripts (reset, run, eval, report) for automated benchmarking
+- Structured JSON results with statistical aggregation (mean, stddev across 3+ runs)
+- Comparison report across modes (CC, CC+GSD, CC+Ralph, CC+gsd-ralph)
 
 ## Context
 
@@ -118,6 +120,8 @@ Key components:
 | v2.1: cmp -s for idempotency | POSIX standard, no hashing overhead, sufficient for file equality | ✓ Good — simple and portable |
 | v2.1: Scripts install to scripts/ralph/ | Namespace avoids collisions with target repo scripts | ✓ Good — clean separation |
 | v2.1: Uninstall/upgrade deferred to v2.2 | Keep v2.1 scope tight — install-only | ✓ Good — shipped on time |
+| v2.2: Benchmarks before visibility | Captures clean baseline before tmux changes to launcher | — Pending |
+| v2.2: Ralph Visibility deferred to v2.3 | 0% progress, no code written, clean swap | — Pending |
 
 ---
-*Last updated: 2026-03-10 after v2.2 milestone start*
+*Last updated: 2026-03-11 after v2.2 milestone change to Benchmarking Suite*

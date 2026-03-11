@@ -1,13 +1,13 @@
 ---
 gsd_state_version: 1.0
 milestone: v2.2
-milestone_name: Ralph Visibility
-status: ready_to_plan
-stopped_at: Roadmap created, ready to plan Phase 17
-last_updated: "2026-03-10T22:00:00Z"
-last_activity: 2026-03-10 -- Roadmap created for v2.2
+milestone_name: Execution Mode Benchmarking Suite
+status: defining_requirements
+stopped_at: Milestone started, defining requirements
+last_updated: "2026-03-11T09:30:00Z"
+last_activity: 2026-03-11 -- Milestone v2.2 started (Benchmarking Suite)
 progress:
-  total_phases: 3
+  total_phases: 0
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -18,17 +18,17 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-10)
+See: .planning/PROJECT.md (updated 2026-03-11)
 
 **Core value:** Add `--ralph` to any GSD command and walk away -- Ralph drives, GSD works, code ships.
-**Current focus:** v2.2 Ralph Visibility -- Phase 17 Tmux Pane Integration
+**Current focus:** v2.2 Execution Mode Benchmarking Suite -- defining requirements
 
 ## Current Position
 
-Phase: 17 of 19 (Tmux Pane Integration)
+Phase: Not started (defining requirements)
 Plan: --
-Status: Ready to plan
-Last activity: 2026-03-10 -- Roadmap created for v2.2
+Status: Defining requirements
+Last activity: 2026-03-11 -- Milestone v2.2 started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -46,11 +46,12 @@ Progress: [░░░░░░░░░░] 0%
 
 See PROJECT.md Key Decisions table for full list.
 
-### Key Discovery (v2.2 research)
+### Key Discovery (v2.2 benchmarking)
 
-- `claude --tmux` requires `--worktree` (already used) but fails with `-p` ("open terminal failed: not a terminal")
-- Architecture: launcher manages tmux pane itself, runs `claude -p --output-format text` inside it
-- Control terminal keeps loop engine; tmux pane provides visibility
+- 4 execution modes to compare: CC, CC+GSD, CC+Ralph, CC+gsd-ralph
+- `taskctl` Bash CLI as challenge project — familiar domain, clear I/O contracts
+- 5 challenges testing: bug fixing, feature addition, test writing, refactoring, multi-file integration
+- Benchmarks measure current state baseline before tmux launcher changes (v2.3)
 
 ### Pending Todos
 
@@ -62,6 +63,6 @@ See PROJECT.md Key Decisions table for full list.
 
 ## Session Continuity
 
-Last session: 2026-03-10T22:00:00Z
-Stopped at: Roadmap created for v2.2 milestone
-Next step: `/gsd:plan-phase 17`
+Last session: 2026-03-11T09:30:00Z
+Stopped at: Milestone v2.2 started, defining requirements
+Next step: Complete requirements definition, then roadmap creation
