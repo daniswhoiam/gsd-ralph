@@ -108,8 +108,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 21-01-PLAN.md -- Reference solutions for all 5 challenges and check scripts for Challenges 1-3
-- [ ] 21-02-PLAN.md -- Check scripts 4-5, bench/after-delete tag, JSON definitions, and bench-eval.sh driver
+- [x] 21-01-PLAN.md -- Reference solutions for all 5 challenges and check scripts for Challenges 1-3
+- [x] 21-02-PLAN.md -- Check scripts 4-5, bench/after-delete tag, JSON definitions, and bench-eval.sh driver
 
 ### Phase 22: Harness Core and CC Mode
 **Goal**: The full benchmark pipeline runs end-to-end for a single mode (CC), producing valid structured result JSON files that prove the architecture works before scaling to additional modes
@@ -121,12 +121,12 @@ Plans:
   3. Time caps terminate a run that exceeds the challenge limit, recording partial results rather than hanging indefinitely
   4. The mode abstraction layer (`lib/modes/cc.sh`) invokes `claude -p` with `--output-format json` and extracts metrics defensively with jq fallbacks
   5. A second run of the same challenge produces a separate result file with a distinct run_id, proving isolation between runs
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 22-01: TBD
-- [ ] 22-02: TBD
-- [ ] 22-03: TBD
+- [ ] 22-01-PLAN.md -- Common library (constants, logging, path resolution) and worktree isolation script (bench-reset.sh)
+- [ ] 22-02-PLAN.md -- CC mode invocation script (lib/modes/cc.sh) and metrics extraction library (lib/metrics.sh)
+- [ ] 22-03-PLAN.md -- Benchmark orchestrator (bench-run.sh) wiring the full pipeline end-to-end
 
 ### Phase 23: Remaining Execution Modes
 **Goal**: All 4 execution modes can be invoked through the harness with identical interfaces, each producing comparable result JSON
@@ -187,7 +187,7 @@ Phases execute in numeric order: 20 -> 21 -> 22 -> 23 -> 24
 | 18. Control Terminal Status | v2.3 | 0/0 | Deferred | - |
 | 19. iTerm2 Native Panes | v2.3 | 0/0 | Deferred | - |
 | 20. Challenge Project | v2.2 | 2/2 | Complete | 2026-03-11 |
-| 21. Correctness Checks and Challenge Definitions | 2/2 | Complete    | 2026-03-11 | - |
-| 22. Harness Core and CC Mode | v2.2 | 0/? | Not started | - |
+| 21. Correctness Checks and Challenge Definitions | v2.2 | 2/2 | Complete | 2026-03-11 |
+| 22. Harness Core and CC Mode | v2.2 | 0/3 | Not started | - |
 | 23. Remaining Execution Modes | v2.2 | 0/? | Not started | - |
 | 24. Report Generator and Full Benchmark Runs | v2.2 | 0/? | Not started | - |
