@@ -68,7 +68,7 @@ Deferred to capture clean benchmark baseline before tmux launcher changes.
 
 </details>
 
-### 🚧 v2.2 Execution Mode Benchmarking Suite (In Progress)
+### v2.2 Execution Mode Benchmarking Suite (In Progress)
 
 **Milestone Goal:** Build an automated benchmarking suite that runs standardized software engineering challenges across all 4 execution modes, captures structured metrics, and produces a comparison report.
 
@@ -90,11 +90,11 @@ Deferred to capture clean benchmark baseline before tmux launcher changes.
   3. Bats tests for add and list pass, while no tests exist for done.sh or storage.sh
   4. `format.sh` contains genuine code smells (long functions, duplicated logic, poor variable names) that a refactoring tool would meaningfully improve
   5. `git tag -l 'bench/baseline'` returns the tag, and checking out that tag restores the exact challenge starting state
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 20-01: TBD
-- [ ] 20-02: TBD
+- [ ] 20-01-PLAN.md -- Build taskctl CLI source code with storage, commands, planted bug, and code smells
+- [ ] 20-02-PLAN.md -- Create Bats tests for add/list, documentation, and bench/baseline git tag
 
 ### Phase 21: Correctness Checks and Challenge Definitions
 **Goal**: Evaluation infrastructure is validated before any automated benchmark runs, ensuring correctness checks reliably distinguish passing from failing solutions
@@ -186,7 +186,7 @@ Phases execute in numeric order: 20 -> 21 -> 22 -> 23 -> 24
 | 17. Tmux Pane Integration | v2.3 | 0/0 | Deferred | - |
 | 18. Control Terminal Status | v2.3 | 0/0 | Deferred | - |
 | 19. iTerm2 Native Panes | v2.3 | 0/0 | Deferred | - |
-| 20. Challenge Project | v2.2 | 0/? | Not started | - |
+| 20. Challenge Project | v2.2 | 0/2 | Not started | - |
 | 21. Correctness Checks and Challenge Definitions | v2.2 | 0/? | Not started | - |
 | 22. Harness Core and CC Mode | v2.2 | 0/? | Not started | - |
 | 23. Remaining Execution Modes | v2.2 | 0/? | Not started | - |
