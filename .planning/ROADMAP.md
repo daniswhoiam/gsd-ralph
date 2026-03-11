@@ -121,12 +121,13 @@ Plans:
   3. Time caps terminate a run that exceeds the challenge limit, recording partial results rather than hanging indefinitely
   4. The mode abstraction layer (`lib/modes/cc.sh`) invokes `claude -p` with `--output-format json` and extracts metrics defensively with jq fallbacks
   5. A second run of the same challenge produces a separate result file with a distinct run_id, proving isolation between runs
-**Plans**: 3 plans
+**Plans**: 4 plans
 
 Plans:
 - [x] 22-01-PLAN.md -- Common library (constants, logging, path resolution) and worktree isolation script (bench-reset.sh)
 - [ ] 22-02-PLAN.md -- CC mode invocation script (lib/modes/cc.sh) and metrics extraction library (lib/metrics.sh)
 - [ ] 22-03-PLAN.md -- Benchmark orchestrator (bench-run.sh) wiring the full pipeline end-to-end
+- [ ] 22-04-PLAN.md -- Gap closure: add rev-parse checksum verification to bench-reset.sh and update METR-01 requirement text
 
 ### Phase 23: Remaining Execution Modes
 **Goal**: All 4 execution modes can be invoked through the harness with identical interfaces, each producing comparable result JSON
@@ -188,6 +189,6 @@ Phases execute in numeric order: 20 -> 21 -> 22 -> 23 -> 24
 | 19. iTerm2 Native Panes | v2.3 | 0/0 | Deferred | - |
 | 20. Challenge Project | v2.2 | 2/2 | Complete | 2026-03-11 |
 | 21. Correctness Checks and Challenge Definitions | v2.2 | 2/2 | Complete | 2026-03-11 |
-| 22. Harness Core and CC Mode | 3/3 | Complete   | 2026-03-11 | - |
+| 22. Harness Core and CC Mode | v2.2 | 3/4 | Gap Closure | - |
 | 23. Remaining Execution Modes | v2.2 | 0/? | Not started | - |
 | 24. Report Generator and Full Benchmark Runs | v2.2 | 0/? | Not started | - |
