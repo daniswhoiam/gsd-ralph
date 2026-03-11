@@ -14,13 +14,13 @@ Requirements for Execution Mode Benchmarking Suite milestone. Each maps to roadm
 - [x] **CHAL-03**: Partial test coverage exists (test_add.bats, test_list.bats) with no tests for done.sh or storage.sh
 - [x] **CHAL-04**: `format.sh` is messy and serves as a meaningful refactoring target
 - [ ] **CHAL-05**: `bench/after-delete` git tag exists with working delete command (for Challenge 5)
-- [ ] **CHAL-06**: Reference solutions exist for all 5 challenges as correctness check validation controls
+- [x] **CHAL-06**: Reference solutions exist for all 5 challenges as correctness check validation controls
 
 ### Harness Infrastructure
 
 - [ ] **HARN-01**: `bench-reset.sh` creates isolated git worktree per run with `git clean -fdx` and checksum verification
 - [ ] **HARN-02**: `bench-run.sh` orchestrates the full pipeline: reset -> scaffold -> invoke -> capture metrics -> eval -> write result JSON
-- [ ] **HARN-03**: `bench-eval.sh` runs behavioral (not structural) correctness checks per challenge
+- [x] **HARN-03**: `bench-eval.sh` runs behavioral (not structural) correctness checks per challenge
 - [ ] **HARN-04**: Mode abstraction layer (`lib/modes/*.sh`) provides identical function contracts across all modes
 - [ ] **HARN-05**: Challenge definitions are declarative JSON files with prompt, starting tag, time cap, and check reference
 - [ ] **HARN-06**: Time caps per challenge are enforced by the harness as safety valves
@@ -93,10 +93,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CHAL-03 | Phase 20 | Complete |
 | CHAL-04 | Phase 20 | Complete |
 | CHAL-05 | Phase 21 | Pending |
-| CHAL-06 | Phase 21 | Pending |
+| CHAL-06 | Phase 21 | Complete |
 | HARN-01 | Phase 22 | Pending |
 | HARN-02 | Phase 22 | Pending |
-| HARN-03 | Phase 21 | Pending |
+| HARN-03 | Phase 21 | Complete |
 | HARN-04 | Phase 22 | Pending |
 | HARN-05 | Phase 21 | Pending |
 | HARN-06 | Phase 22 | Pending |
