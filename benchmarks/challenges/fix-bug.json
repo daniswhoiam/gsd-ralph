@@ -1,0 +1,16 @@
+{
+  "id": "fix-bug",
+  "name": "Fix the Bug",
+  "number": 1,
+  "starting_tag": "bench/baseline",
+  "prompt": "The `taskctl done 3` command marks the wrong task as done. Find the bug and fix it.",
+  "time_cap_minutes": 10,
+  "check_script": "checks/check-fix-bug.sh",
+  "check_count": 3,
+  "checks": [
+    "done 3 marks task with id=3",
+    "existing tests pass",
+    "test coverage for done command exists"
+  ],
+  "measures": "Diagnostic reasoning, targeted fix quality, regression avoidance"
+}

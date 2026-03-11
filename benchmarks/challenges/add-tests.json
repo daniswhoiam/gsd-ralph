@@ -1,0 +1,17 @@
+{
+  "id": "add-tests",
+  "name": "Add Test Coverage",
+  "number": 3,
+  "starting_tag": "bench/baseline",
+  "prompt": "storage.sh has no tests. Add comprehensive test coverage for all storage functions.",
+  "time_cap_minutes": 15,
+  "check_script": "checks/check-add-tests.sh",
+  "check_count": 4,
+  "checks": [
+    "test_storage.bats exists",
+    "at least 5 tests in test_storage.bats",
+    "all storage tests pass",
+    "storage.sh unchanged from baseline"
+  ],
+  "measures": "Test-writing quality, understanding of existing code without modifying it"
+}

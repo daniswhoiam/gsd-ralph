@@ -1,0 +1,17 @@
+{
+  "id": "refactor",
+  "name": "Refactor with Behavior Preservation",
+  "number": 4,
+  "starting_tag": "bench/baseline",
+  "prompt": "format.sh is messy and hard to maintain. Refactor it for clarity without changing any observable behavior. All existing tests must continue to pass.",
+  "time_cap_minutes": 10,
+  "check_script": "checks/check-refactor.sh",
+  "check_count": 4,
+  "checks": [
+    "all existing tests pass",
+    "format.sh has more than 10 lines changed",
+    "ShellCheck warnings reduced",
+    "no new commands added"
+  ],
+  "measures": "Refactoring discipline, behavior preservation, code quality judgment"
+}

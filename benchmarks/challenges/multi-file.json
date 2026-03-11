@@ -1,0 +1,19 @@
+{
+  "id": "multi-file",
+  "name": "Multi-File Feature",
+  "number": 5,
+  "starting_tag": "bench/after-delete",
+  "prompt": "Add priority support: `taskctl add --priority high 'Deploy fix'`, `taskctl list --sort priority`. Priorities are: low (default), medium, high. Sorting shows high first. Include tests.",
+  "time_cap_minutes": 20,
+  "check_script": "checks/check-multi-file.sh",
+  "check_count": 6,
+  "checks": [
+    "priority stored on add",
+    "default priority is low",
+    "list --sort priority orders correctly",
+    "at least 3 priority tests exist",
+    "existing tests pass",
+    "changes span 3+ source files"
+  ],
+  "measures": "Multi-file coordination, schema evolution, integration complexity"
+}

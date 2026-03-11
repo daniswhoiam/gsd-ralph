@@ -1,0 +1,17 @@
+{
+  "id": "add-feature",
+  "name": "Add a Feature",
+  "number": 2,
+  "starting_tag": "bench/baseline",
+  "prompt": "Add a `taskctl delete <id>` command that removes a task by ID. Include tests.",
+  "time_cap_minutes": 15,
+  "check_script": "checks/check-add-feature.sh",
+  "check_count": 4,
+  "checks": [
+    "delete removes a task",
+    "delete nonexistent ID shows error",
+    "test_delete.bats exists with 2+ tests",
+    "existing tests pass"
+  ],
+  "measures": "Feature implementation quality, test discipline, codebase integration"
+}
