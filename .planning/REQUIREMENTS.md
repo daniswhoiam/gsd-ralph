@@ -19,12 +19,12 @@ Requirements for Execution Mode Benchmarking Suite milestone. Each maps to roadm
 ### Harness Infrastructure
 
 - [x] **HARN-01**: `bench-reset.sh` creates isolated git worktree per run with `git clean -fdx` and checksum verification
-- [ ] **HARN-02**: `bench-run.sh` orchestrates the full pipeline: reset -> scaffold -> invoke -> capture metrics -> eval -> write result JSON
+- [x] **HARN-02**: `bench-run.sh` orchestrates the full pipeline: reset -> scaffold -> invoke -> capture metrics -> eval -> write result JSON
 - [x] **HARN-03**: `bench-eval.sh` runs behavioral (not structural) correctness checks per challenge
 - [x] **HARN-04**: Mode abstraction layer (`lib/modes/*.sh`) provides identical function contracts across all modes
 - [x] **HARN-05**: Challenge definitions are declarative JSON files with prompt, starting tag, time cap, and check reference
 - [x] **HARN-06**: Time caps per challenge are enforced by the harness as safety valves
-- [ ] **HARN-07**: Each run produces a structured JSON result file in `benchmarks/results/`
+- [x] **HARN-07**: Each run produces a structured JSON result file in `benchmarks/results/`
 
 ### Execution Modes
 
@@ -48,7 +48,7 @@ Requirements for Execution Mode Benchmarking Suite milestone. Each maps to roadm
 
 - [ ] **STAT-01**: Pilot runs (N=2 per mode/challenge) calibrate time caps and variance thresholds before full matrix
 - [ ] **STAT-02**: Final sample size N is determined from pilot variance data (minimum N=3, target N=5)
-- [ ] **STAT-03**: Every result includes reproducible identity: run_id, model version, CLI version, git SHA
+- [x] **STAT-03**: Every result includes reproducible identity: run_id, model version, CLI version, git SHA
 
 ## Future Requirements
 
@@ -95,12 +95,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CHAL-05 | Phase 21 | Complete |
 | CHAL-06 | Phase 21 | Complete |
 | HARN-01 | Phase 22 | Complete |
-| HARN-02 | Phase 22 | Pending |
+| HARN-02 | Phase 22 | Complete |
 | HARN-03 | Phase 21 | Complete |
 | HARN-04 | Phase 22 | Complete |
 | HARN-05 | Phase 21 | Complete |
 | HARN-06 | Phase 22 | Complete |
-| HARN-07 | Phase 22 | Pending |
+| HARN-07 | Phase 22 | Complete |
 | MODE-01 | Phase 22 | Complete |
 | MODE-02 | Phase 23 | Pending |
 | MODE-03 | Phase 23 | Pending |
@@ -115,7 +115,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | METR-08 | Phase 24 | Pending |
 | STAT-01 | Phase 24 | Pending |
 | STAT-02 | Phase 24 | Pending |
-| STAT-03 | Phase 22 | Pending |
+| STAT-03 | Phase 22 | Complete |
 
 **Coverage:**
 - v2.2 requirements: 28 total
