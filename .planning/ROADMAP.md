@@ -93,8 +93,8 @@ Deferred to capture clean benchmark baseline before tmux launcher changes.
 **Plans**: 2 plans
 
 Plans:
-- [ ] 20-01-PLAN.md -- Build taskctl CLI source code with storage, commands, planted bug, and code smells
-- [ ] 20-02-PLAN.md -- Create Bats tests for add/list, documentation, and bench/baseline git tag
+- [x] 20-01-PLAN.md -- Build taskctl CLI source code with storage, commands, planted bug, and code smells
+- [x] 20-02-PLAN.md -- Create Bats tests for add/list, documentation, and bench/baseline git tag
 
 ### Phase 21: Correctness Checks and Challenge Definitions
 **Goal**: Evaluation infrastructure is validated before any automated benchmark runs, ensuring correctness checks reliably distinguish passing from failing solutions
@@ -105,11 +105,11 @@ Plans:
   2. Each of the 5 challenge correctness checks PASSES when run against its reference solution (positive control)
   3. `bench/after-delete` git tag exists and checking it out shows a working delete command (Challenge 5 starting state)
   4. Each challenge has a declarative JSON definition file containing prompt text, starting tag, time cap, and check script reference
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 21-01: TBD
-- [ ] 21-02: TBD
+- [ ] 21-01-PLAN.md -- Reference solutions for all 5 challenges and check scripts for Challenges 1-3
+- [ ] 21-02-PLAN.md -- Check scripts 4-5, bench/after-delete tag, JSON definitions, and bench-eval.sh driver
 
 ### Phase 22: Harness Core and CC Mode
 **Goal**: The full benchmark pipeline runs end-to-end for a single mode (CC), producing valid structured result JSON files that prove the architecture works before scaling to additional modes
@@ -186,8 +186,8 @@ Phases execute in numeric order: 20 -> 21 -> 22 -> 23 -> 24
 | 17. Tmux Pane Integration | v2.3 | 0/0 | Deferred | - |
 | 18. Control Terminal Status | v2.3 | 0/0 | Deferred | - |
 | 19. iTerm2 Native Panes | v2.3 | 0/0 | Deferred | - |
-| 20. Challenge Project | 2/2 | Complete    | 2026-03-11 | - |
-| 21. Correctness Checks and Challenge Definitions | v2.2 | 0/? | Not started | - |
+| 20. Challenge Project | v2.2 | 2/2 | Complete | 2026-03-11 |
+| 21. Correctness Checks and Challenge Definitions | v2.2 | 0/2 | Not started | - |
 | 22. Harness Core and CC Mode | v2.2 | 0/? | Not started | - |
 | 23. Remaining Execution Modes | v2.2 | 0/? | Not started | - |
 | 24. Report Generator and Full Benchmark Runs | v2.2 | 0/? | Not started | - |
