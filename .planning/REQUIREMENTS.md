@@ -11,7 +11,7 @@ Requirements for Execution Mode Benchmarking Suite milestone. Each maps to roadm
 
 - [x] **CHAL-01**: `taskctl` Bash CLI exists with add, list, done commands at `bench/baseline` git tag
 - [x] **CHAL-02**: `done.sh` contains a planted bug (marks wrong task) discoverable through testing
-- [ ] **CHAL-03**: Partial test coverage exists (test_add.bats, test_list.bats) with no tests for done.sh or storage.sh
+- [x] **CHAL-03**: Partial test coverage exists (test_add.bats, test_list.bats) with no tests for done.sh or storage.sh
 - [x] **CHAL-04**: `format.sh` is messy and serves as a meaningful refactoring target
 - [ ] **CHAL-05**: `bench/after-delete` git tag exists with working delete command (for Challenge 5)
 - [ ] **CHAL-06**: Reference solutions exist for all 5 challenges as correctness check validation controls
@@ -90,7 +90,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | CHAL-01 | Phase 20 | Complete |
 | CHAL-02 | Phase 20 | Complete |
-| CHAL-03 | Phase 20 | Pending |
+| CHAL-03 | Phase 20 | Complete |
 | CHAL-04 | Phase 20 | Complete |
 | CHAL-05 | Phase 21 | Pending |
 | CHAL-06 | Phase 21 | Pending |
