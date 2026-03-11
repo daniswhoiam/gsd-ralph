@@ -186,7 +186,7 @@ Phases execute in numeric order: 20 -> 21 -> 22 -> 23 -> 24
 | 17. Tmux Pane Integration | v2.3 | 0/0 | Deferred | - |
 | 18. Control Terminal Status | v2.3 | 0/0 | Deferred | - |
 | 19. iTerm2 Native Panes | v2.3 | 0/0 | Deferred | - |
-| 20. Challenge Project | v2.2 | 0/2 | Not started | - |
+| 20. Challenge Project | 1/2 | In Progress|  | - |
 | 21. Correctness Checks and Challenge Definitions | v2.2 | 0/? | Not started | - |
 | 22. Harness Core and CC Mode | v2.2 | 0/? | Not started | - |
 | 23. Remaining Execution Modes | v2.2 | 0/? | Not started | - |
