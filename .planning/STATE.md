@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: Execution Mode Benchmarking Suite
 status: completed
-stopped_at: Completed 22-03-PLAN.md (bench-run.sh orchestrator -- Phase 22 complete)
-last_updated: "2026-03-11T14:18:53.191Z"
-last_activity: 2026-03-11 -- Executed Phase 22 Plan 03 (bench-run.sh orchestrator)
+stopped_at: Completed 22-04-PLAN.md (gap closure)
+last_updated: "2026-03-11T14:35:35.080Z"
+last_activity: 2026-03-11 -- Executed Phase 22 Plan 04 (gap closure)
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 7
-  completed_plans: 7
+  total_plans: 8
+  completed_plans: 8
   percent: 100
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-11)
 
 **Core value:** Add `--ralph` to any GSD command and walk away -- Ralph drives, GSD works, code ships.
-**Current focus:** v2.2 Execution Mode Benchmarking Suite -- Phase 22 complete (all 3 plans)
+**Current focus:** v2.2 Execution Mode Benchmarking Suite -- Phase 22 complete (all 4 plans)
 
 ## Current Position
 
 Phase: 22 of 24 (Harness Core and CC Mode)
-Plan: 3 of 3 (Phase 22 complete)
+Plan: 4 of 4 (Phase 22 complete)
 Status: Phase Complete
-Last activity: 2026-03-11 -- Executed Phase 22 Plan 03 (bench-run.sh orchestrator)
+Last activity: 2026-03-11 -- Executed Phase 22 Plan 04 (gap closure)
 
 Progress: [██████████] 100%
 
@@ -49,6 +49,7 @@ Progress: [██████████] 100%
 | 22 | 01 | 3min | 2 | 2 |
 | 22 | 02 | 2min | 2 | 2 |
 | 22 | 03 | 2min | 1 | 2 |
+| 22 | 04 | 1min | 2 | 2 |
 
 ## Accumulated Context
 
@@ -69,6 +70,7 @@ See PROJECT.md Key Decisions table for full list.
 - [Phase 22]: Used --permission-mode auto (not --dangerously-skip-permissions) for safer CC mode benchmark runs
 - [Phase 22]: Token fields set to 0 in results; num_turns + total_cost_usd serve as efficiency proxies (--output-format json lacks per-token counts)
 - [Phase 22]: Dynamic mode sourcing via --mode flag for extensibility (new modes = new script file, zero changes to orchestrator)
+- [Phase 22]: Used git rev-parse SHA comparison (not file checksums) for HARN-01 worktree verification -- lightweight, git-native
 
 ### Key Discovery (v2.2 benchmarking)
 
@@ -87,6 +89,6 @@ See PROJECT.md Key Decisions table for full list.
 
 ## Session Continuity
 
-Last session: 2026-03-11T14:18:53.188Z
-Stopped at: Completed 22-03-PLAN.md (bench-run.sh orchestrator -- Phase 22 complete)
+Last session: 2026-03-11T14:35:35.079Z
+Stopped at: Completed 22-04-PLAN.md (gap closure)
 Next step: Transition to Phase 23 (additional benchmark modes)
