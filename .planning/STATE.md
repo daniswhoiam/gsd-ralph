@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: Execution Mode Benchmarking Suite
 status: executing
-stopped_at: Completed 21-01-PLAN.md (reference solutions + check scripts 1-3)
-last_updated: "2026-03-11T11:52:02.106Z"
-last_activity: 2026-03-11 -- Executed Phase 21 Plan 01 (reference solutions + checks 1-3)
+stopped_at: Completed 21-02-PLAN.md (challenge definitions + eval driver)
+last_updated: "2026-03-11T12:04:18.076Z"
+last_activity: 2026-03-11 -- Executed Phase 21 Plan 02 (challenge definitions + eval driver)
 progress:
   total_phases: 5
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 4
-  completed_plans: 3
+  completed_plans: 4
   percent: 75
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-03-11)
 ## Current Position
 
 Phase: 21 of 24 (Correctness Checks and Challenge Definitions)
-Plan: 1 of 2 (Plan 01 complete)
+Plan: 2 of 2 (Plan 02 complete)
 Status: Executing
-Last activity: 2026-03-11 -- Executed Phase 21 Plan 01 (reference solutions + checks 1-3)
+Last activity: 2026-03-11 -- Executed Phase 21 Plan 02 (challenge definitions + eval driver)
 
 Progress: [████████░░] 75%
 
@@ -45,6 +45,7 @@ Progress: [████████░░] 75%
 | Phase | Plan | Duration | Tasks | Files |
 |-------|------|----------|-------|-------|
 | 21 | 01 | 5min | 2 | 14 |
+| Phase 21 P02 | 8min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -58,6 +59,8 @@ See PROJECT.md Key Decisions table for full list.
 - [Phase 20]: Deliberate omission of test_done.bats and test_storage.bats -- partial coverage is challenge design
 - [Phase 21]: Check scripts use eval-based check() helper for uniform PASS/FAIL output and scoring
 - [Phase 21]: Each mutating check uses mktemp copy of .taskctl.json to avoid data corruption between assertions
+- [Phase 21]: Used pipefail-safe grep pattern: c=$(grep ...) || c=0 instead of c=$(grep ... || echo 0)
+- [Phase 21]: Declarative challenge JSON schema: id, name, number, starting_tag, prompt, time_cap_minutes, check_script, check_count, checks, measures
 
 ### Key Discovery (v2.2 benchmarking)
 
@@ -76,6 +79,6 @@ See PROJECT.md Key Decisions table for full list.
 
 ## Session Continuity
 
-Last session: 2026-03-11T11:50:00.000Z
-Stopped at: Completed 21-01-PLAN.md (reference solutions + check scripts 1-3)
-Next step: Execute Phase 21 Plan 02 (/gsd:execute-phase 21)
+Last session: 2026-03-11T12:04:18.074Z
+Stopped at: Completed 21-02-PLAN.md (challenge definitions + eval driver)
+Next step: Transition to Phase 22 (/gsd:transition)

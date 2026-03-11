@@ -73,7 +73,7 @@ Deferred to capture clean benchmark baseline before tmux launcher changes.
 **Milestone Goal:** Build an automated benchmarking suite that runs standardized software engineering challenges across all 4 execution modes, captures structured metrics, and produces a comparison report.
 
 - [x] **Phase 20: Challenge Project** - Build the taskctl Bash CLI with planted defects, partial tests, and baseline git tag (completed 2026-03-11)
-- [ ] **Phase 21: Correctness Checks and Challenge Definitions** - Create behavioral evaluation logic, reference solutions, declarative challenge configs, and the after-delete tag
+- [x] **Phase 21: Correctness Checks and Challenge Definitions** - Create behavioral evaluation logic, reference solutions, declarative challenge configs, and the after-delete tag (completed 2026-03-11)
 - [ ] **Phase 22: Harness Core and CC Mode** - Build the end-to-end benchmark pipeline (reset, run, eval, result JSON) validated with CC mode
 - [ ] **Phase 23: Remaining Execution Modes** - Implement GSD, Ralph, and gsd-ralph mode invocation scripts behind the mode abstraction layer
 - [ ] **Phase 24: Report Generator and Full Benchmark Runs** - Aggregate results into comparison report, calibrate via pilot runs, then execute the full matrix
@@ -187,7 +187,7 @@ Phases execute in numeric order: 20 -> 21 -> 22 -> 23 -> 24
 | 18. Control Terminal Status | v2.3 | 0/0 | Deferred | - |
 | 19. iTerm2 Native Panes | v2.3 | 0/0 | Deferred | - |
 | 20. Challenge Project | v2.2 | 2/2 | Complete | 2026-03-11 |
-| 21. Correctness Checks and Challenge Definitions | 1/2 | In Progress|  | - |
+| 21. Correctness Checks and Challenge Definitions | 2/2 | Complete   | 2026-03-11 | - |
 | 22. Harness Core and CC Mode | v2.2 | 0/? | Not started | - |
 | 23. Remaining Execution Modes | v2.2 | 0/? | Not started | - |
 | 24. Report Generator and Full Benchmark Runs | v2.2 | 0/? | Not started | - |
