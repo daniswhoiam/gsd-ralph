@@ -1,335 +1,289 @@
-# Stack Research: v2.1 Easy Install
+# Stack Research: v2.2 Benchmarking Suite
 
-**Domain:** Claude Code plugin/tool distribution and one-command installation
-**Researched:** 2026-03-10
-**Confidence:** HIGH (primary mechanism verified via official docs)
+**Domain:** Automated benchmarking harness for AI-assisted software engineering
+**Researched:** 2026-03-11
+**Confidence:** HIGH (all tools verified on target system)
 
-**Scope:** This document covers ONLY the stack additions/changes needed to make gsd-ralph installable in any repo with a single terminal command. The existing v2.0 runtime stack (Bash 3.2, Claude Code CLI, jq, bats-core) is NOT re-researched here. See the previous STACK.md in git history for v2.0 runtime decisions.
+**Scope:** This document covers ONLY the stack additions/changes needed for the benchmarking suite (harness scripts, metrics capture, statistical aggregation, report generation, and the taskctl challenge project). The existing gsd-ralph runtime stack (Bash 3.2, Claude Code CLI, jq 1.8.1, Bats 1.13.0) is NOT re-researched here.
 
 ## Executive Summary
 
-Claude Code now has a first-class **plugin system** (v1.0.33+, Feb 2026) that is the canonical way to distribute reusable skills, hooks, agents, and MCP servers. gsd-ralph should distribute as a **Claude Code plugin** rather than an npm package, shell installer, or manual copy. The plugin system handles discovery, installation, versioning, updates, and scope management natively. A parallel `npx` wrapper script provides the "single terminal command" UX for users who want to install without opening Claude Code first.
+The benchmarking suite requires **zero new dependencies**. Every capability needed -- sub-second timing, floating-point math, statistical aggregation (mean, stddev), JSON metrics, CSV/markdown report generation, and challenge evaluation -- is already available through the existing Bash + jq stack plus macOS system utilities (`bc`, `date`, `awk`). This is the correct design: adding Python, Node.js, or external benchmarking frameworks would violate the project's "thin layer" constraint and introduce unnecessary complexity for what is fundamentally a shell scripting measurement problem.
 
-**The recommended approach: Plugin + npx bootstrap hybrid.**
+The Claude Code CLI `--output-format json` flag provides structured result data including `total_cost_usd`, `duration_ms`, `num_turns`, and `session_id`, which covers the efficiency metrics the PRD requires. Quality metrics (correctness, regression, shellcheck deltas) are captured by running Bats tests and ShellCheck against the challenge project after each benchmark run.
 
-1. **Primary distribution:** Claude Code plugin in a GitHub-hosted marketplace (`/plugin install gsd-ralph@gsd-ralph-marketplace`)
-2. **One-command bootstrap:** `npx gsd-ralph-install` that (a) validates prerequisites, (b) installs the plugin via `claude plugin install`, and (c) copies non-plugin files (config template, launcher scripts)
-3. **No new runtime dependencies.** The plugin system is built into Claude Code. The npx installer is a dev-time-only bootstrap.
-
-## Three Distribution Approaches Evaluated
-
-### Approach A: Claude Code Plugin (RECOMMENDED -- primary)
-
-**What:** Package gsd-ralph as a Claude Code plugin with `.claude-plugin/plugin.json` manifest. Distribute via a GitHub-hosted marketplace. Users install with `/plugin install gsd-ralph@marketplace-name`.
-
-**Evidence:** Official Claude Code plugin system launched with v1.0.33 (early 2026). Over 9,000 plugins now in the ecosystem. This IS the standard pattern -- verified via [official plugin docs](https://code.claude.com/docs/en/plugins), [marketplace docs](https://code.claude.com/docs/en/plugin-marketplaces), and the [official Anthropic marketplace repo](https://github.com/anthropics/claude-plugins-official).
-
-**What the plugin bundles:**
-
-| Component | Plugin Location | Purpose |
-|-----------|----------------|---------|
-| `skills/gsd-ralph-autopilot/SKILL.md` | `skills/` | Autonomous behavior rules (auto-loaded by Claude) |
-| `commands/gsd/ralph.md` | `commands/` | `/gsd-ralph:ralph` slash command |
-| `hooks/hooks.json` | `hooks/` | PreToolUse hook for AskUserQuestion denial |
-| `scripts/ralph-launcher.sh` | `scripts/` | Core launcher with loop engine (592 LOC) |
-| `scripts/assemble-context.sh` | `scripts/` | GSD context assembly |
-| `scripts/validate-config.sh` | `scripts/` | Config validation |
-| `scripts/ralph-hook.sh` | `scripts/` | PreToolUse hook script |
-| `bin/ralph-stop` | `scripts/` | Graceful stop utility |
-| `templates/*` | `templates/` | All .template files |
-| `lib/**/*.sh` | `lib/` | Shared libraries and command handlers |
-
-**Plugin manifest:**
-
-```json
-{
-  "name": "gsd-ralph",
-  "description": "Autonomous GSD execution with Ralph autopilot. Add --ralph to any GSD command and walk away.",
-  "version": "2.1.0",
-  "author": {
-    "name": "daniswhoiam"
-  },
-  "homepage": "https://github.com/daniswhoiam/gsd-ralph",
-  "repository": "https://github.com/daniswhoiam/gsd-ralph",
-  "license": "MIT",
-  "keywords": ["gsd", "ralph", "autopilot", "autonomous"]
-}
-```
-
-**How hooks are bundled (critical detail):**
-
-Plugin hooks go in `hooks/hooks.json` at the plugin root. Claude Code v2.1+ auto-discovers this file. Do NOT also declare hooks in `plugin.json` -- that causes a duplicate detection error.
-
-```json
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "AskUserQuestion",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/scripts/ralph-hook.sh"
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-**Key environment variable:** `${CLAUDE_PLUGIN_ROOT}` resolves to the plugin's cached installation directory. All script references in hooks and MCP configs MUST use this variable because plugins are copied to `~/.claude/plugins/cache/` on install.
-
-**Installation scopes:**
-
-| Scope | Settings File | Use Case |
-|-------|--------------|----------|
-| `user` (default) | `~/.claude/settings.json` | Personal install across all projects |
-| `project` | `.claude/settings.json` | Shared via version control for team |
-| `local` | `.claude/settings.local.json` | Project-specific, gitignored |
-
-**Confidence:** HIGH -- verified from official Claude Code plugin docs (March 2026).
-
-### Approach B: npx Bootstrap Installer (RECOMMENDED -- complement)
-
-**What:** A minimal npm package (`gsd-ralph-install` or `create-gsd-ralph`) that validates prerequisites and installs the plugin programmatically.
-
-**Why needed alongside the plugin:** The plugin system requires Claude Code to already be running. The npx approach gives users a one-command install from any terminal without needing to be inside a Claude Code session. It also handles prerequisite checking that the plugin system does not provide.
-
-**What the npx installer does:**
-
-1. Check prerequisites: `claude --version` (v1.0.33+), `jq --version`, `bash --version`, GSD presence (`~/.claude/get-shit-done/`)
-2. Run `claude plugin marketplace add daniswhoiam/gsd-ralph` (adds the marketplace)
-3. Run `claude plugin install gsd-ralph@gsd-ralph --scope user` (installs the plugin)
-4. Copy non-plugin files to target repo if in a git repo (`.planning/config.json` template with `ralph.enabled: true`)
-5. Print success message with next-step guidance
-
-**Implementation technology:**
-
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| Node.js | 18+ | npx runtime | Already required by Claude Code; no new dependency |
-| `package.json` "bin" field | npm standard | CLI entry point | `"bin": { "gsd-ralph-install": "./cli.js" }` makes it `npx gsd-ralph-install`-able |
-
-**The installer script is ~80-120 lines of JavaScript.** It shells out to `claude plugin` commands. No framework needed.
-
-```javascript
-#!/usr/bin/env node
-// cli.js -- gsd-ralph installer
-const { execSync } = require('child_process');
-// ... prerequisite checks, plugin install, config copy
-```
-
-**Package structure:**
-
-```
-gsd-ralph-install/
-  package.json    # name: "gsd-ralph-install", bin: "./cli.js"
-  cli.js          # Installer script
-  README.md
-```
-
-**Confidence:** HIGH -- `npx` + `package.json` "bin" field is the most established npm pattern for one-command CLIs. Verified via [npm docs](https://docs.npmjs.com/cli/v11/configuring-npm/package-json/) and widespread usage (create-react-app, create-next-app, etc.).
-
-### Approach C: Vercel `npx skills add` (NOT RECOMMENDED)
-
-**What:** The Vercel Labs [skills CLI](https://github.com/vercel-labs/skills) (`npx skills add owner/repo`) installs skills across multiple coding agents.
-
-**Why not:** It only handles skills (`SKILL.md` files). gsd-ralph needs to distribute hooks, scripts, templates, and settings -- not just skills. The skills CLI cannot install hooks, cannot bundle shell scripts, and cannot manage `settings.local.json` merging. It solves a different problem (cross-agent skill portability) that gsd-ralph does not need.
-
-**When it would be appropriate:** If gsd-ralph were skills-only with no hooks, no scripts, and no config. It is not.
-
-**Confidence:** HIGH -- verified from [skills CLI docs](https://github.com/vercel-labs/skills) and [npm page](https://www.npmjs.com/package/skills). The limitations are clear from the feature set.
+**Key decision: jq is the statistics engine.** jq 1.8.1 natively supports `sqrt`, `add`, `length`, `group_by`, `@csv`, and `@tsv` -- sufficient for mean, population stddev, and high-variance flagging without any external tools. All statistical calculations, JSON aggregation, and report formatting happen in jq, keeping the entire pipeline in a single tool the project already depends on.
 
 ## Recommended Stack
 
-### Core Technologies (NEW for v2.1)
+### Core Technologies (EXISTING -- no additions needed)
 
-| Technology | Version | Purpose | Why Recommended |
-|------------|---------|---------|-----------------|
-| Claude Code Plugin System | v1.0.33+ | Distribution, installation, versioning, updates | THE standard way to distribute Claude Code extensions in 2026. Handles discovery, scoped installation, caching, and auto-updates natively. 9,000+ plugins use this pattern |
-| Plugin marketplace (GitHub) | N/A | Plugin catalog | `.claude-plugin/marketplace.json` in the gsd-ralph repo. Users add once, install/update plugins from it. Free, no registry needed |
-| npm package (installer only) | npm registry | One-command bootstrap | `npx gsd-ralph-install` for users who want to install from terminal without opening Claude Code first. Dev-time only, not a runtime dependency |
-| Node.js | 18+ | npx installer runtime | Already required by Claude Code. No new dependency. The installer is ~100 lines using only `child_process` and `fs` builtins |
+| Technology | Version | Purpose in Benchmarks | Why Sufficient |
+|------------|---------|----------------------|----------------|
+| Bash | 3.2.57 (macOS system) | Harness scripts (reset, run, eval, report) | Same language as gsd-ralph itself; consistent patterns |
+| jq | 1.8.1 | JSON metrics, statistical aggregation, report generation | Has `sqrt`, `group_by`, `@csv`, `@tsv`; can compute mean/stddev natively |
+| Claude Code CLI | 2.1.72+ | Benchmark execution + metrics capture | `--output-format json` provides `duration_ms`, `num_turns`, `total_cost_usd`, `session_id` |
+| Bats | 1.13.0 (vendored in tests/bats/) | Challenge project test framework + correctness evaluation | Already in repo; same framework for taskctl tests and gsd-ralph tests |
+| Git | 2.20+ | Challenge state management (tags, checkout, reset) | `bench/baseline` and `bench/after-delete` tags for reproducible starting states |
+| ShellCheck | 0.11.0 | Code quality metric (warning count delta) | Already installed; used for Bash linting in existing CI |
 
-### Supporting Libraries (NEW for v2.1)
+### System Utilities (macOS built-in -- no installation needed)
 
-| Library | Version | Purpose | When to Use |
-|---------|---------|---------|-------------|
-| None | N/A | N/A | The installer uses only Node.js builtins (`child_process`, `fs`, `path`). No external dependencies. This keeps `npx` execution instant |
+| Utility | Purpose in Benchmarks | Notes |
+|---------|----------------------|-------|
+| `/bin/date +%s` | Wall-clock timing (epoch seconds) | Matches existing `ralph-launcher.sh` timing pattern. Second precision is sufficient for 10-20 minute benchmark runs |
+| `bc` | Floating-point division for derived metrics | `echo "scale=2; 95.0 / 245" \| bc` for token efficiency, time efficiency calculations |
+| `awk` | Inline floating-point formatting | `awk '{printf "%.2f", $1/$2}'` as alternative to bc for simple divisions |
+| `wc -l` | Line count for refactoring metrics | Measuring format.sh size before/after refactoring challenge |
+| `diff` | Change measurement for refactoring challenge | `diff --stat` to verify >10 lines changed |
+| `mktemp -d` | Temporary directories for benchmark isolation | Same pattern as existing Bats test helper |
 
-### Development Tools (NEW for v2.1)
+### Bats Test Libraries (EXISTING -- already vendored)
 
-| Tool | Purpose | Notes |
-|------|---------|-------|
-| `claude --plugin-dir ./` | Test plugin locally during development | Loads plugin from working directory without installing. Restart to pick up changes |
-| `claude plugin validate .` | Validate plugin manifest | Checks JSON syntax, required fields, directory structure |
-| `npm pack --dry-run` | Verify npm package contents | Ensure only cli.js and package.json are included in the installer package |
-| bats-core | Test installer prerequisites check | Mock `claude --version` output, test failure paths |
+| Library | Location | Purpose in Benchmarks |
+|---------|----------|----------------------|
+| bats-core | `tests/bats/` | Test runner for taskctl challenge tests |
+| bats-assert | `tests/test_helper/bats-assert/` | `assert_success`, `assert_failure`, `assert_output` for correctness checks |
+| bats-file | `tests/test_helper/bats-file/` | `assert_file_exists`, `assert_dir_exists` for file structure checks |
+| bats-support | `tests/test_helper/bats-support/` | Foundation library required by bats-assert and bats-file |
 
-## What the Plugin Approach Changes in gsd-ralph
+## Claude Code CLI JSON Output Schema
 
-### Repository Structure Changes
+The `--output-format json` flag (used with `-p` / `--print` mode) returns a structured result that the harness captures directly. This is how efficiency metrics flow from benchmark runs to result JSON files.
 
-The gsd-ralph repo needs to serve dual purposes: (1) development/testing workspace, and (2) Claude Code plugin source.
+**Result fields available (verified via official docs and community reference):**
 
-**Current structure (v2.0):**
-```
-gsd-ralph/
-  bin/gsd-ralph          # CLI entry (legacy v1.x subcommands)
-  bin/ralph-stop         # Graceful stop
-  scripts/*.sh           # Core scripts
-  lib/**/*.sh            # Libraries
-  templates/             # Templates
-  tests/                 # Bats tests
-  .claude/commands/      # Slash command
-  .claude/skills/        # Skills
-  .claude/settings.local.json
-```
-
-**Required additions for v2.1:**
-```
-gsd-ralph/
-  .claude-plugin/
-    plugin.json          # NEW: Plugin manifest
-    marketplace.json     # NEW: Marketplace catalog (self-referencing)
-  hooks/
-    hooks.json           # NEW: Plugin hooks config (moved from settings.local.json)
-  skills/                # MOVED: from .claude/skills/ to plugin root
-    gsd-ralph-autopilot/
-      SKILL.md
-  commands/              # MOVED: from .claude/commands/ to plugin root
-    gsd/
-      ralph.md
-  installer/             # NEW: npx installer package
-    package.json
-    cli.js
-  # ... existing scripts/, lib/, templates/, tests/ unchanged
+```json
+{
+  "type": "result",
+  "subtype": "success",
+  "result": "Response text...",
+  "total_cost_usd": 0.0034,
+  "is_error": false,
+  "duration_ms": 2847,
+  "duration_api_ms": 1923,
+  "num_turns": 4,
+  "session_id": "abc-123-def"
+}
 ```
 
-**Key insight:** The plugin system looks for `skills/`, `commands/`, and `hooks/` at the plugin root -- NOT inside `.claude/`. During development, use `claude --plugin-dir .` to load the repo as a plugin. For distribution, the marketplace points to the repo as a plugin source.
+**Mapping to PRD metrics:**
 
-### settings.local.json Handling
+| PRD Metric | Source | Extraction |
+|------------|--------|------------|
+| Wall-clock time (seconds) | Harness `date +%s` start/end | `$((end - start))` |
+| Total tokens (input + output) | NOT directly in CLI JSON output | Parse from `stream-json` output or estimate from `total_cost_usd` |
+| Tool calls count | NOT directly in CLI JSON output | Count from `stream-json` events or session transcript |
+| Iterations (Ralph modes) | Harness loop counter | Already tracked in `ralph-launcher.sh` |
+| Human interventions | Harness manual count | Always 0 for autonomous modes |
+| Duration (ms) | `duration_ms` field | Direct extraction: `jq -r '.duration_ms'` |
+| Cost (USD) | `total_cost_usd` field | Direct extraction: `jq -r '.total_cost_usd'` |
+| Turns count | `num_turns` field | Direct extraction: `jq -r '.num_turns'` |
 
-**Current state:** gsd-ralph v2.0 writes its PreToolUse hook and permissions into `.claude/settings.local.json` in the target project.
+**Token and tool-call capture strategy:**
 
-**Plugin approach:** Hooks defined in `hooks/hooks.json` within the plugin are automatically registered when the plugin is installed. No more manual `settings.local.json` manipulation. The plugin system handles merge/unmerge natively.
+The `--output-format json` single-result mode does NOT include per-token breakdowns or tool-call counts in the top-level result. Two approaches:
 
-**Migration concern:** Projects that installed v2.0 manually will have hooks in `settings.local.json`. The v2.1 installer should detect and clean these up to avoid duplicate hooks.
+1. **Use `--output-format stream-json`** to capture the full event stream, then post-process to count tool_use events and sum token usage from individual message events. This is more complex but gives exact numbers.
 
-### `${CLAUDE_PLUGIN_ROOT}` Path Resolution
+2. **Approximate from available fields.** Use `num_turns` as a proxy for tool calls (each turn typically involves 1-2 tool calls). Use `total_cost_usd` combined with known per-token pricing to back-calculate token counts. This is simpler but approximate.
 
-**Current state:** Scripts reference `$GSD_RALPH_HOME` which is resolved from the CLI binary's location.
+**Recommendation:** Start with approach 2 (available fields) for the MVP. `num_turns`, `duration_ms`, and `total_cost_usd` are the three most meaningful efficiency metrics anyway. Add `stream-json` parsing later if exact token/tool-call counts prove necessary for the comparison narrative.
 
-**Plugin state:** Scripts are copied to `~/.claude/plugins/cache/<plugin-hash>/`. References must use `${CLAUDE_PLUGIN_ROOT}` in hooks and can use `${CLAUDE_SKILL_DIR}` in skills.
+## Statistical Aggregation in jq
 
-**Impact on scripts:** `ralph-launcher.sh` currently resolves `GSD_RALPH_HOME` from `BASH_SOURCE[0]`. Inside a plugin, this resolves to the cache directory automatically. No changes needed to the script's self-location logic -- it already follows symlinks and resolves the real path.
+jq 1.8.1 can compute all required statistics natively. No external statistics library or Python/R needed.
+
+**Verified working on this system:**
+
+```bash
+# Mean and population stddev in a single jq expression
+echo '[10, 20, 30, 40, 50]' | jq '
+  (add / length) as $mean |
+  (map(. - $mean | . * .) | add / length | sqrt) as $stddev |
+  {mean: $mean, stddev: ($stddev * 100 | round / 100), count: length}
+'
+# Output: {"mean": 30, "stddev": 14.14, "count": 5}
+```
+
+```bash
+# Group results by mode, compute per-mode statistics
+jq -s '
+  group_by(.mode) | map({
+    mode: .[0].mode,
+    mean_score: ([.[].correctness_score] | add / length),
+    mean_time: ([.[].wall_clock_seconds] | add / length),
+    count: length
+  })
+' benchmarks/results/*.json
+```
+
+```bash
+# High-variance flag (stddev > 30% of mean)
+jq '
+  (add / length) as $mean |
+  (map(. - $mean | . * .) | add / length | sqrt) as $stddev |
+  {mean: $mean, stddev: $stddev, high_variance: ($stddev > ($mean * 0.3))}
+'
+```
+
+**Reusable jq function library** (to include in harness scripts):
+
+```jq
+def mean: add / length;
+def variance: mean as $m | map(. - $m | . * .) | mean;
+def stddev: variance | sqrt;
+def round2: . * 100 | round / 100;
+def high_variance: stddev as $sd | mean as $m | $sd > ($m * 0.3);
+```
+
+## Report Generation in jq
+
+jq can produce all three output formats the PRD requires (markdown, CSV, JSON) from the same result data.
+
+**Markdown table generation (verified):**
+
+```bash
+jq -r '
+  "| Mode | Time (s) | Score | Cost ($) |",
+  "|------|----------|-------|----------|",
+  (.[] | "| \(.mode) | \(.mean_time | round) | \(.mean_score)% | $\(.mean_cost | round2) |")
+'
+```
+
+**CSV generation (verified):**
+
+```bash
+jq -r '
+  ["mode","challenge","time_s","score","cost_usd"],
+  (.[] | [.mode, .challenge, .wall_clock_seconds, .correctness_score, .total_cost_usd])
+  | @csv
+'
+```
+
+**JSON aggregated report:** Native -- jq outputs JSON by default.
+
+## Challenge Project Stack (taskctl)
+
+The challenge project is deliberately simple. It uses the same stack as gsd-ralph itself.
+
+| Component | Technology | Why |
+|-----------|-----------|-----|
+| Entry point | `taskctl.sh` (Bash) | Bash is gsd-ralph's native language; no framework mismatch |
+| Storage | JSON flat file (`.taskctl.json`) | jq reads/writes it; familiar pattern from existing `ralph-launcher.sh` |
+| Tests | Bats + bats-assert | Same framework already vendored in gsd-ralph; challenge tests and harness eval share the same runner |
+| JSON manipulation | jq | Same tool used throughout gsd-ralph |
+
+**Challenge project Bats setup pattern** (mirror existing gsd-ralph test helper):
+
+```bash
+# benchmarks/taskctl/tests/test_helper/common.bash
+_taskctl_setup() {
+    PROJECT_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
+    PATH="$PROJECT_ROOT/src:$PATH"
+
+    # Shared Bats libraries from main repo
+    load "${PROJECT_ROOT}/../../tests/test_helper/bats-support/load"
+    load "${PROJECT_ROOT}/../../tests/test_helper/bats-assert/load"
+
+    TEST_TEMP_DIR="$(mktemp -d)"
+    cp "$PROJECT_ROOT/.taskctl.json" "$TEST_TEMP_DIR/"
+    cd "$TEST_TEMP_DIR" || return 1
+}
+```
+
+**Key pattern:** The challenge project's tests reuse the Bats libraries already vendored in `tests/test_helper/`. No need to vendor them again inside `benchmarks/taskctl/`. Relative paths (`../../tests/test_helper/`) link back to the main repo's copies.
+
+## Harness Script Integration Points
+
+The harness scripts fit alongside existing scripts with consistent patterns.
+
+| Harness Script | Existing Pattern It Follows | Key Integration |
+|----------------|---------------------------|-----------------|
+| `bench-reset.sh` | `create_test_repo()` in `tests/test_helper/common.bash` | Uses `git checkout`, `git clean -fd` for state reset |
+| `bench-run.sh` | `ralph-launcher.sh` loop engine | Uses `date +%s` timing, `claude -p --output-format json`, captures JSON result |
+| `bench-eval.sh` | `tests/test_helper/common.bash` + Bats assertions | Runs Bats tests against challenge project, counts pass/fail |
+| `bench-report.sh` | `validate-config.sh` jq patterns | Uses `jq -s` to slurp all result files, `jq -r` for markdown/CSV output |
+
+**Script location:** `benchmarks/harness/` as specified in the PRD deliverables.
+
+## Timing Strategy
+
+**Wall-clock timing:** Use `date +%s` (integer seconds) for benchmark run timing. This matches the existing pattern in `ralph-launcher.sh` (lines 291-505) and provides sufficient precision for 10-20 minute benchmark runs. The PRD specifies "wall-clock time (seconds)" -- second granularity is exactly what is needed.
+
+**Why NOT sub-second timing:** macOS 26+ supports `date +%s%N` natively, but:
+- Benchmark runs are 10-20 minutes; sub-second precision is noise
+- Integer arithmetic in Bash is simpler and more portable
+- Matches the existing `ralph-launcher.sh` pattern (no code divergence)
+- The Claude CLI `duration_ms` field provides millisecond precision for the API call portion if needed
+
+**Eval script timing** (seconds-granularity): Correctness evaluation scripts run Bats tests and ShellCheck, which typically complete in 1-5 seconds. If sub-second precision is needed for eval timing, use `duration_ms` from the Claude JSON output rather than adding a second timing mechanism.
 
 ## What NOT to Add
 
 | Avoid | Why | Use Instead |
 |-------|-----|-------------|
-| Homebrew formula | Unnecessary complexity for a Claude Code-native tool. Users already have Claude Code installed via npm or native installer | Plugin system + npx installer |
-| curl pipe to bash installer | Security concerns, no prerequisite checking, not idempotent | npx installer with proper checks |
-| Docker container | gsd-ralph is a thin integration layer, not a service. Docker adds massive overhead for a few shell scripts | Direct plugin installation |
-| npm runtime dependencies in installer | Every dependency slows `npx` startup and adds supply chain risk | Node.js builtins only (`child_process`, `fs`, `path`) |
-| Custom update mechanism | Claude Code plugins have auto-update built in (marketplace-level). Bumping `version` in `plugin.json` triggers updates for all users | Plugin version field + marketplace auto-update |
-| Monorepo package manager (pnpm, yarn) | Only one package (the installer). No workspace complexity needed | Simple npm with single package.json |
-| TypeScript for installer | 100 lines of code. TypeScript adds build step, tsconfig, compilation. Not worth it | Plain JavaScript (CommonJS for maximum compatibility) |
-| Vercel `npx skills add` | Only installs skills. Cannot distribute hooks, scripts, templates, or settings | Claude Code plugin system |
-| Official Anthropic marketplace submission | Adds review/approval delay. gsd-ralph is a niche tool for GSD users, not a general-purpose plugin | Self-hosted marketplace in the gsd-ralph repo |
+| Python for statistics | Adds a runtime dependency for mean/stddev that jq handles natively. Every developer machine has different Python configs | jq `add/length` for mean, `map(.-$m\|.*.) \| add/length \| sqrt` for stddev |
+| hyperfine | Designed for benchmarking CLI command startup time, not 10-20 minute AI sessions. Its calibration and warmup features are irrelevant | Custom harness with `date +%s` and `--output-format json` |
+| GNU time (`gtime`) | Measures CPU time, memory, and I/O -- metrics not in the PRD. Wall-clock time from `date +%s` is what we need | `date +%s` start/end delta |
+| pytest / Jest for challenge tests | Introducing a second test framework for the challenge project when Bats is already vendored. Adds setup complexity | Bats (same as gsd-ralph itself) |
+| JSON Schema validation library | The result JSON schema is simple (15 fields, all primitives). jq can validate presence of required fields without a schema validator | `jq -e '.mode and .challenge and .correctness_score'` |
+| Markdown templating engine | jq's string interpolation handles markdown table generation. No Jinja2, Handlebars, or envsubst needed | jq `-r` with inline markdown formatting |
+| CSV library | jq's `@csv` filter handles CSV escaping correctly (quotes strings with commas, escapes quotes) | `jq -r '.[] \| [fields] \| @csv'` |
+| Database (SQLite, etc.) | Result files are JSON files in a directory. `jq -s '.' results/*.json` aggregates them. At 4 modes x 5 challenges x 3 runs = 60 files, a database is overhead | Filesystem JSON files + `jq -s` for aggregation |
+| R or gnuplot for charts | The PRD deliverable is a markdown comparison report, not a visual dashboard. Tables suffice | jq-generated markdown tables |
+| Docker for isolation | Benchmark runs use git tags for state reset. Docker would add startup overhead and complicate Claude Code CLI access | `git checkout bench/baseline && git clean -fd` |
+| GNU coreutils (brew install) | macOS system `date`, `bc`, `wc`, `diff`, `awk` all work for the benchmarking needs. No GNU-specific features required | macOS built-in utilities |
 
 ## Alternatives Considered
 
 | Recommended | Alternative | When to Use Alternative |
 |-------------|-------------|-------------------------|
-| Claude Code plugin | Manual file copy script | Never. The plugin system is the standard and handles versioning, updates, scope, and cleanup natively |
-| Self-hosted GitHub marketplace | Official Anthropic marketplace | If gsd-ralph grows to broader adoption and wants official distribution. Submit via [claude.ai/settings/plugins/submit](https://claude.ai/settings/plugins/submit) |
-| npx bootstrap installer | No installer (plugin-only) | If all users are comfortable running `/plugin marketplace add` and `/plugin install` inside Claude Code. The npx wrapper adds convenience, not necessity |
-| CommonJS (require) in installer | ESM (import) in installer | If targeting Node.js 22+ only. CommonJS works on Node.js 14+ and has no `.mjs` extension confusion |
-| Single repo (plugin + installer) | Separate repos (plugin vs installer) | Never. Keeping everything in one repo avoids version synchronization issues |
+| jq for statistics | Python `statistics` module | If statistical requirements grow beyond mean/stddev (e.g., confidence intervals, hypothesis testing). Unlikely for this project |
+| jq `@csv` for CSV | Dedicated CSV tool (`csvkit`, `miller`) | If CSV post-processing is needed (filtering, joining). The benchmarks only need to write CSV, not query it |
+| `date +%s` for timing | `SECONDS` Bash variable | `SECONDS` resets on subshell entry, making it unreliable for timing commands that spawn subshells. `date +%s` is explicit and reliable |
+| Filesystem JSON files | SQLite via `sqlite3` CLI | If queries become complex (multi-dimensional grouping, window functions). At 60 result files, jq handles this fine |
+| Bats for challenge tests | ShellSpec or BATS alternatives | Never for this project. Bats is already vendored and all 356 existing tests use it. Consistency matters more than features |
+| `--output-format json` | `--output-format stream-json` | When exact per-message token counts and tool-call enumeration are required. Start with `json` (simpler); switch if needed |
 
 ## Version Compatibility
 
-| Requirement | Minimum | Current | Notes |
-|-------------|---------|---------|-------|
-| Claude Code | 1.0.33+ | (latest) | Plugin system requires v1.0.33. `/plugin` command, `claude plugin install` CLI |
-| Node.js | 18+ | (varies) | Required by Claude Code itself. npx installer uses only builtins |
-| npm/npx | 9+ | (varies) | Ships with Node.js 18+. `npx` executes the installer without global install |
-| Git | 2.20+ | (varies) | Required for marketplace cloning. Well within range on any modern system |
-| GSD | Current | Current | gsd-ralph cannot function without GSD. Installer checks for `~/.claude/get-shit-done/` |
-| Bash | 3.2+ | (varies) | macOS system Bash. Runtime requirement (unchanged from v2.0) |
-| jq | 1.6+ | (varies) | Runtime requirement for hook scripts (unchanged from v2.0) |
+| Requirement | Minimum | Current (verified) | Notes |
+|-------------|---------|-------------------|-------|
+| Bash | 3.2+ | 3.2.57 | macOS system Bash. All harness scripts use Bash 3.2-compatible syntax |
+| jq | 1.6+ | 1.8.1 | `sqrt` available since jq 1.5. `@csv` since 1.5. `group_by` since 1.4. All features needed are well-established |
+| Claude Code CLI | 2.0+ | 2.1.72 | `--output-format json` with `duration_ms`, `num_turns`, `total_cost_usd` fields |
+| Git | 2.20+ | (system) | Tag checkout, clean, reset operations for challenge state management |
+| ShellCheck | 0.7+ | 0.11.0 | Warning count comparison. JSON output (`-f json`) available since 0.7 |
+| Bats | 1.5+ | 1.13.0 | `setup_file`/`teardown_file` (used in challenge tests) requires 1.5+. Already vendored at 1.13.0 |
+| bc | Any | macOS built-in | POSIX standard. Used only for floating-point division |
 
-**No new runtime dependencies.** The plugin system is built into Claude Code. The npm installer package is execution-time only (downloaded by npx, runs once, not retained).
+**No new dependencies to install.** Every tool is either already vendored in the repo (Bats, bats-assert, bats-file, bats-support) or pre-installed on macOS (Bash, bc, date, awk, wc, diff) or already required by gsd-ralph (jq, Git, Claude Code CLI, ShellCheck).
 
-## Installation Flow (User Perspective)
-
-### Path 1: npx one-command install (RECOMMENDED for new users)
+## Installation
 
 ```bash
-# From any terminal:
-npx gsd-ralph-install
+# Nothing to install. All tools already present.
+# Verify with:
+bash --version | head -1       # GNU bash, version 3.2.57
+jq --version                   # jq-1.8.1
+shellcheck --version | head -3 # ShellCheck 0.11.0
+git --version                  # git version 2.x
+echo '1' | bc                  # 1 (bc available)
 
-# Output:
-# Checking prerequisites...
-#   Claude Code v2.3.1 ... OK
-#   GSD framework ... OK
-#   jq 1.7 ... OK
-#   Bash 3.2.57 ... OK
-# Adding gsd-ralph marketplace...
-# Installing gsd-ralph plugin (user scope)...
-# Done! gsd-ralph installed.
-#
-# Next steps:
-#   1. Open Claude Code in your project: claude
-#   2. Run: /gsd-ralph:ralph execute-phase <N>
-#   3. Or use --dry-run to preview: /gsd-ralph:ralph execute-phase <N> --dry-run
-```
-
-### Path 2: Plugin install from within Claude Code
-
-```
-# Inside Claude Code session:
-/plugin marketplace add daniswhoiam/gsd-ralph
-/plugin install gsd-ralph@gsd-ralph
-
-# Done. Restart Claude Code to activate hooks.
-```
-
-### Path 3: Team project setup (committed to repo)
-
-```bash
-# In .claude/settings.json (committed to repo):
-{
-  "extraKnownMarketplaces": {
-    "gsd-ralph": {
-      "source": {
-        "source": "github",
-        "repo": "daniswhoiam/gsd-ralph"
-      }
-    }
-  },
-  "enabledPlugins": {
-    "gsd-ralph@gsd-ralph": true
-  }
-}
-
-# Team members get prompted to install when they trust the project folder.
+# Bats (vendored, not global):
+./tests/bats/bin/bats --version # Bats 1.13.0
 ```
 
 ## Sources
 
-- [Claude Code Plugin System (official docs)](https://code.claude.com/docs/en/plugins) -- Plugin creation, manifest format, directory structure, `--plugin-dir` testing, component types (verified 2026-03-10, HIGH confidence)
-- [Claude Code Plugin Marketplace (official docs)](https://code.claude.com/docs/en/plugin-marketplaces) -- marketplace.json schema, distribution options (GitHub, npm, git), version management, team configuration (verified 2026-03-10, HIGH confidence)
-- [Discover and Install Plugins (official docs)](https://code.claude.com/docs/en/discover-plugins) -- Installation scopes, `/plugin install` command, marketplace add/update, team marketplace setup via `extraKnownMarketplaces` (verified 2026-03-10, HIGH confidence)
-- [Plugins Reference (official docs)](https://code.claude.com/docs/en/plugins-reference) -- Complete plugin.json schema, `${CLAUDE_PLUGIN_ROOT}` variable, hooks/hooks.json format, plugin caching behavior, CLI commands, debugging tools (verified 2026-03-10, HIGH confidence)
-- [Claude Code Skills (official docs)](https://code.claude.com/docs/en/skills) -- Skills merged with commands as of v2.1.3, `SKILL.md` format, `${CLAUDE_SKILL_DIR}` variable, Agent Skills open standard (verified 2026-03-10, HIGH confidence)
-- [Anthropic Official Marketplace (GitHub)](https://github.com/anthropics/claude-plugins-official) -- 9.7k stars, reference implementation for marketplace structure, `plugins/` and `external_plugins/` directory pattern (verified 2026-03-10, HIGH confidence)
-- [Vercel Skills CLI (GitHub)](https://github.com/vercel-labs/skills) -- Skills-only installer, does NOT handle hooks/scripts/settings. Evaluated and rejected for gsd-ralph's needs (verified 2026-03-10, HIGH confidence)
-- [npm package.json bin field (official docs)](https://docs.npmjs.com/cli/v11/configuring-npm/package-json/) -- How npx resolves and runs CLI binaries from npm packages (verified 2026-03-10, HIGH confidence)
-- [npx create-* pattern](https://www.alexchantastic.com/building-an-npm-create-package) -- Convention for npm init/create packages. Informed installer naming decision (verified 2026-03-10, MEDIUM confidence)
+- [Claude Code CLI Reference (official docs)](https://code.claude.com/docs/en/cli-reference) -- `--output-format json` flag, `--max-turns`, `--print` mode documentation (verified 2026-03-11, HIGH confidence)
+- [Claude Code CLI JSON output fields](https://introl.com/blog/claude-code-cli-comprehensive-guide-2025) -- `total_cost_usd`, `duration_ms`, `duration_api_ms`, `num_turns`, `session_id`, `is_error` fields documented (verified 2026-03-11, MEDIUM confidence -- community source, consistent with official docs)
+- [jq 1.8 Manual](https://jqlang.github.io/jq/manual/) -- `sqrt`, `add`, `length`, `group_by`, `@csv`, `@tsv`, `round` built-in functions (verified 2026-03-11, HIGH confidence)
+- Local system verification -- all tools tested directly on target macOS 26.3.1 system: `date +%s`, `bc`, `awk`, `jq` statistics, `jq` markdown/CSV generation (verified 2026-03-11, HIGH confidence)
+- Existing codebase patterns -- `ralph-launcher.sh` timing (lines 291-505), `validate-config.sh` jq usage, `tests/test_helper/common.bash` Bats setup (verified 2026-03-11, HIGH confidence)
+- [Bats-core documentation](https://bats-core.readthedocs.io/) -- `setup_file`, `teardown_file`, `load` patterns for challenge project tests (verified via vendored version, HIGH confidence)
 
 ---
-*Stack research for: gsd-ralph v2.1 Easy Install*
-*Researched: 2026-03-10*
+*Stack research for: gsd-ralph v2.2 Benchmarking Suite*
+*Researched: 2026-03-11*

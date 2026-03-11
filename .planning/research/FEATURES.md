@@ -1,276 +1,254 @@
-# Feature Research: v2.1 Easy Install
+# Feature Research
 
-**Domain:** Single-command installer for Claude Code CLI extension (gsd-ralph)
-**Researched:** 2026-03-10
-**Confidence:** HIGH
-
-## Context
-
-This research covers the feature landscape for gsd-ralph v2.1 -- making the existing gsd-ralph autopilot tool installable in any GSD project with a single command. v2.0 (shipped, 830 LOC Bash + 1,593 LOC tests) provides the core autopilot functionality (`--ralph` flag, loop engine, circuit breaker, permission tiers, worktree isolation). v2.1 focuses exclusively on the installation/distribution problem: getting all those components into a target repo reliably.
-
-**Key ecosystem facts informing this research:**
-- Claude Code plugin system (v1.0.33+) provides native install/uninstall via `/plugin install name@marketplace` with skills, hooks, commands, and settings bundled in a standardized directory structure
-- GSD uses npx-based installation: `npx get-shit-done-cc --claude --global` copies commands, workflows, and templates to `~/.claude/`
-- The ralph-loop-setup plugin (MarioGiancini) and flow-next plugin (gmickel) both use the Claude Code plugin marketplace for distribution, with `/plugin install` handling file placement
-- gsd-ralph already has a proven pattern for non-destructive `settings.local.json` merge/unmerge via jq (in `ralph-launcher.sh` `_install_hook()` / `_remove_hook()`)
-- gsd-ralph must install ~40 files across 5 directories: `scripts/`, `lib/`, `bin/`, `templates/`, `.claude/skills/`
-
----
+**Domain:** AI coding tool benchmarking suite (execution mode comparison)
+**Researched:** 2026-03-11
+**Confidence:** MEDIUM-HIGH
 
 ## Feature Landscape
 
 ### Table Stakes (Users Expect These)
 
-Features users assume exist. Missing any of these = the installer feels broken or untrustworthy.
+Features that any credible benchmarking suite must have. Without these, results lack validity and the tool feels amateur.
 
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| **Single-command install** | Every modern CLI tool installs in one command (GSD: `npx get-shit-done-cc`, Homebrew: `brew install`, Claude Code: `curl ... \| bash`). Multi-step manual setup is a non-starter. | MEDIUM | Primary approach: bash script (`./install.sh` or `bash <(curl -sL ...)`) that copies files from the gsd-ralph repo to the target project. Long-term: Claude Code plugin distribution. The bash script approach is simpler for v2.1 and does not require npm packaging. |
-| **Prerequisite detection** | If Claude Code, GSD, jq, or git is missing, the installer must detect and report clearly with fix instructions. Every mature installer does this (rustup checks for cc, Homebrew checks for Xcode tools). Cryptic failures erode trust. | LOW | Check for: `claude` binary in PATH, GSD commands directory (`~/.claude/commands/gsd/` or `.claude/commands/gsd/`), `jq` binary, `git` binary, bash version >= 3.2. For each missing prerequisite, print the exact install command. Exit early on hard requirements. |
-| **Idempotent re-runs** | Users re-run installers when unsure if the first run succeeded. Running twice must not break anything. Homebrew install issue #559 documents real user frustration when re-running creates errors. | MEDIUM | For each file: check if target exists and matches source (checksum or content comparison). If identical, skip with "already up to date" message. If different (user modified), warn but do not overwrite user-owned files. Use `mkdir -p` for directories. For settings.local.json, jq-merge is inherently idempotent (adding an already-present array element is a no-op with dedup). |
-| **Non-destructive settings merge** | Users may already have `.claude/settings.local.json` with custom permissions, hooks, and tool allowlists. Overwriting loses their config. Claude Code's own settings system merges arrays from multiple scopes. | MEDIUM | Existing proven pattern: `_install_hook()` in ralph-launcher.sh uses jq to merge PreToolUse hook config into existing settings. Generalize this to also merge permission entries (`permissions.allow` array). On uninstall, reverse: remove only ralph-specific entries via `_remove_hook()` pattern. |
-| **Post-install verification** | User needs proof the install worked. "Installation complete" alone is insufficient. GSD prints "Run `/gsd:help` to verify." Other tools run a version command. | LOW | After file copy: verify key files exist (`scripts/ralph-launcher.sh`, `bin/gsd-ralph`, `.claude/skills/gsd-ralph-autopilot/SKILL.md`), run `bin/gsd-ralph --version` to confirm executable, validate `.ralphrc` syntax with `scripts/validate-config.sh`. Print summary with next-step guidance. |
-| **Clear success/failure output** | Colored output showing each step's status, with a summary at the end. Standard in npx create-react-app, GSD installer, Homebrew. Silent installers that succeed without feedback leave users uncertain. | LOW | Use ANSI color codes (green checkmarks for success, red X for failure, yellow for warnings). Print each file copied. Print total summary: "Installed N files. Run `gsd-ralph --version` to verify." Reuse existing `print_success`/`print_error` from `lib/common.sh` if sourcing is possible, or inline simple ANSI helpers. |
-| **Uninstall command** | Symmetry with install. If you can add in one command, users expect to remove in one command. Prevents "how do I clean this up?" support burden. | LOW | Remove all files the installer created. Unmerge ralph-specific entries from settings.local.json (existing `_remove_hook()` pattern). Do NOT remove `.ralphrc` if user has customized it -- warn instead. Write a `.ralph/.installed-files` manifest during install to know exactly what to remove. |
+| Feature | Why Expected | Complexity | Dependencies | Notes |
+|---------|--------------|------------|--------------|-------|
+| Deterministic environment reset | SWE-bench, Aider, and all credible benchmarks isolate each trial. Anthropic's own eval guidance states "each trial should be isolated by starting from a clean environment." Without this, shared state (git history, leftover files) contaminates results. | LOW | Git tags (`bench/baseline`, `bench/after-delete`) | `bench-reset.sh` with git checkout + verification checksums. Must also clear `.taskctl.json` data files, temp dirs, any caches. Anthropic found Claude gained unfair advantage by examining git history from previous trials -- reset must address this. |
+| Automated correctness evaluation | Pass/fail grading without human judgment is the foundation of HumanEval (pass@k), SWE-bench (test patches), and Aider (Exercism tests). Subjective scoring introduces unacceptable noise. | MEDIUM | Challenge project (`taskctl`) with test suite, challenge definitions with expected outcomes | `bench-eval.sh` running Bats tests + custom checks. Each challenge needs unambiguous pass/fail criteria -- Anthropic recommends "two domain experts would independently reach the same verdict." |
+| Structured result capture (JSON) | Every benchmark from SWE-bench to BigCodeBench stores results in machine-readable format for aggregation, comparison, and re-analysis. | LOW | Result schema definition | PRD schema is solid. Capture timestamp, mode, challenge, all metrics. Write to `benchmarks/results/{mode}-{challenge}-{timestamp}.json`. |
+| Multi-run statistical aggregation | LLMs are non-deterministic even at temperature=0 (batch size variability, prefix caching). Single-run results are scientifically meaningless. Industry standard is minimum 3 runs. | MEDIUM | Result JSON files from multiple runs | `bench-report.sh` computing mean, stddev. The PRD's "flag any result where stddev > 30% of mean" is a good threshold. Research confirms even "deterministic" settings produce variance. |
+| Wall-clock time measurement | Universal metric across all AI benchmarks. The most basic efficiency signal. | LOW | Harness start/end timestamps | Use `date +%s` for epoch seconds. Measure from prompt submission to agent completion, not including reset time. |
+| Correctness score (0-100%) | Pass@1 is the standard metric in HumanEval, BigCodeBench, and Aider. Binary pass/fail per check, aggregated to percentage. | LOW | `bench-eval.sh` check definitions | Weight all checks equally within a challenge. Don't introduce partial credit -- it adds subjectivity. |
+| Regression score | SWE-bench explicitly checks that existing tests still pass after changes. Refactoring and bug-fix challenges are meaningless without regression detection. | LOW | Pre-existing Bats test suite in `taskctl` | Run `test_add.bats` + `test_list.bats` after every challenge. Report as percentage of pre-existing tests still passing. |
+| Identical prompts across modes | Fair comparison requires the same task specification. SWE-bench gives the same issue description to every agent; Aider gives the same Exercism problem. | LOW | Prompt template system | Core prompt identical. Only wrapper differs (how to invoke CC vs CC+GSD vs CC+Ralph vs CC+gsd-ralph). The PRD handles this correctly. |
+| Comparison report generation | The entire point is cross-mode comparison. Without a readable output, the suite is just a data pipeline. | MEDIUM | Aggregated results across all modes and challenges | Markdown table output. Include raw numbers and derived metrics. Flag high-variance results. |
+| Time caps per challenge | Prevents runaway autonomous sessions from consuming infinite resources. Every serious agent benchmark has execution limits. | LOW | Harness timeout mechanism | PRD caps are reasonable (10-20 min). Implement via `timeout` command or wall-clock check in harness loop. Kill and record DNF (did not finish) with partial results. |
 
 ### Differentiators (Competitive Advantage)
 
-Features that go beyond basic installation and distinguish gsd-ralph's installer from alternatives.
+Features that make this benchmark suite uniquely valuable beyond "yet another AI eval." These exploit the fact that this suite compares *execution modes* of the same underlying model, not different models -- a comparison nobody else is making.
 
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| **Claude Code plugin packaging** | The ecosystem-native distribution path. `/plugin install gsd-ralph@marketplace` gives users the familiar Claude Code UX: install, uninstall, enable/disable, auto-update, namespaced skills. Other Ralph tools (ralph-loop-setup, flow-next) already use this pattern. | MEDIUM | Requires: `.claude-plugin/plugin.json` manifest, restructuring files to match plugin directory layout (skills/, hooks/, commands/ at plugin root), hosting as GitHub repo with `marketplace.json`. Plugin system handles file placement, scope selection (user/project/local), and lifecycle. This wraps the same install logic. |
-| **Upgrade-in-place** | `install.sh --upgrade` updates scripts, templates, and SKILL.md without touching user configuration (`.ralphrc`, custom hooks). GSD does "wipe and replace" for managed directories while preserving local modifications. Saves users from manual diffing on updates. | MEDIUM | Categorize files as "managed" (replaced on upgrade: scripts/, lib/, bin/, templates/, SKILL.md) vs "user-owned" (preserved: .ralphrc). On upgrade: replace all managed files, skip user-owned files, re-merge settings.local.json. Track installed version in `.ralph/.version` to detect upgrades. |
-| **Dry-run mode** | `install.sh --dry-run` shows exactly what files would be installed and what config would be merged, without changing anything. Builds trust with cautious users. Matches existing `--dry-run` pattern in ralph-launcher. | LOW | Walk through all install steps, print what would happen (file paths, settings changes), skip actual writes. Easy to implement: wrap each write operation in an `if ! $DRY_RUN` guard. |
-| **Version-pinned installation** | `install.sh --version 2.1.0` installs a specific tagged release. Important for teams needing consistent versions across repos. Plugin system supports version pinning natively. | LOW | For script-based install: download from GitHub tagged release. For plugin: version in plugin.json manifest. Tag each release on GitHub. |
-| **GSD integration detection** | Auto-detect whether GSD is installed globally (`~/.claude/commands/gsd/`) vs locally (`.claude/commands/gsd/`), whether `.planning/` exists, and whether the project is a git repo. Adapt install behavior and messages accordingly. | LOW | Simple directory/file existence checks. If `.planning/` is missing, warn "This doesn't look like a GSD project. Run `/gsd:new-project` first." If no git repo, error "gsd-ralph requires a git repository." |
-| **Install manifest for clean uninstall** | Write `.ralph/.installed-files` during install listing every file created/modified. Uninstall reads this manifest instead of hardcoding file paths. Handles version skew gracefully -- uninstall always removes exactly what was installed, even if the file list changed between versions. | LOW | Simple: write one filepath per line to manifest during install. On uninstall: read manifest, remove each file, remove empty directories. Append settings.local.json entries with markers for clean removal. |
+| Feature | Value Proposition | Complexity | Dependencies | Notes |
+|---------|-------------------|------------|--------------|-------|
+| Token efficiency metric (correctness/tokens) | Cost-per-task-solved is emerging as the key metric (Aider tracks $/task, Artificial Analysis tracks $/task). But this suite can go deeper: same model, different scaffolding, so token differences directly measure scaffolding overhead. This is the headline metric for proving gsd-ralph's value. | LOW | Token counts from `claude --output-format json` | Formula: `correctness_score / total_tokens * 1000`. Also compute raw token cost using current API pricing. This directly answers "does GSD planning save tokens?" |
+| Autonomy ratio measurement | Anthropic's own research measures auto-approval rates and interrupt frequency as key autonomy metrics. This suite uniquely compares forced-interactive (CC+GSD) vs fully-autonomous (CC+Ralph, CC+gsd-ralph) on identical tasks. Nobody else measures this. | MEDIUM | Human intervention counting (manual for CC, CC+GSD; zero for Ralph modes) | Define "human intervention" precisely: any manual input after initial prompt. CC mode may need follow-up prompts; CC+GSD has checkpoint approvals; Ralph modes should be zero. Log each intervention with timestamp. |
+| Quality-adjusted speed composite | Raw speed is misleading (fast but wrong is worse than slow but correct). The PRD's formula `(Correctness * Regression) / wall_clock_seconds` penalizes both slowness and breakage. This is more useful than any single metric. | LOW | Correctness, regression, and time metrics | This derived metric is the single best number for comparing modes. A mode that's fast but introduces regressions will score poorly. |
+| Challenge difficulty gradient | 5 challenges from simple (fix bug) to complex (multi-file integration) reveal where modes diverge. Simple tasks may show no difference; complex tasks should reveal whether planning scaffolding helps. This gradient design is more informative than uniform-difficulty suites. | HIGH (already in PRD) | All 5 challenge definitions + `taskctl` project | The PRD's ordering (fix bug -> add feature -> add tests -> refactor -> multi-file) is well-designed. The key insight: if modes only diverge on Challenge 5, that proves planning helps with complexity. If they diverge on Challenge 1, the scaffolding overhead matters even for simple tasks. |
+| Pass^k reliability metric | Anthropic recommends tracking pass^k (all k trials succeed) alongside pass@k (any trial succeeds). Pass^k measures *consistency*, which matters more for production workflows than best-case performance. A mode that succeeds 3/3 times is more trustworthy than one that succeeds 1/3. | LOW | Multiple runs per mode/challenge combination | `pass_at_k = 1 if any run passes, 0 otherwise`. `pass_all_k = 1 if all runs pass, 0 otherwise`. Report both. High pass@k but low pass^k = inconsistent mode. |
+| Tool call analysis | Number and type of tool calls reveals agent strategy. Does CC+Ralph make more file reads? Does CC+GSD make fewer edits because planning front-loads decisions? This is unique behavioral data about how scaffolding changes agent behavior. | MEDIUM | Tool call extraction from Claude JSON output | Parse `--output-format json` for tool call counts. Categorize: file reads, file writes, bash commands, search operations. Compare distributions across modes. |
+| ShellCheck quality delta | Code quality measurement beyond "does it work." ShellCheck warnings before/after reveal whether a mode produces clean or sloppy code. Useful for the refactoring challenge especially. | LOW | ShellCheck installed, baseline warning count | Run `shellcheck src/**/*.sh` before and after. Delta = after - before. Negative = improved. Requires ShellCheck binary (available via Homebrew). |
+| Commit hygiene scoring | Measures whether the agent produces clean, reviewable git history. Professional developers care about commit quality. Modes with planning may produce better commit messages. | LOW | Git log analysis after each run | Count commits, check for conventional commit format, measure commit message length. Simple heuristic scoring. |
+| Reproducible run identity | Every run tagged with a unique ID, exact commit hash, exact model version, temperature setting, and timestamp. Enables re-running specific configurations months later. | LOW | Metadata capture in result JSON | Extend result schema with `run_id`, `model_version`, `temperature`, `git_sha`, `harness_version`. Critical for longitudinal comparison if the suite is used across gsd-ralph versions. |
 
 ### Anti-Features (Commonly Requested, Often Problematic)
 
-Features that seem good but create problems for a CLI installer in this domain.
+Features that seem valuable but would add complexity without proportional signal, or would undermine the benchmark's validity.
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| **Interactive configuration wizard** | "Let me customize everything during install" | Adds complexity, slows install, creates untestable permutations across prompt choices. gsd-ralph's `.ralphrc` already has well-documented defaults that work for most projects. Interactive prompts also break non-interactive contexts (CI/CD, scripts). | Install with sensible defaults. Print "Edit `.ralphrc` to customize behavior." after install. User tweaks config after the fact. |
-| **Auto-install prerequisites** | "Just install GSD and Claude Code for me too" | gsd-ralph should not own the install lifecycle of upstream dependencies. Version conflicts, permission issues, and breaking changes in GSD or Claude Code are not gsd-ralph's responsibility. Upstream tools have their own tested installers. | Detect missing prerequisites, print exact install commands with URLs, exit with clear error. Let user run upstream installers themselves. |
-| **Global system-wide installation** | "Install gsd-ralph once for all my projects" | gsd-ralph needs per-repo files: `.ralphrc` (project-specific config), `scripts/` (executed in project context), SKILL.md (loaded per-project). A global install would still need per-repo initialization, creating a confusing "installed but not working" state. | Per-repo installation is correct. For "available everywhere" without per-repo files, the Claude Code plugin system (user-scope install) handles this -- but `.ralphrc` still needs per-repo init. |
-| **Curl-pipe-bash installer** | "curl https://... \| bash" is the simplest possible install | Security concerns (MITM attacks, partial downloads, no integrity verification). Not the Claude Code ecosystem pattern. Requires hosting infrastructure. npm/plugin approaches provide safer distribution with caching and checksums. | Use bash install script that user downloads first (can inspect), or Claude Code plugin system (primary long-term), or npx package (secondary). |
-| **GUI/web-based installer** | "Point and click to install" | Target users are terminal-native (PROJECT.md: "CLI only, target users are terminal-native"). GUI adds platform-specific complexity, runtime dependencies, and maintenance burden for zero value to the target audience. | CLI-only installation. The one-command pattern IS the UX for terminal-native users. |
-| **Auto-update on every launch** | "Always run latest version automatically" | Breaks reproducibility. Updates during critical autonomous runs can introduce bugs mid-execution. Surprise behavior changes violate the principle of least astonishment. GSD's approach (wipe and replace on explicit `npx get-shit-done-cc`) is better. | Explicit `--upgrade` command. Plugin system's auto-update is opt-in and happens at Claude Code startup (not mid-run). Users control when updates happen. |
-| **npm packaging for a Bash tool** | "Publish to npm so users can `npx gsd-ralph install`" | gsd-ralph is a Bash tool with zero Node.js dependencies. Publishing to npm adds a package.json, node_modules concern, npm registry dependency, and the conceptual mismatch of distributing Bash scripts via a JavaScript package manager. GSD does this because it needs cross-platform CLI argument parsing from npm packages. gsd-ralph does not. | Distribute via GitHub releases (bash script download) or Claude Code plugin system. Both are more natural for a Bash tool than npm. If npx is desired later, it can be a thin wrapper that downloads and runs the bash installer. |
-
----
+| Partial credit scoring | "An agent that gets 80% of the way there should score higher than one that gets 0%" | Introduces subjectivity. Who decides what "80% done" means? SWE-bench and HumanEval both use binary pass/fail for good reason. Partial credit also makes aggregation ambiguous (is 50% partial on 5 checks better than 100% on 3 checks?). | Binary pass/fail per check, with enough granular checks (5-8 per challenge) that partial completion naturally produces a partial score through the number of checks passed. |
+| LLM-as-judge evaluation | "Use Claude to evaluate Claude's code quality" | Circular dependency. The evaluator shares biases with the evaluatee. LLM judges also have poor reproducibility. Anthropic's eval guidance emphasizes objective, automated grading. | Automated checks (tests pass, ShellCheck, file diffs) for objective quality. Save code artifacts for optional human review later. |
+| Cross-model benchmarking | "Also compare GPT-4, Gemini, etc." | Scope explosion. Different models need different invocation methods, pricing models, token counting. The PRD explicitly marks this as a non-goal. The scientific question is "does scaffolding help?" not "which model is best?" | Keep model constant (Claude). The variable is execution mode. Cross-model comparison is a future milestone if desired. |
+| Real-time progress visualization | "Show live token counts, test results streaming during a run" | Adds complexity to the harness without improving result quality. Observer effect: monitoring overhead could affect performance of modes differently. | Write results to JSON after completion. Use `tail -f` on log files for basic monitoring during development. |
+| Weighted challenge scoring | "Multi-file integration should count more than fix-a-bug" | Arbitrary weighting introduces bias toward the designer's assumptions about what matters. Different users value different capabilities. | Report per-challenge results separately. Let consumers weight as they see fit. Provide unweighted aggregate as default. |
+| Automated benchmark scheduling (CI/CD) | "Run benchmarks nightly against main" | Each full benchmark run (4 modes x 5 challenges x 3 repeats = 60 runs) costs significant API tokens and takes hours. Nightly runs waste money when code hasn't changed. | Manual trigger via `bench-run.sh`. Run before/after significant changes. Store results with git SHA for version association. |
+| Code diff quality analysis | "Measure elegance, readability, idiomatic style beyond ShellCheck" | Highly subjective. No reliable automated measure of code elegance exists. Even human reviewers disagree. | ShellCheck warnings (objective), line count changes (objective), and saved diffs for optional human review capture what can be measured reliably. |
+| Interactive mode simulation for CC and CC+GSD | "Automate the human responses in interactive modes to make benchmarks fully unattended" | Scripted human responses are not human responses. The point of comparing interactive vs autonomous modes is measuring what human involvement costs and buys. Faking it defeats the purpose. | For CC and CC+GSD modes, require a human operator. Document the exact interventions made. Accept that these modes produce fewer data points per session. |
+| Challenge project in multiple languages | "Test with Python, JavaScript, and Bash projects" | Multiplies challenge project creation effort by 3x. The benchmark measures scaffolding, not language capability. Since all modes use the same model, language shouldn't be a confounding variable. | Bash only (matches gsd-ralph's native language). If language-specific results are needed, that's a separate future benchmark. |
 
 ## Feature Dependencies
 
 ```
-[Prerequisite Detection]
+[taskctl Challenge Project]
     |
-    v
-[File Copy/Install Core]
+    |--requires--> [Challenge Definitions (prompts + checks)]
+    |                   |
+    |                   |--requires--> [bench-eval.sh (correctness evaluation)]
+    |                   |
+    |                   |--requires--> [bench-reset.sh (environment isolation)]
     |
-    +---> [Settings Merge (settings.local.json)]
-    |         |
-    |         +---> [Hook Registration (PreToolUse)]
-    |         |
-    |         +---> [Permission Entries (allow array)]
-    |
-    +---> [.ralphrc Generation (from template)]
-    |
-    +---> [SKILL.md Installation]
-    |
-    +---> [Install Manifest (.ralph/.installed-files)]
-    |
-    v
-[Post-Install Verification]
-    |
-    v
-[Success Output with Next Steps]
+    |--enables--> [bench-run.sh (execution harness)]
+                      |
+                      |--requires--> [bench-eval.sh]
+                      |--requires--> [bench-reset.sh]
+                      |--requires--> [Result JSON schema]
+                      |
+                      |--enables--> [bench-report.sh (aggregation + comparison)]
+                                        |
+                                        |--requires--> [Result JSON files from multiple runs]
+                                        |--requires--> [Statistical aggregation (mean, stddev)]
+                                        |
+                                        |--enables--> [Token efficiency analysis]
+                                        |--enables--> [Quality-adjusted speed composite]
+                                        |--enables--> [Pass@k / Pass^k reliability]
+                                        |--enables--> [Tool call analysis]
 
-[Uninstall Command] --reads--> [Install Manifest]
-                    --reverses--> [File Copy/Install Core]
-                    --reverses--> [Settings Merge]
-
-[Plugin Distribution] --wraps--> [File Copy/Install Core]
-                      --wraps--> [Settings Merge]
-                      --adds--> [plugin.json manifest]
-                      --adds--> [marketplace.json entry]
-
-[Upgrade-in-Place] --depends--> [File Copy/Install Core]
-                   --reads--> [.ralph/.version]
-                   --distinguishes--> [Managed vs User-owned files]
-
-[Dry-Run Mode] --wraps--> [File Copy/Install Core]
-               --wraps--> [Settings Merge]
-               --independent (no runtime deps, can ship in any order)
+[bench/baseline git tag] --requires--> [taskctl project at known state]
+[bench/after-delete tag] --requires--> [Challenge 2 completed state]
 ```
 
 ### Dependency Notes
 
-- **Prerequisite Detection must come first:** All subsequent steps assume GSD, Claude Code, jq, and git are present. Fail fast with clear messages before touching any files.
-- **File Copy is the core operation:** Everything else (settings merge, verification, manifest) depends on files being in place. Settings merge specifically requires hook scripts to already exist at their target paths before settings.local.json can reference them.
-- **Install Manifest enables clean uninstall:** Without tracking what was installed, uninstall must hardcode file paths -- fragile across versions. Write the manifest as part of the install process, not as a separate step.
-- **Plugin Distribution wraps Install Core:** The plugin is a packaging/distribution format. The actual install logic (file copy, config merge) is the same whether run from a bash script or via `/plugin install`. Build the script first, wrap in plugin format later.
-- **Upgrade-in-Place requires version tracking:** Must compare installed version vs available version to decide what to update. A `.ralph/.version` file serves this purpose.
-- **Dry-Run is independent:** Can be implemented at any time by wrapping write operations in conditionals. No dependencies on other features.
-
----
+- **Challenge Project is the foundation:** Nothing else can be built or tested without `taskctl` at a tagged baseline. This must be Phase 1.
+- **eval before run:** `bench-run.sh` invokes `bench-eval.sh` to score each run. Evaluation logic must exist before the harness.
+- **reset before run:** `bench-reset.sh` must restore clean state before each trial. Without it, run results are contaminated.
+- **run before report:** `bench-report.sh` reads result JSON files that `bench-run.sh` produces. No results, no report.
+- **Challenge 5 depends on Challenge 2:** The multi-file integration challenge starts from `bench/after-delete`, which assumes the delete feature exists. This requires either a pre-built tag or a dependency on successfully completing Challenge 2.
+- **Statistical metrics require multiple runs:** Pass^k, mean/stddev, and variance flagging all require 3+ runs per combination. Single runs only produce raw numbers.
 
 ## MVP Definition
 
-### Launch With (v2.1)
+### Launch With (v1 -- this milestone)
 
-Minimum viable installer -- what's needed so users can install gsd-ralph in one command.
+The minimum viable benchmark suite that produces credible cross-mode comparison data.
 
-- [ ] **Prerequisite detection** -- Check for claude, GSD commands, jq, git, bash >= 3.2. Print actionable fix instructions for each missing prerequisite. Exit early on hard failures.
-- [ ] **File copy/install core** -- Copy scripts/, lib/, bin/, templates/, and SKILL.md to target repo. Use `mkdir -p` for directories. Handle file permissions (`chmod +x` for scripts and bin entries). Idempotent: overwrite managed files, skip identical files with "already up to date."
-- [ ] **Non-destructive settings.local.json merge** -- Add ralph hook config and permission entries to existing settings without overwriting other content. Generalize existing `_install_hook()` jq-merge pattern to also handle `permissions.allow` array.
-- [ ] **.ralphrc generation** -- Copy `templates/ralphrc.template` to `.ralphrc` if not present. If `.ralphrc` already exists, skip (user-owned). Print message about customization.
-- [ ] **Install manifest** -- Write `.ralph/.installed-files` listing every file created/modified. Enables clean uninstall.
-- [ ] **Post-install verification** -- Verify key files exist, run `bin/gsd-ralph --version`, validate .ralphrc syntax. Print success summary with next-step guidance.
-- [ ] **Uninstall command** -- Read install manifest, remove all listed files, unmerge settings.local.json entries, clean up empty directories. Warn about user-modified files.
-- [ ] **Clear output** -- Colored step-by-step output with final summary.
+- [ ] **taskctl challenge project** at tagged `bench/baseline` -- the test subject; everything depends on this
+- [ ] **5 challenge definitions** with prompts and automated checks -- defines what is measured
+- [ ] **bench-reset.sh** -- environment isolation; without it, results are invalid
+- [ ] **bench-eval.sh** -- automated pass/fail grading; without it, evaluation is manual
+- [ ] **bench-run.sh** with mode-specific invocation -- the execution engine
+- [ ] **Structured JSON results** with wall-clock time, correctness, regression, token counts -- raw data capture
+- [ ] **bench-report.sh** with markdown comparison table -- the deliverable output
+- [ ] **Mean/stddev aggregation** across repeated runs -- statistical minimum for non-deterministic outputs
+- [ ] **Token efficiency derived metric** -- the headline number proving (or disproving) gsd-ralph's value
+- [ ] **Time caps** per challenge -- prevents runaway sessions
 
-### Add After Validation (v2.1.x)
+### Add After Validation (v1.x -- if benchmark reveals interesting signals)
 
-Features to add once the install script is proven and users are installing successfully.
+Features to add once the core suite is running and producing data.
 
-- [ ] **Claude Code plugin packaging** -- Structure gsd-ralph as a Claude Code plugin with `.claude-plugin/plugin.json`, publish to a GitHub marketplace repo. Trigger: when install script is stable and the team wants broader distribution.
-- [ ] **Upgrade-in-place** -- `--upgrade` flag replacing managed files while preserving user config. Requires `.ralph/.version` tracking. Trigger: when v2.1.1 or v2.2 ships and users need to update.
-- [ ] **Dry-run mode** -- `--dry-run` flag showing what would be installed without modifying anything. Trigger: user feedback requesting preview capability.
-- [ ] **Version pinning** -- `--version X.Y.Z` flag installing from specific GitHub tagged release. Trigger: team usage requiring version consistency.
+- [ ] **Pass^k reliability metric** -- add when 3+ runs per combination are available; reveals consistency differences
+- [ ] **Tool call analysis** -- add when investigating WHY modes differ; requires parsing Claude JSON output
+- [ ] **Quality-adjusted speed composite** -- add to report when basic metrics show modes differ in both speed and quality
+- [ ] **Commit hygiene scoring** -- add if early results show modes produce different commit patterns
+- [ ] **Autonomy ratio tracking** -- add formal measurement once interactive mode benchmarks include documented human interventions
 
-### Future Consideration (v2.2+)
+### Future Consideration (v2+ -- separate milestone)
 
-Features to defer until the distribution pattern is established.
+Features to defer until the benchmarking approach is validated and results are published.
 
-- [ ] **Marketplace submission** -- Submit plugin to Anthropic's claude-plugins-official. Requires plugin stability, documentation, and community validation.
-- [ ] **Auto-update via plugin system** -- Leverage marketplace auto-update for automatic version updates at Claude Code startup.
-- [ ] **Multi-repo batch installer** -- Install gsd-ralph across multiple repos in one command. Adds orchestration complexity for marginal value.
-
----
+- [ ] **Additional challenge projects** (different languages, larger codebases) -- only if Bash-only results feel too narrow
+- [ ] **Cross-version benchmarking** (compare gsd-ralph v2.2 vs v2.3) -- requires stable suite first
+- [ ] **Challenge difficulty calibration** -- adjust challenge complexity based on observed pass rates (if everything passes trivially or everything fails)
+- [ ] **Longitudinal tracking dashboard** -- only if benchmarks become a regular practice
+- [ ] **Community-contributed challenges** -- only if the suite is open-sourced and others adopt it
 
 ## Feature Prioritization Matrix
 
-| Feature | User Value | Implementation Cost | Priority |
-|---------|------------|---------------------|----------|
-| Prerequisite detection | HIGH | LOW | P1 |
-| File copy/install core | HIGH | MEDIUM | P1 |
-| Settings.local.json merge | HIGH | MEDIUM | P1 |
-| .ralphrc generation | HIGH | LOW | P1 |
-| Install manifest | MEDIUM | LOW | P1 |
-| Post-install verification | HIGH | LOW | P1 |
-| Uninstall command | MEDIUM | LOW | P1 |
-| Clear output | MEDIUM | LOW | P1 |
-| Plugin packaging | HIGH | MEDIUM | P2 |
-| Upgrade-in-place | MEDIUM | MEDIUM | P2 |
-| Dry-run mode | LOW | LOW | P2 |
-| Version pinning | LOW | LOW | P3 |
-| Marketplace submission | MEDIUM | LOW | P3 |
+| Feature | User Value | Implementation Cost | Priority | Rationale |
+|---------|------------|---------------------|----------|-----------|
+| taskctl challenge project | HIGH | HIGH | P1 | Foundation. Nothing works without it. |
+| bench-reset.sh | HIGH | LOW | P1 | Environment isolation is non-negotiable for validity. |
+| bench-eval.sh + challenge checks | HIGH | MEDIUM | P1 | Automated evaluation is the core of any benchmark. |
+| bench-run.sh mode harness | HIGH | HIGH | P1 | The execution engine. Complex because 4 modes have different invocation patterns. |
+| JSON result capture | HIGH | LOW | P1 | Simple file writes. Schema from PRD is ready. |
+| bench-report.sh | HIGH | MEDIUM | P1 | The deliverable. Without the report, benchmarks produce data but no insight. |
+| Statistical aggregation | MEDIUM | LOW | P1 | Mean/stddev is straightforward math. Critical for credibility. |
+| Token efficiency metric | HIGH | LOW | P1 | The headline metric. Division of existing captured values. |
+| Time caps | MEDIUM | LOW | P1 | Safety mechanism. Simple `timeout` wrapper. |
+| ShellCheck quality delta | MEDIUM | LOW | P2 | Easy to add, provides code quality signal. |
+| Pass^k reliability | MEDIUM | LOW | P2 | Simple boolean per run; aggregation is straightforward. |
+| Tool call analysis | MEDIUM | MEDIUM | P2 | Requires JSON parsing; valuable for understanding WHY modes differ. |
+| Quality-adjusted speed | MEDIUM | LOW | P2 | Derived from existing metrics. Add to report. |
+| Commit hygiene | LOW | LOW | P3 | Nice signal but unlikely to differentiate modes meaningfully. |
+| Reproducible run identity | MEDIUM | LOW | P2 | Metadata capture is cheap; enables future re-analysis. |
 
 **Priority key:**
-- P1: Must have for v2.1 launch
-- P2: Should have, add in v2.1.x
-- P3: Nice to have, future consideration
+- P1: Must have for this milestone's success criteria
+- P2: Should have, add when core harness is working
+- P3: Nice to have, include if time permits
 
----
+## Competitor Feature Analysis
 
-## Competitor / Reference Installer Analysis
+These are not direct competitors (nobody benchmarks execution modes of the same tool), but established AI coding benchmarks whose designs inform this suite.
 
-| Feature | GSD (npx installer) | ralph-loop-setup (plugin) | flow-next (plugin) | gsd-ralph v2.1 (planned) |
-|---------|---------------------|---------------------------|--------------------|----|
-| **Distribution** | npm package via npx | Claude Code plugin marketplace | Claude Code plugin marketplace | Bash install script (v2.1), plugin (v2.1.x) |
-| **Install command** | `npx get-shit-done-cc --claude --local` | `/plugin install ralph-loop-setup` | `/plugin marketplace add gmickel/...` + `/flow-next:setup` | `./install.sh` or `bash <(curl -sL ...)` |
-| **Non-interactive mode** | Yes (flags: `--claude --global`) | N/A (plugin install is non-interactive) | N/A | Yes (no prompts by default) |
-| **Prerequisite check** | Implicit (npx handles Node) | Not documented | Not documented | Explicit: claude, GSD, jq, git, bash >= 3.2 |
-| **Idempotency** | Yes (wipe and replace managed dirs) | Not documented | Not documented | Yes (check-before-write, skip identical) |
-| **Uninstall** | Not documented | `/plugin uninstall` (native) | `/plugin uninstall` (native) | `./install.sh --uninstall` + manifest-based cleanup |
-| **Settings merge** | Overwrites managed dirs only | Plugin system merges hooks | Plugin system merges hooks | jq-based non-destructive merge (proven pattern) |
-| **Post-install verification** | User runs `/gsd:help` | User tests skill commands | User runs `/flow-next:setup` | Automated: file checks + version command + config validation |
-| **Upgrade** | Re-run `npx get-shit-done-cc` | Plugin marketplace auto-update | Plugin marketplace auto-update | `--upgrade` flag (v2.1.x) |
+| Feature | SWE-bench | Aider Polyglot | HumanEval | Render Blog Eval | Our Approach |
+|---------|-----------|----------------|-----------|-------------------|--------------|
+| Challenge source | Real GitHub issues (2,294 tasks) | Exercism exercises (225 tasks) | Synthetic functions (164 tasks) | Production codebases (2 repos) | Custom Bash CLI project (5 challenges) |
+| Evaluation method | Patch application + test suite | Exercism test suite pass/fail | Unit test pass@k | Subjective 0-10 scoring | Bats test suite + custom checks |
+| Environment isolation | Docker containers per trial | Fresh git checkout | Stateless function execution | Manual setup | Git tag checkout + checksum verification |
+| Statistical handling | Single run (cost prohibitive at scale) | Single run per model | Multiple samples for pass@k | Single subjective run | 3+ runs with mean/stddev/variance flagging |
+| Cost tracking | Not tracked | $/task from API pricing | Not tracked | Subscription pricing noted | Token counts + derived cost efficiency |
+| Multi-file tasks | Yes (average 4.1 files in SWE-bench Pro) | No (single file per exercise) | No (single function) | Yes (production repos) | Yes (Challenge 5 spans 3+ files) |
+| Measures scaffolding | No (measures model capability) | No (measures model + edit format) | No (measures model capability) | Partially (compares tools) | Yes (same model, different scaffolding -- core differentiator) |
+| Difficulty gradient | Mixed difficulty, no explicit ordering | Uniform Exercism difficulty | Uniform function difficulty | Two difficulty levels (vibe vs production) | 5 levels, explicitly ordered simple to complex |
+| Autonomy measurement | Not measured (all autonomous) | Not measured (all autonomous) | Not applicable | Subjective "follow-up prompts needed" | Formal intervention counting with interactive/autonomous distinction |
 
-### Key Insight from Analysis
+### Key Takeaways from Competitor Analysis
 
-The Claude Code plugin system is the RIGHT long-term distribution mechanism -- it provides install/uninstall/upgrade/enable/disable lifecycle management for free. However, gsd-ralph has unique requirements that make a pure plugin insufficient for v2.1:
+1. **SWE-bench's strength is realism** (real issues from real repos), but its weakness is cost and reproducibility (single runs). Our suite trades realism for tight control -- same model, same project, different scaffolding.
 
-1. **Per-repo `.ralphrc` configuration** -- Plugins install to user/project/local scope, but `.ralphrc` needs project-specific customization (PROJECT_NAME, ALLOWED_TOOLS). A plugin can install the template but cannot customize it per-project without a setup step.
-2. **Bash scripts in `scripts/` and `lib/`** -- Plugin directory structure supports skills/, commands/, hooks/, and agents/. Arbitrary script directories are not standard plugin components. The scripts must be accessible at known paths for `ralph-launcher.sh` to source them.
-3. **`bin/` executables in PATH** -- The `gsd-ralph` and `ralph-stop` binaries need to be in PATH or discoverable. Plugins don't handle PATH management.
+2. **Aider's strength is multi-language coverage and cost tracking** ($/task). We should adopt cost tracking but skip multi-language (our variable is mode, not language).
 
-The pragmatic v2.1 approach: build a bash install script first (handles all three issues natively), then wrap it as a plugin setup skill for v2.1.x (the plugin provides distribution and lifecycle; a setup command within the plugin handles per-repo initialization).
+3. **HumanEval's strength is statistical rigor** (pass@k across multiple samples). We adopt this with pass@k and pass^k.
 
----
+4. **Render's weakness is subjective scoring** (0-10 human ratings). We avoid this entirely with automated checks.
 
-## What Files Need to Be Installed
+5. **Nobody measures scaffolding impact.** Every existing benchmark compares models or tools. We compare execution modes of the same model+tool combination. This is our unique contribution.
 
-Based on analysis of the existing gsd-ralph codebase (~40 files across 5 directories):
+## Metrics That Differentiate vs. Metrics That Are Noise
 
-### Managed Files (replaced on upgrade, always overwritten)
+Based on research into what actually varies across execution modes.
 
-| Source Path | Target Path | Purpose |
-|-------------|-------------|---------|
-| `scripts/ralph-launcher.sh` | `scripts/ralph-launcher.sh` | Core loop engine (592 LOC) |
-| `scripts/assemble-context.sh` | `scripts/assemble-context.sh` | GSD context assembly |
-| `scripts/validate-config.sh` | `scripts/validate-config.sh` | Config validation |
-| `scripts/ralph-hook.sh` | `scripts/ralph-hook.sh` | PreToolUse hook for AskUserQuestion denial |
-| `scripts/ralph-execute.sh` | `scripts/ralph-execute.sh` | Phase execution setup |
-| `scripts/ralph-merge.sh` | `scripts/ralph-merge.sh` | Branch merge logic |
-| `scripts/ralph-status.sh` | `scripts/ralph-status.sh` | Phase status display |
-| `scripts/ralph-worktrees.sh` | `scripts/ralph-worktrees.sh` | Worktree isolation |
-| `scripts/ralph-cleanup.sh` | `scripts/ralph-cleanup.sh` | Worktree/branch cleanup |
-| `lib/common.sh` | `lib/common.sh` | Shared utilities |
-| `lib/config.sh` | `lib/config.sh` | Configuration loading |
-| `lib/discovery.sh` | `lib/discovery.sh` | Plan/phase discovery |
-| `lib/frontmatter.sh` | `lib/frontmatter.sh` | YAML frontmatter parsing |
-| `lib/prompt.sh` | `lib/prompt.sh` | Prompt generation |
-| `lib/push.sh` | `lib/push.sh` | Git push utilities |
-| `lib/safety.sh` | `lib/safety.sh` | Safe file operations |
-| `lib/strategy.sh` | `lib/strategy.sh` | Execution strategy |
-| `lib/templates.sh` | `lib/templates.sh` | Template expansion |
-| `lib/commands/*.sh` | `lib/commands/*.sh` | Command implementations (6 files) |
-| `lib/merge/*.sh` | `lib/merge/*.sh` | Merge utilities (6 files) |
-| `lib/cleanup/registry.sh` | `lib/cleanup/registry.sh` | Cleanup registry |
-| `bin/gsd-ralph` | `bin/gsd-ralph` | CLI entry point |
-| `bin/ralph-stop` | `bin/ralph-stop` | Graceful stop command |
-| `templates/*.template` | `templates/*.template` | Prompt/config templates (7 files) |
-| `.claude/skills/gsd-ralph-autopilot/SKILL.md` | `.claude/skills/gsd-ralph-autopilot/SKILL.md` | Autonomous behavior rules |
+### High Signal (likely to differentiate modes)
 
-### User-Owned Files (created if missing, never overwritten on upgrade)
+| Metric | Why It Differentiates | Expected Pattern |
+|--------|----------------------|------------------|
+| **Token efficiency** (correctness/tokens) | Planning scaffolding (GSD) front-loads context, potentially reducing exploration tokens. Autonomous modes (Ralph) may loop more. | CC+GSD and CC+gsd-ralph should use fewer total tokens per correct solution than CC alone. Ralph may use more tokens due to looping but achieve higher correctness. |
+| **Wall-clock time** | Interactive modes block on human input. Autonomous modes run continuously but may loop. | CC and CC+GSD will be slowest (human bottleneck). CC+Ralph should be fastest (no human, no planning overhead). CC+gsd-ralph is between. |
+| **Correctness on complex tasks** (Challenge 4, 5) | Planning helps decompose complex tasks. Simple tasks may not benefit from structure. | Expect modes to converge on Challenges 1-3 but diverge on 4-5. If GSD planning helps, CC+GSD and CC+gsd-ralph should outperform on multi-file work. |
+| **Regression score** | Planning modes should be more careful about preserving existing behavior. Unstructured prompting may cause collateral damage. | CC (no structure) may have lower regression scores. GSD modes should preserve existing tests more consistently. |
+| **Pass^k consistency** | Autonomous modes with circuit breakers may be more consistent. Ad-hoc prompting has higher variance. | Ralph modes should show lower variance (circuit breakers, structured loops). CC should show highest variance. |
 
-| File | Purpose | Default Source |
-|------|---------|----------------|
-| `.ralphrc` | Project-level Ralph configuration | `templates/ralphrc.template` |
+### Low Signal (unlikely to differentiate, or too noisy to interpret)
 
-### Merged Files (non-destructively updated)
+| Metric | Why It's Noise | Keep or Drop |
+|--------|----------------|--------------|
+| **Commit count** | Varies wildly based on agent style, not mode quality. Some agents commit per file, others commit once. | DROP from primary metrics. Capture but don't report prominently. |
+| **Lines of code changed** | More code is not better or worse. Depends on task. A minimal fix is better for Challenge 1; more code is expected for Challenge 2. | DROP as a comparison metric. Use only as a sanity check (refactoring challenge should show meaningful diff). |
+| **ShellCheck delta on non-refactoring challenges** | For bug fixes and feature additions, ShellCheck changes are incidental. Only meaningful for Challenge 4 (refactor). | KEEP for Challenge 4 only. Drop for others. |
+| **Conventional commit compliance** | Style choice, not quality signal. Easy to add to prompts but doesn't measure capability. | DROP from primary comparison. Interesting trivia at best. |
+| **Raw tool call count** | More tool calls could mean thorough investigation or aimless flailing. Count alone doesn't distinguish. | KEEP but analyze patterns (read vs write ratio) rather than raw count. |
 
-| File | What Gets Merged | Merge Strategy |
-|------|------------------|----------------|
-| `.claude/settings.local.json` | PreToolUse hook for ralph-hook.sh, permission allow entries for ralph scripts | jq-based array merge: add ralph-specific entries to existing arrays, do not replace. Existing `_install_hook()` / `_remove_hook()` patterns from ralph-launcher.sh. |
+## Challenge Design Best Practices (from Research)
 
-### Metadata Files (created by installer, managed by installer)
+Based on analysis of SWE-bench, Aider, HumanEval, and Anthropic's eval guidance.
 
-| File | Purpose |
-|------|---------|
-| `.ralph/.installed-files` | Manifest of all files installed (for clean uninstall) |
-| `.ralph/.version` | Installed version (for upgrade detection) |
+### 1. Unambiguous Success Criteria
+Anthropic: "A good task is one where two domain experts would independently reach the same pass/fail verdict." Every check in the PRD is binary and automatable. Maintain this rigor.
 
----
+### 2. Test Both Positive and Negative Cases
+Anthropic: "Testing both when behaviors should occur and when they shouldn't." Challenge 2's "delete 999 prints error" is a good negative test. Ensure each challenge has at least one negative case.
+
+### 3. Prevent Git History Contamination
+Anthropic discovered Claude examined git history from previous trials to gain unfair advantage. `bench-reset.sh` must not just checkout the tag but also clear any stale branches, stashes, or reflog entries that could leak information between runs.
+
+### 4. Verify Starting State
+SWE-bench verifies environment before each run. `bench-reset.sh` should checksum key files against known-good values to detect contamination.
+
+### 5. Reference Solutions Prove Solvability
+Anthropic: "Create reference solutions proving each task is solvable." Build and verify a human solution for each challenge. Store in `benchmarks/challenges/{name}/reference/` but exclude from the working directory during runs.
+
+### 6. Time Caps Must Produce Partial Results
+When a run hits the time cap, capture whatever metrics are available (tokens used, tool calls made, partial correctness). A DNF with 80% correctness is more informative than a binary "timeout."
+
+### 7. Challenge Independence
+Challenges 1-4 all start from `bench/baseline` independently. Challenge 5 starts from `bench/after-delete`. This means Challenges 1-4 can run in any order, but Challenge 5 requires a pre-built tag. Ensure `bench/after-delete` is committed to the repo, not dynamically generated.
 
 ## Sources
 
-- [Claude Code Plugin Documentation](https://code.claude.com/docs/en/plugins) -- Plugin structure, manifest format, installation mechanism, migration from standalone (HIGH confidence)
-- [Claude Code Discover and Install Plugins](https://code.claude.com/docs/en/discover-plugins) -- Marketplace workflow, installation scopes, team configuration, auto-update (HIGH confidence)
-- [GSD get-shit-done-cc npm package](https://www.npmjs.com/package/get-shit-done-cc) -- npx installer pattern, file structure, non-interactive flags (HIGH confidence)
-- [GSD GitHub repository](https://github.com/gsd-build/get-shit-done) -- Installation flow, directory structure, wipe-and-replace strategy (MEDIUM confidence)
-- [ralph-loop-setup plugin](https://github.com/MarioGiancini/ralph-loop-setup) -- Plugin-based Ralph installer, skill structure, files created (MEDIUM confidence)
-- [gmickel-claude-marketplace flow-next](https://github.com/gmickel/gmickel-claude-marketplace) -- Plugin marketplace distribution, Ralph autonomous mode packaging (MEDIUM confidence)
-- [Homebrew install idempotency issue #559](https://github.com/Homebrew/install/issues/559) -- User frustration with non-idempotent installers (HIGH confidence)
-- [Idempotent Bash scripts by Fatih Arslan](https://arslan.io/2019/07/03/how-to-write-idempotent-bash-scripts/) -- Guard clauses, state checks, mkdir -p patterns (HIGH confidence)
-- [Shopify CLI error handling principles](https://shopify.github.io/cli/cli/error_handling.html) -- Error types (AbortError, BugError), user-facing error UX (MEDIUM confidence)
-- [Claude Code settings merge behavior](https://www.eesel.ai/blog/settings-json-claude-code) -- Settings scopes, merge semantics, local vs project vs user (MEDIUM confidence)
-- [anthropics/claude-plugins-official](https://github.com/anthropics/claude-plugins-official) -- Official marketplace structure and plugin listing format (HIGH confidence)
+- [SWE-bench Verified](https://epoch.ai/benchmarks/swe-bench-verified) -- benchmark design, environment methodology
+- [SWE-bench Pro paper](https://arxiv.org/abs/2509.16941) -- long-horizon task design, multi-file complexity
+- [Aider Polyglot Leaderboard](https://aider.chat/docs/leaderboards/) -- metrics tracked, cost-per-task, two-attempt methodology
+- [HumanEval / BigCodeBench](https://huggingface.co/blog/leaderboard-bigcodebench) -- pass@k methodology, calibrated scoring
+- [Anthropic: Demystifying Evals for AI Agents](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents) -- environment isolation, challenge design, pass@k vs pass^k
+- [Anthropic: Measuring Agent Autonomy](https://www.anthropic.com/research/measuring-agent-autonomy) -- autonomy ratio, intervention tracking
+- [Render Blog: AI Coding Agents Benchmark](https://render.com/blog/ai-coding-agents-benchmark) -- practical evaluation methodology for coding tools
+- [LLM Non-Determinism at temperature=0](https://arxiv.org/html/2408.04667v5) -- statistical validity concerns
+- [Towards Reproducible LLM Evaluation](https://arxiv.org/html/2410.03492v2) -- uncertainty quantification in benchmarks
+- [NAACL 2025: LLM Evaluation Should Not Ignore Non-Determinism](https://aclanthology.org/2025.naacl-long.211.pdf) -- statistical methodology for LLM benchmarks
+- [Failing Fast: AI Coding Benchmarks](https://failingfast.io/ai-coding-guide/benchmarks/) -- $/task metric, benchmark limitations
+- [AI Coding Benchmark: Claude Code vs Cursor](https://aimultiple.com/ai-coding-benchmark) -- tool comparison methodology
 
 ---
-*Feature research for: gsd-ralph v2.1 Easy Install*
-*Researched: 2026-03-10*
+*Feature research for: AI coding tool benchmarking suite (execution mode comparison)*
+*Researched: 2026-03-11*

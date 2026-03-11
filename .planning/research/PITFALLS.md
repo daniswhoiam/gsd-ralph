@@ -1,201 +1,296 @@
 # Pitfalls Research
 
-**Domain:** Adding one-command installer to existing Bash CLI tool that copies files into other repos
-**Researched:** 2026-03-10
-**Confidence:** HIGH (grounded in existing gsd-ralph codebase analysis, Claude Code official documentation for settings/hooks merge behavior, Bash 3.2 macOS compatibility research, real-world oh-my-bash/npm installer post-mortems, and Claude Code plugin system documentation)
+**Domain:** Adding AI coding benchmark suite to existing Bash CLI tool (gsd-ralph), comparing 4 execution modes with different invocation patterns
+**Researched:** 2026-03-11
+**Confidence:** HIGH (grounded in gsd-ralph codebase analysis of all 4 invocation modes, SWE-bench/LiveCodeBench post-mortems and criticism literature, AI benchmark methodology research from METR/Runloop/nilenso, Claude Code headless mode documentation, and statistical methodology for small-sample high-variance experiments)
 
 ## Critical Pitfalls
 
-### Pitfall 1: Destroying User's Existing settings.local.json Content
+### Pitfall 1: Apples-to-Oranges Mode Comparison Due to Asymmetric Context Windows
 
 **What goes wrong:**
-The installer overwrites `.claude/settings.local.json` with Ralph's required configuration (PreToolUse hook, permissions), destroying the user's existing permissions, hooks, env vars, or MCP server configurations. Since `settings.local.json` is gitignored and unique to each developer, there is no backup -- the user loses their custom tool allowances, project-specific environment variables, and any other hooks they have configured.
+The four modes have fundamentally different context architectures. CC mode gets a single `claude -p` invocation with one prompt. CC+GSD gets interactive checkpoints feeding incremental context. CC+Ralph loops fresh `claude -p` instances with STATE.md-driven context assembly between iterations. CC+gsd-ralph uses Agent tool subagents spawned within a parent session that itself has accumulated context. A benchmark that treats wall-clock time or token count as directly comparable across these modes produces misleading rankings because the modes are not doing the same amount of work per token.
 
-The existing codebase already has a proven merge/unmerge pattern in `ralph-launcher.sh` (lines 342-383) using jq's `*` merge operator. But the installer context is different from the launcher context: the launcher installs/removes a single hook at runtime with trap-based cleanup, while the installer must merge multiple configuration sections (hooks, permissions, possibly env) at install time and provide a clean uninstall that reverses only Ralph's additions.
+For example, CC+Ralph's loop engine invokes `assemble-context.sh` fresh each iteration, paying re-encoding costs for PROJECT.md, STATE.md, and phase plans every time. CC+gsd-ralph's Agent subagents inherit no parent context but the parent session pays tokens for orchestration logic (circuit breakers, progress detection) that never appears in the subagent's token count. A raw "total tokens" comparison that only counts the innermost invocation will undercount CC+gsd-ralph and overcount CC+Ralph.
 
 **Why it happens:**
-The simplest installer implementation is `cp settings.local.json $TARGET/.claude/settings.local.json`. Developers test on fresh repos where the file does not exist, so the overwrite path is never exercised. Even developers who know about jq merge may use `jq -s '.[0] * .[1]'` which does deep merge for objects but REPLACES arrays rather than concatenating them -- destroying existing permissions entries.
-
-Claude Code's own merge behavior is array concatenation with deduplication (confirmed in official docs: "Arrays concatenate and deduplicate across scopes"). An installer that replaces instead of concatenates violates user expectations set by Claude Code's own behavior.
+The PRD specifies capturing `tokens_input` and `tokens_output` from "Claude CLI `--output-format json` usage field or session stats," but this field means different things per mode. For `claude -p` (CC and CC+Ralph), the JSON output includes session-level token stats. For CC+GSD (interactive), there is no `--output-format json` -- the human is driving. For CC+gsd-ralph (Agent tool), token usage is embedded in the parent session's JSONL logs, not in a standalone JSON output.
 
 **How to avoid:**
-1. Use jq to read existing settings, then merge Ralph's additions per-key:
-   - `permissions.allow`: Concatenate arrays, deduplicate (match Claude Code's own merge behavior)
-   - `hooks.PreToolUse`: Append Ralph's hook entry to existing array, do not replace
-   - `env`: Merge objects (Ralph's keys override only if they conflict, which they should not)
-2. Create a backup before modifying: `cp settings.local.json settings.local.json.pre-ralph`
-3. Record exactly what Ralph added in a manifest file (`.claude/ralph-manifest.json`) so the uninstaller knows what to remove
-4. Test the installer against settings.local.json files with: empty object, existing permissions only, existing hooks only, existing permissions AND hooks AND env, and malformed JSON
-5. Port the existing `_install_hook` / `_remove_hook` pattern from `ralph-launcher.sh` but expand it to handle all sections (not just hooks)
+1. Define a "total token budget" metric that counts ALL tokens consumed by all invocations within a benchmark run, not just the innermost one. For CC+Ralph, sum across all loop iterations. For CC+gsd-ralph, sum the parent session's total usage including orchestration overhead.
+2. Use `~/.claude/projects/<project>/<session-id>.jsonl` files as the ground truth for token usage across all modes -- these are written consistently regardless of invocation mode.
+3. Report tokens in two tiers: "task tokens" (tokens directly working on the challenge) and "overhead tokens" (context assembly, orchestration, progress detection). This makes the comparison honest.
+4. For CC+GSD (interactive mode), instrument the session manually -- record the session ID and parse the JSONL after the run.
 
 **Warning signs:**
-- Installer uses `cp` or `>` redirection to write settings.local.json
-- Installer tests only run against empty/nonexistent target directories
-- No backup file created before settings modification
-- jq merge uses `*` (object merge, replaces arrays) instead of per-key array concatenation
-- No manifest tracking what was added by Ralph
+- Token counts for CC+gsd-ralph are suspiciously lower than CC+Ralph (missing orchestration overhead)
+- Token counts for CC+Ralph scale linearly with iteration count (context re-encoding cost not acknowledged)
+- No plan for how to capture CC+GSD interactive session tokens
+- Result schema has a single `tokens_input` field with no "overhead vs task" distinction
 
 **Phase to address:**
-Core install/uninstall phase (first implementation). This is the highest-risk pitfall because data loss is immediate and irreversible for gitignored files. Must be designed and tested before any other installer work.
+Harness implementation phase. The `bench-run.sh` script must implement mode-aware token capture before any runs are executed. Retrofitting token capture after initial runs wastes those runs.
 
 ---
 
-### Pitfall 2: Hardcoded Absolute Paths in Installed Files
+### Pitfall 2: LLM Non-Determinism Producing Uninterpretable Results at N=3
 
 **What goes wrong:**
-Ralph's installed files contain absolute paths specific to the source installation (e.g., `/Users/daniswhoiam/Projects/gsd-ralph/scripts/ralph-hook.sh`) that break when installed into a different repo at a different location. The existing `settings.local.json` in gsd-ralph's own repo already shows this pattern -- it has entries like `Bash(GSD_RALPH_HOME=/Users/daniswhoiam/Projects/gsd-ralph PATH="..." gsd-ralph merge:*)` which are machine-specific.
+The PRD specifies 3 runs per mode-challenge combination for statistical validity and flagging results where stddev > 30% of mean as "high variance." With LLMs, 3 runs is far too few to produce stable statistics. Research consistently shows that running the same LLM stack multiple times can sway benchmark results by several percentage points. At N=3, a single outlier (one run where the LLM takes a wrong diagnostic path) moves the mean by 33% and the stddev becomes meaningless. The result: most mode-challenge cells get flagged as "high variance" and the entire comparison table becomes noise.
 
-The existing `_install_hook()` function uses `"$PROJECT_ROOT/scripts/ralph-hook.sh"` as the hook command path. When this runs within gsd-ralph's own repo, PROJECT_ROOT resolves to the gsd-ralph source directory. But in an installed target repo, the scripts live in a different location. The hook command path must point to where the scripts were COPIED TO, not where they came FROM.
+The correctness score is particularly vulnerable. It is binary per check (pass/fail), aggregated to 0-100%. With 4-5 checks per challenge, each worth 20-25%, a single check flipping between runs creates a 20-25% swing. At N=3, this means the stddev of correctness will routinely exceed 30% of mean for any non-trivial challenge.
 
 **Why it happens:**
-During development, the source repo and the installed location are the same. Developers test `_install_hook` in the gsd-ralph repo itself, where `$PROJECT_ROOT` correctly resolves. The bug only appears when installing into a DIFFERENT repo. Additionally, Bash 3.2 on macOS lacks `realpath` (requires coreutils via Homebrew), so portable path resolution requires the `cd "$(dirname ...)" && pwd` pattern.
+Claude Code does not expose a `--temperature` flag for the interactive or Agent tool modes. Even `claude -p` does not guarantee temperature 0 behavior. The PRD says "use `--temperature 0` where available, or document the default," but Claude Code CLI does not have a `--temperature` flag at all -- temperature is controlled server-side and is not user-configurable. All 4 modes will exhibit the same underlying non-determinism with no way to reduce it.
 
 **How to avoid:**
-1. All installed file paths must be relative to the TARGET repo root, never the source repo
-2. Use `$(cd "$(dirname "$0")" && pwd)` for portable path resolution (works on Bash 3.2 without `realpath`)
-3. Never use `readlink -f` (not available on macOS without GNU coreutils)
-4. Template hook command paths at install time: read the target repo root via `git rev-parse --show-toplevel`, substitute into settings entries
-5. Test the installer by installing into a DIFFERENT directory than the source repo and verifying all paths resolve correctly
-6. For the ralph-hook.sh command path in settings.local.json: use the target repo's copy (`$TARGET_ROOT/scripts/ralph-hook.sh`), not the source path
+1. Increase to N=5 minimum, ideally N=7. The marginal cost of 2-4 extra runs per cell is far less than the cost of collecting data that cannot support any conclusion. With 4 modes x 5 challenges x 5 runs = 100 runs total (vs 60 at N=3).
+2. Report median and IQR (interquartile range) instead of mean and stddev. Median is robust to single outliers, IQR captures spread without assuming normality.
+3. For correctness, report the distribution of scores across runs (e.g., "3/5 runs scored 100%, 1 scored 75%, 1 scored 50%") rather than mean +/- stddev. The shape of the distribution matters more than the central tendency.
+4. Use a "reliability rate" metric: percentage of runs achieving >= 80% correctness. This captures what matters (how often does this mode succeed?) better than average correctness.
+5. Adjust the "high variance" threshold: 30% of mean is too strict for LLM benchmarks. Use coefficient of variation (CV) thresholds calibrated against a pilot run: run Challenge 1 across all modes 10 times first, measure the baseline CV, then set thresholds relative to that baseline.
 
 **Warning signs:**
-- Installed settings.local.json contains paths from the developer's machine
-- Hook commands fail with "No such file or directory" in target repos
-- Tests only run the installer against the source repo itself
-- Code uses `realpath` or `readlink -f` without a fallback
-- Paths contain the gsd-ralph source directory rather than the target directory
+- Most cells in the comparison table are flagged "high variance"
+- Correctness scores cluster at discrete values (0%, 25%, 50%, 75%, 100%) with no values between -- this is the granularity problem, not real variance
+- A mode "wins" based on mean correctness differences smaller than the stddev
+- No pilot run to calibrate expected variance before committing to full benchmark
 
 **Phase to address:**
-Core install phase. Path resolution must be correct from the first implementation. Regression tests should install into a temp directory and verify all paths point to the target, not the source.
+Challenge design phase AND reporting phase. The challenge design must consider check granularity (more fine-grained checks reduce per-check swing). The reporting script must implement robust statistics. Run a pilot before committing to the full matrix.
 
 ---
 
-### Pitfall 3: No Uninstall or Broken Uninstall Leaves Orphaned Config
+### Pitfall 3: Challenge Project Contamination in Training Data
 
 **What goes wrong:**
-The installer copies files and merges settings, but there is no uninstaller (or the uninstaller is incomplete). Users who want to remove Ralph must manually: (1) delete copied scripts from `scripts/`, (2) delete the SKILL.md from `.claude/skills/`, (3) delete the slash command from `.claude/commands/`, (4) manually edit `settings.local.json` to remove Ralph's hooks and permissions entries, (5) delete `.ralph/` directory, (6) remove `.ralphrc`. Missing any of these leaves orphaned configuration that can cause confusing behavior -- e.g., a PreToolUse hook pointing to a deleted script causes every Claude Code session to error.
+The `taskctl` challenge project will be committed to the gsd-ralph repository. If gsd-ralph is public (or becomes public), future Claude model updates will train on this exact code. The benchmark then measures memorization, not problem-solving. Even before public exposure, if Claude's training data includes GitHub repos, the challenge code, bug patterns, and even the correctness checks could leak into the model's training distribution. The "planted bug in done.sh" becomes a pattern the model has seen before, making Challenge 1 trivially easy for future model versions.
 
-The existing `_remove_hook()` in ralph-launcher.sh is a model for clean removal: it removes only the ralph-specific hook entry, cleans up empty containers, and preserves everything else. But the installer scope is much broader than a single hook.
+This is the same contamination problem that has made SWE-bench Verified unreliable. Research shows models achieve up to 76% accuracy on SWE-bench file-path identification tasks through memorization rather than reasoning, with substantial performance drops on external benchmarks.
 
 **Why it happens:**
-Installers are exciting to build. Uninstallers are boring and easy to forget. The "just delete the files" approach seems adequate until users discover that `settings.local.json` still references deleted scripts. The uninstall problem is also harder because the uninstaller must know exactly what the installer added -- which varies based on what existed before installation.
+It is the natural instinct to version-control everything in the same repo for convenience. The PRD places the challenge project at `benchmarks/taskctl/` inside gsd-ralph. Developers do not think about their own repo as a future training data source.
 
 **How to avoid:**
-1. Write the uninstaller BEFORE the installer. This forces you to define the manifest of what gets installed
-2. Create a manifest file during installation (`.claude/ralph-manifest.json` or `.ralph/install-manifest.json`) that records every file copied and every settings.local.json entry added
-3. The uninstaller reads the manifest and reverses each operation:
-   - Delete files listed in manifest
-   - Remove permissions entries that were added (by value match, not index)
-   - Remove hook entries (using the existing `_remove_hook` pattern of matching on `ralph-hook` in the command string)
-   - Clean up empty containers (empty hooks object, etc.)
-4. Test the full cycle: install, verify working, uninstall, verify clean. The target repo should be identical to pre-install state (except the backup file)
-5. Ship the uninstaller as `gsd-ralph uninstall` command in the target repo, not just as a script in the source repo
+1. Accept that contamination is inevitable for a project of this scope and design benchmarks to be disposable. Build the harness and evaluation infrastructure to be reusable, but expect to swap challenge projects periodically.
+2. Use the `bench/baseline` git tag approach (already in the PRD) but go further: make challenge generation semi-automated. Write a script that can create new challenge variants (different bug locations, different missing features) from a template, so you can generate fresh challenges when you suspect contamination.
+3. Include a "canary check" in the evaluation: add one check that requires reading a value from the specific git commit hash or timestamp. If the model produces the right answer without reading the file, contamination is confirmed.
+4. For the initial benchmark, accept this limitation and document it. The benchmark measures "current Claude on never-before-seen code." Future runs with the same challenges are "Claude on potentially-seen code" and must be interpreted accordingly.
 
 **Warning signs:**
-- No `uninstall` command exists
-- Uninstaller deletes files but does not clean settings.local.json
-- No manifest tracking what was installed
-- After uninstall, `jq '.hooks' .claude/settings.local.json` still shows ralph entries
-- Claude Code sessions error with "hook script not found" after uninstall
+- Correctness scores increase across model versions without changes to the challenge
+- The model produces fixes without reading the buggy file first (checking tool call logs)
+- Challenge 1 (fix bug) becomes near-100% across all modes -- the diagnostic task becomes trivial
+- Model names the specific bug before examining the code
 
 **Phase to address:**
-Same phase as install -- install and uninstall must be designed together. The manifest format should be defined first, then install writes to it and uninstall reads from it.
+Challenge project phase. The taskctl project should be designed with replaceability in mind. The harness scripts should work with any challenge project, not be hardcoded to taskctl's specific file structure.
 
 ---
 
-### Pitfall 4: Version Drift Between Source Repo and Installed Copies
+### Pitfall 4: Time Cap Confounding Correctness Measurements
 
 **What goes wrong:**
-User installs gsd-ralph v2.1.0 into their project. Two weeks later, gsd-ralph v2.1.1 fixes a bug in `ralph-hook.sh`. The user's project still has the v2.1.0 copy of the hook script. There is no mechanism to detect the mismatch, notify the user, or update the installed files. Over time, installed copies diverge from the source, accumulating bugs that were already fixed upstream.
+The PRD specifies time caps per challenge (10-20 minutes). When a mode hits the time cap, it gets a partial correctness score based on whatever state the code is in at timeout. This conflates two different failure modes: "the mode is slow but would eventually succeed" vs "the mode is stuck and would never succeed." A mode that methodically works through a problem but takes 12 minutes on a 10-minute-capped challenge scores lower than a mode that quickly produces a half-correct solution in 5 minutes, even though the first mode would have scored 100% given 15 minutes.
 
-This is especially dangerous for the PreToolUse hook (`ralph-hook.sh`) and SKILL.md, because bugs in these files can cause Ralph to ask questions (breaking autopilot) or skip important safety rules.
+The CC+Ralph and CC+gsd-ralph modes are particularly vulnerable because they have startup overhead (context assembly, circuit breaker initialization) that the raw CC mode does not. Ralph's loop engine also has inter-iteration overhead (state snapshot, progress detection) that consumes wall-clock time without producing code changes.
 
 **Why it happens:**
-Copy-based installation creates independent copies that are not linked to the source. Unlike symlinks or package managers that can track versions, copied files have no inherent version tracking. The installer "works" at install time, so there is no obvious moment to check for updates.
+Time caps are necessary to prevent runaway sessions (a legitimate concern with autonomous modes), but using them as a scoring boundary rather than just a safety valve creates a measurement artifact. The PRD's derived metric "Time efficiency = Correctness / wall-clock seconds" further amplifies this: a mode that times out at 10 minutes with 75% correctness scores lower than one that finishes at 5 minutes with 80% correctness, even if the timeout mode was on track for 100%.
 
 **How to avoid:**
-1. Embed a version marker in every installed file (e.g., a comment `# gsd-ralph v2.1.0` at the top of each script, or a `ralph-version` field in settings entries)
-2. Record the installed version in the manifest file
-3. Provide an `upgrade` command that: reads the manifest to find installed version, compares with current source version, shows a diff of what changed, and asks before overwriting
-4. At runtime (when `--ralph` is invoked), compare the installed version marker against the source version and warn if mismatched
-5. Consider whether symlinks to the source repo would work instead of copies (tradeoff: simpler updates but creates a dependency on the source repo existing at that path)
-6. If using copies: the `upgrade` command should be a first-class feature, not an afterthought
+1. Separate time caps from scoring. Record the time cap as metadata ("timed out: yes/no") but score correctness based on final state regardless. A mode that achieves 100% correctness in 18 minutes on a 15-minute-capped challenge should be recorded as "100% correctness, 18 minutes, exceeded cap."
+2. Use generous time caps (2-3x the expected completion time from pilot runs) that function as safety valves, not performance boundaries. If pilot runs show Challenge 1 takes 3-7 minutes, set the cap at 20 minutes, not 10.
+3. Report "completion rate within cap" as a separate metric from correctness. This captures the autonomy reliability dimension without contaminating the quality dimension.
+4. For the "time efficiency" derived metric, only include runs that completed within the cap. Timed-out runs should be excluded from efficiency calculations and reported separately.
 
 **Warning signs:**
-- No version marker in installed files
-- No `upgrade` or `update` command
-- Users report bugs that were already fixed in a newer source version
-- No way to check what version is installed in a target repo
-- The installer always overwrites without checking if the target has a newer version
+- Multiple runs per challenge hit the time cap
+- One mode consistently times out while others do not (signals the cap is too tight for that mode's overhead, not that the mode is worse)
+- Time caps were set without pilot runs to calibrate expected durations
+- The "fastest" mode wins on time efficiency despite lower correctness
 
 **Phase to address:**
-Version management phase (should be part of the install/uninstall design but may be a separate plan). The version marker format must be decided during install design so it is present from the first installation.
+Challenge design phase (set initial caps) and harness implementation phase (implement cap as safety valve, not scoring boundary). Calibrate caps during pilot runs before the full benchmark matrix.
 
 ---
 
-### Pitfall 5: Installer Assumes Specific Repo Structure That Does Not Exist
+### Pitfall 5: Correctness Checks That Reject Valid Alternative Solutions
 
 **What goes wrong:**
-The installer assumes the target repo has `.claude/` directory, or has `.planning/` directory, or has a specific git branching setup. When these assumptions fail, the installer either errors cryptically or silently creates a broken installation. For example: (1) repo has no `.claude/` directory at all (never used Claude Code project settings), (2) repo has `.claude/settings.json` but no `settings.local.json`, (3) repo has `.claude/skills/` with existing skills that conflict with Ralph's skill name, (4) repo has no `.planning/` directory (GSD not initialized), (5) repo is not a git repository at all.
+The correctness checks in `bench-eval.sh` are designed around one expected implementation approach. But LLMs frequently produce correct solutions that differ from what the check expects. For example, Challenge 2 ("add delete command") checks for `test_delete.bats` with "at least 2 tests." If the model adds delete tests to an existing test file, or names the file `test_delete_command.bats`, or implements delete as a subcommand of a broader `manage` command, the correctness check fails despite the solution being functionally correct.
+
+This is the single most common failure mode in AI coding benchmarks. Research on SWE-bench found that 63.75% of fixes flagged as failures were "suspicious" -- either passing despite being wrong, or failing despite being correct. The evaluation was the bottleneck, not the model.
 
 **Why it happens:**
-The installer is developed against the gsd-ralph repo itself, which has all these directories. Developers do not test against bare repos, non-GSD repos, or repos with unusual Claude Code configurations. The "happy path" works perfectly; edge cases are discovered by users.
+Writing correctness checks is deceptively easy. You think about how YOU would solve the problem, then write checks for that approach. The checks encode implementation assumptions (file names, function signatures, test structure) rather than behavioral contracts (does `taskctl delete 1` actually remove task 1?).
 
 **How to avoid:**
-1. Check prerequisites explicitly at the start of installation:
-   - Is this a git repository? (`git rev-parse --show-toplevel`)
-   - Is GSD installed? (check `~/.claude/get-shit-done/VERSION`)
-   - Is GSD initialized in this repo? (check `.planning/` exists, or run `gsd-tools.cjs config-get` and check exit code)
-   - Does `.claude/` exist? (create it if not -- this is safe)
-2. Create directories as needed (`mkdir -p`) rather than assuming they exist
-3. Handle skill name conflicts: check if `.claude/skills/gsd-ralph-autopilot/` already exists before copying. If it does, compare versions and prompt user
-4. Provide clear error messages for each prerequisite failure with actionable remediation:
-   - "GSD not found. Install GSD first: [instructions]"
-   - "GSD not initialized in this repo. Run /gsd:new-project first."
-   - Not a git repo: "This directory is not a git repository. gsd-ralph requires git."
-5. Test against: empty git repo, GSD-initialized repo, repo with existing Claude Code settings, repo with conflicting skill names
+1. Write behavioral checks, not structural checks. Instead of "does `test_delete.bats` exist?", check "does running `bats tests/` include at least 2 passing tests that exercise delete functionality?" Use grep on test output, not file existence.
+2. For each challenge, enumerate at least 3 alternative valid solutions and verify the checks accept all of them. Have someone other than the check author attempt the challenge manually to discover unexpected-but-valid approaches.
+3. Separate checks into "hard requirements" (behavioral -- the feature works) and "soft requirements" (structural -- specific file names, patterns). Score hard requirements as pass/fail, soft requirements as bonus points.
+4. For the refactoring challenge (Challenge 4), behavioral checks are especially critical. The check "diff > 10 lines changed" could fail if the model makes a small but highly impactful refactor (renaming variables, extracting one function). Use multiple quality signals: ShellCheck warnings delta, function count, cyclomatic complexity, line count -- require improvement in ANY of these, not a specific one.
+5. Run the correctness checks against the baseline code to verify they fail before the challenge (sanity check), and against a manually-created reference solution to verify they pass (positive control).
 
 **Warning signs:**
-- Installer uses `cp` without `mkdir -p` for parent directories
-- No prerequisite checks before starting installation
-- Error messages are raw shell errors ("No such file or directory") instead of helpful guidance
-- Installer was only tested against repos with GSD already initialized
-- No handling for existing files at target paths
+- Correctness checks reference specific file names, function names, or variable names
+- A mode scores 0% on a challenge but manual inspection shows it produced working code
+- The same mode scores 100% and 0% on the same challenge across runs (suggesting the check is fragile, not the mode)
+- No reference solution exists for any challenge
+- Checks were never tested against known-good solutions
 
 **Phase to address:**
-Prerequisite detection phase (should be the FIRST thing the installer does, before any file operations). This maps naturally to "GSD prerequisite detection with helpful version guidance" from PROJECT.md requirements.
+Challenge design phase (write behavioral checks) and evaluation phase (validate checks against reference solutions). This should be the most heavily tested component of the entire benchmark suite.
 
 ---
 
-### Pitfall 6: jq Dependency Not Detected or Wrong Version
+### Pitfall 6: Vanity Metrics That Look Informative but Measure Noise
 
 **What goes wrong:**
-The installer (and all of gsd-ralph's runtime scripts) depends on `jq` for JSON manipulation. If jq is not installed, the installer fails with a cryptic "command not found" error. If an old version of jq is installed (pre-1.5), certain jq features used in the codebase may not be available. On macOS, jq is NOT pre-installed -- it requires Homebrew (`brew install jq`) or a manual binary download.
+The PRD defines several derived metrics that compound measurement error from their component metrics, producing numbers that look precise but carry no signal. The worst offender is "Token efficiency = Correctness score / total tokens x 1000." This divides a coarse ordinal variable (correctness: 0%, 25%, 50%, 75%, 100%) by a noisy continuous variable (token count) and multiplies by an arbitrary constant (1000). The result is a number like 2.22 that implies precision to two decimal places but is meaningless: changing one correctness check from pass to fail changes the metric by 40%.
 
-The existing `validate-config.sh` and `ralph-launcher.sh` both use jq extensively. The `_install_hook()` function that merges settings.local.json is entirely jq-based. If jq is missing, the entire tool is non-functional.
+"Quality-adjusted speed = (Correctness x Regression) / wall-clock seconds" is similarly problematic. Since regression score will be 100% for most successful runs (the whole point is NOT breaking existing tests), this metric collapses to "Correctness / time" for passing runs and "0 / time" for failing runs -- a binary rather than the continuous gradient the formula implies.
+
+"Autonomy ratio = 1 - (human interventions / tool calls)" will be exactly 1.0 for all autonomous modes (CC+Ralph, CC+gsd-ralph) and close to 1.0 for CC+GSD (where human interventions are checkpoint approvals, not tool calls). This metric differentiates nothing.
 
 **Why it happens:**
-Developers who use gsd-ralph already have jq installed (it is a common developer tool). The missing-jq scenario only occurs for new users who are installing gsd-ralph for the first time -- exactly the users the v2.1 Easy Install milestone targets. The installer developer's machine has jq, so the dependency is invisible.
+It is tempting to define many derived metrics because they make the benchmark look rigorous. Each individual metric seems reasonable in isolation. The problem only appears when you ask "what decision would a different value of this metric change?" -- and the answer is "none."
 
 **How to avoid:**
-1. Check for jq at the very start of the installer: `command -v jq >/dev/null 2>&1 || { echo "ERROR: jq is required..."; exit 1; }`
-2. Check jq version: `jq --version` returns `jq-1.7.1` format; parse and verify >= 1.5
-3. Provide actionable installation instructions in the error message:
-   - macOS: `brew install jq` or direct binary download from jqlang.org
-   - General: link to https://jqlang.org/download/
-4. Consider whether the installer itself can avoid jq for the initial bootstrap (use grep/sed for simple JSON manipulation) and only require jq for runtime
-5. Document jq as a prerequisite in the installer's help output and README
+1. Apply the "decision test" to every metric before implementing it: "If mode A scores X and mode B scores Y on this metric, what would I conclude and what would I do differently?" If the answer is "nothing," drop the metric.
+2. Focus on 3-4 primary metrics that directly answer the benchmark's question ("which mode produces better outcomes?"):
+   - **Correctness rate**: Percentage of runs achieving >= 80% correctness (reliability)
+   - **Median wall-clock time**: For successful runs only (speed)
+   - **Total tokens consumed**: Across all invocations per run (cost)
+   - **Regression rate**: Percentage of runs with 0 test regressions (safety)
+3. Report derived metrics as supplementary context, not primary findings. Label them explicitly as "derived -- interpret with caution."
+4. Do not report precision beyond what the data supports. Correctness is ordinal (0/25/50/75/100), not continuous. Token counts are noisy. Report ranges and categories, not decimal values.
 
 **Warning signs:**
-- Installer does not check for jq before using it
-- Error messages from missing jq are raw shell errors
-- No version check for jq (old versions may lack features used)
-- Installation instructions do not mention jq as a prerequisite
+- The report has more derived metrics than primary metrics
+- Two modes are "ranked" based on a derived metric difference smaller than the measurement noise
+- The autonomy ratio is 1.0 for all autonomous modes (metric adds no information)
+- Token efficiency numbers are quoted to decimal places despite correctness being 0/25/50/75/100
 
 **Phase to address:**
-Prerequisite detection phase. jq detection should be bundled with GSD detection as part of the initial prerequisite check.
+Reporting phase. The `bench-report.sh` script should implement the decision test and suppress uninformative metrics. However, the result schema design (harness phase) should capture the raw data to compute any metric later.
 
 ---
+
+### Pitfall 7: Interactive Mode (CC+GSD) Cannot Be Fairly Automated
+
+**What goes wrong:**
+CC+GSD mode is defined as "Claude Code with GSD planning workflow. Human-interactive checkpoints." The benchmark harness needs to run this mode automatically for fair comparison, but the entire value proposition of CC+GSD is human judgment at checkpoints. If the harness auto-approves checkpoints (simulating a human who always says "yes"), it removes the human intelligence that makes CC+GSD different from CC. If the harness does NOT auto-approve, it requires a human to sit through every CC+GSD run, making N=5 repetitions per challenge prohibitively expensive and introducing human inconsistency as a confound.
+
+This is not a minor implementation detail -- it is a fundamental design conflict. The benchmark claims to compare "4 execution modes," but one mode is definitionally non-automatable.
+
+**Why it happens:**
+The PRD treats CC+GSD as a parallel mode alongside three autonomous modes, but it is categorically different. The other three modes run without human input by design. CC+GSD runs WITH human input by design. Benchmarking them on the same footing requires either removing CC+GSD's defining characteristic (human checkpoints) or accepting that CC+GSD results have different methodology.
+
+**How to avoid:**
+1. Accept the asymmetry and document it explicitly. CC+GSD runs are "human-in-the-loop benchmarks" with different methodology than the three autonomous modes. Do not attempt to automate CC+GSD checkpoints.
+2. Run CC+GSD with N=1 or N=2 (human effort constraint) and flag the lower sample size in reporting. Use CC+GSD as a qualitative baseline ("a competent human with GSD achieves this"), not a statistically comparable data point.
+3. For CC+GSD runs, additionally capture qualitative observations: what the human decided at each checkpoint, whether the human corrected the model's direction, how much of the outcome was human judgment vs model execution. This is data the autonomous modes cannot provide and is CC+GSD's actual value.
+4. Consider a "simulated human" approach for CC+GSD: run it with `--ralph` flag (which auto-approves checkpoints). Acknowledge that "CC+GSD with auto-approval" is really a third autonomous mode, not true CC+GSD. Report it separately from manual CC+GSD if both are run.
+5. In the comparison report, group results: "Autonomous modes (CC, CC+Ralph, CC+gsd-ralph)" vs "Human-assisted mode (CC+GSD)" with explicit methodology differences noted.
+
+**Warning signs:**
+- CC+GSD runs use auto-approved checkpoints without acknowledging this changes the mode's behavior
+- CC+GSD has the same N as autonomous modes despite requiring human effort per run
+- The report ranks CC+GSD alongside autonomous modes without noting the methodology difference
+- No qualitative data captured from CC+GSD runs (the most valuable output is lost)
+
+**Phase to address:**
+Harness design phase. The `bench-run.sh` script must have mode-specific invocation logic that handles CC+GSD differently. The reporting template must accommodate asymmetric methodology.
+
+---
+
+### Pitfall 8: Git State Contamination Between Benchmark Runs
+
+**What goes wrong:**
+The benchmark runs modify files in the challenge project (that is the whole point -- the LLM fixes bugs, adds features, etc.). If `bench-reset.sh` does not perfectly restore the starting state, residual changes from a previous run leak into the next run. This is especially dangerous for Challenge 5 ("Multi-File Feature"), which starts from `bench/after-delete` (Challenge 2 completed). If the reset does not perfectly reproduce the post-Challenge-2 state, Challenge 5 results are contaminated.
+
+Subtler contamination vectors: the LLM may create files not tracked by git (temp files, `.bak` files, editor configs, `.shellcheck` caches). `git checkout bench/baseline` only restores tracked files -- untracked files from a previous run persist and may influence the LLM's behavior (it reads directory listings and discovers unexpected files).
+
+Even subtler: if the LLM committed during a previous run, git reflog and branch names persist across resets. A subsequent run's LLM could `git log` and see the previous run's commits, learning from a prior attempt's approach.
+
+**Why it happens:**
+`git checkout <tag>` is the obvious reset mechanism, and it works for tracked files. Developers forget about untracked files, gitignored files, and git metadata (reflog, stashes, branches) because they do not affect the working tree directly. But an LLM that uses `git log`, `ls`, or `find` as diagnostic tools WILL encounter this residual state.
+
+**How to avoid:**
+1. Use `git clean -fdx` after `git checkout <tag>` to remove ALL untracked and gitignored files. This is safe because the challenge project is disposable.
+2. Delete all non-tag branches before each run: `git branch | grep -v '^\*' | xargs git branch -D`. The LLM should only see the clean tag history.
+3. Clear git reflog: `git reflog expire --expire=now --all && git gc --prune=now`. This prevents the LLM from discovering previous run attempts via reflog.
+4. Run each benchmark in an isolated worktree or a fresh clone of the challenge project. This is the nuclear option but provides guaranteed isolation. `git worktree add /tmp/bench-run-$TIMESTAMP bench/baseline` creates a clean copy per run.
+5. The `bench-reset.sh` script should include a verification step: compute checksums of all files and compare against a stored manifest for the tag. If ANY file differs, the reset failed.
+6. For Challenge 5's `bench/after-delete` starting state, include a pre-built reference commit at that tag rather than depending on Challenge 2's output. The "after-delete" state should be a fixed, committed tag, not derived from a previous run.
+
+**Warning signs:**
+- Reset script uses only `git checkout <tag>` without `git clean`
+- Challenge 5's starting state is generated dynamically from Challenge 2 output
+- LLM tool call logs show it reading files or git history from a previous run
+- Successive runs on the same challenge show decreasing time (LLM finding prior solutions in git history)
+- `.taskctl.json` or other data files persist across resets with stale data
+
+**Phase to address:**
+Harness implementation phase (bench-reset.sh). This is foundational infrastructure -- every run depends on clean reset. Test the reset script by running a challenge, resetting, and verifying byte-for-byte identical state to a fresh clone at the same tag.
+
+---
+
+### Pitfall 9: Measuring Harness Overhead Instead of Mode Performance
+
+**What goes wrong:**
+Each mode has different amounts of infrastructure between "start the timer" and "LLM begins working on the challenge." CC mode: near-zero overhead. CC+GSD: checkpoint display overhead. CC+Ralph: `assemble-context.sh` execution, config validation, circuit breaker initialization, STATE.md parsing, worktree setup. CC+gsd-ralph: Agent tool spawning, autopilot rules loading, context assembly, circuit breaker checks.
+
+If the timer starts at "harness launches mode" and ends at "harness regains control," the wall-clock time for Ralph and gsd-ralph modes includes 15-45 seconds of startup that has nothing to do with the LLM's coding ability. For short challenges (10-minute cap), this overhead represents 2.5-7.5% of the total time -- enough to swing rankings on the "time efficiency" metric.
+
+Token overhead is worse. CC+Ralph's `assemble-context.sh` injects PROJECT.md, STATE.md, ROADMAP.md, and phase plans into every iteration's prompt. This is the same project context every time, consuming thousands of tokens per iteration that have nothing to do with the challenge. If the benchmark project is gsd-ralph itself, this context is enormous. If the benchmark runs in a minimal challenge project, this context is small but still non-zero.
+
+**Why it happens:**
+The harness measures what is easy to measure (start-to-end timestamps) rather than what is meaningful to measure (LLM working time). Separating infrastructure overhead from productive work requires instrumenting the mode internals, which is harder than wrapping the whole thing in a timer.
+
+**How to avoid:**
+1. Instrument the inner loop, not just the outer wrapper. For CC+Ralph, record the timestamp when `claude -p` is actually invoked (not when `ralph-launcher.sh` starts) and when it returns (not when cleanup finishes).
+2. For token overhead, subtract a known "infrastructure token cost" that is measured once by running each mode's startup with an empty/trivial prompt. This gives a per-mode overhead baseline.
+3. Run all modes against the SAME minimal project structure. Do not benchmark CC+Ralph inside gsd-ralph's actual repo (which has ~1,100 LOC, 356 tests, and extensive .planning/ content that all gets assembled into context). Use the `taskctl` challenge project as a standalone repo with minimal planning artifacts.
+4. Report both "gross time" (including overhead) and "net time" (LLM working time only). Gross time is relevant for "how long do I actually wait?" Net time is relevant for "which mode uses LLM time more efficiently?"
+
+**Warning signs:**
+- CC+Ralph is consistently 30-60 seconds slower than CC on easy challenges (that is startup overhead, not mode inferiority)
+- Token counts for CC+Ralph include thousands of tokens that are identical across all challenges (context assembly boilerplate)
+- The benchmark runs inside gsd-ralph's repo rather than a standalone challenge repo
+- No distinction between gross and net time in the results
+
+**Phase to address:**
+Harness implementation phase. The `bench-run.sh` script must implement mode-aware instrumentation. The challenge project phase must create a standalone repo with minimal infrastructure overhead.
+
+---
+
+### Pitfall 10: Evaluating Refactoring Quality with Line-Count Proxies
+
+**What goes wrong:**
+Challenge 4 (Refactor with Behavior Preservation) uses "diff > 10 lines changed" and "cyclomatic complexity reduced or line count reduced" as quality signals. These are weak proxies that reward noisy refactors over meaningful ones. An LLM that adds blank lines, reorders functions, and changes variable names produces a large diff with no quality improvement. An LLM that extracts one critical helper function, reducing 30 lines to 5, produces a small diff with high quality improvement.
+
+Worse, "line count reduced" incentivizes deleting comments and collapsing logic into one-liners -- the opposite of clarity. ShellCheck warning count is the only signal that correlates with actual quality, but ShellCheck focuses on correctness and portability, not readability or maintainability.
+
+**Why it happens:**
+Refactoring quality is genuinely hard to measure automatically. Line count and diff size are easy to compute. The temptation is to use what is measurable rather than what is meaningful. Academic benchmarks have the same problem -- SWE-bench measures test passage, not code quality.
+
+**How to avoid:**
+1. Drop the "diff > 10 lines changed" requirement entirely. It rewards noise. Replace with "file was modified" (binary check that refactoring was attempted).
+2. Use multiple quality signals with an OR condition: ShellCheck warnings reduced OR function count changed (extraction/inlining) OR average function length reduced OR comments-to-code ratio improved. Improvement in ANY one signal counts.
+3. Add a manual quality review step for the refactoring challenge specifically. Have a human rate the before/after on a 1-5 scale for readability. This is acceptable because Challenge 4 is one challenge out of five, and human review adds the most value here.
+4. Include a negative check: the refactor must NOT add new functionality (no new functions that were not present before, no new test cases). This catches LLMs that "refactor" by adding features.
+5. Consider using `shellcheck --format json` for machine-readable output that can be diffed automatically.
+
+**Warning signs:**
+- High correctness scores on Challenge 4 despite the refactored code being less readable (human inspection)
+- LLMs "refactoring" by reformatting whitespace or reordering functions (large diff, no quality change)
+- LLMs deleting comments to reduce line count
+- Refactoring challenge correctness score has zero variance across runs (the metric is too easy to game)
+
+**Phase to address:**
+Challenge design phase (define quality signals) and evaluation phase (implement multi-signal quality assessment). Consider deferring the refactoring challenge to a later version of the benchmark if quality measurement proves intractable.
 
 ## Technical Debt Patterns
 
@@ -203,78 +298,72 @@ Shortcuts that seem reasonable but create long-term problems.
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| Copy files without a manifest | Simpler installer, fewer moving parts | No way to cleanly uninstall or upgrade; orphaned files accumulate | Never -- manifest should exist from day one |
-| Overwrite settings.local.json instead of merging | Much simpler implementation (no jq merge logic) | Destroys user customizations; violates Claude Code's own merge-not-replace convention | Never -- the existing `_install_hook` pattern proves merge is feasible |
-| Hardcode source repo path as install source | Works on developer's machine immediately | Breaks for any other user; cannot distribute the installer | During initial prototyping only; must be parameterized before shipping |
-| Skip uninstaller for v2.1.0 | Ship faster, defer to v2.1.1 | Users who try and dislike Ralph cannot cleanly remove it; bad first impression | Only if the install manifest is still created (uninstaller can be added later if manifest exists) |
-| Use symlinks instead of copies | Simpler versioning (always points to latest) | Breaks if source repo moves or is deleted; creates hard dependency on source location; cannot distribute to users without the source repo | Only for the developer's own repos; not for distributed installation |
-| Check prerequisites with best-effort (warn but continue) | More forgiving installer | Broken installations that fail at runtime instead of install time; harder to debug | Never for critical prerequisites (GSD, jq, git); acceptable for optional features |
+| Hardcoding `taskctl` file paths in `bench-eval.sh` | Fast to write correctness checks | Cannot reuse harness with a different challenge project; must rewrite eval for every new project | Never -- abstract eval checks behind challenge-specific config files from day one |
+| Storing results as flat JSON files in `benchmarks/results/` | Simple, no database needed | File naming conventions become load-bearing, aggregation requires scanning/globbing, no indexing | Acceptable for v1 if file naming is strictly enforced and `bench-report.sh` validates file structure |
+| Using `git checkout` as the only reset mechanism | Works for tracked files | Untracked files persist, git history leaks between runs, contamination goes undetected | Never -- must be paired with `git clean -fdx` and state verification at minimum |
+| Running benchmarks inside the gsd-ralph repo | No setup required, everything is co-located | Context assembly includes gsd-ralph project files in Ralph/gsd-ralph mode prompts; token counts reflect gsd-ralph overhead, not challenge-specific work | Never -- benchmark challenge project must be a separate git repo |
+| Capturing tokens only from `--output-format json` | Clean API, one source of truth per invocation | Misses orchestration tokens (gsd-ralph parent session), inter-iteration tokens (Ralph context assembly), and interactive session tokens (CC+GSD) | Only acceptable for CC mode where single invocation = total usage |
+| Skipping pilot runs and going straight to full N=5 matrix | Saves time upfront | Discover that time caps are wrong, checks are fragile, or variance is too high after wasting 100 runs | Never -- always run 1-2 pilot runs per challenge to calibrate |
 
 ## Integration Gotchas
 
-Common mistakes when connecting the installer to Claude Code, GSD, and the target repo.
+Common mistakes when connecting the benchmark to existing gsd-ralph infrastructure.
 
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| Claude Code settings.local.json | Using jq `*` (deep merge) which replaces arrays | Use per-key concatenation: `.permissions.allow = (.permissions.allow // []) + [new_entries] \| unique` |
-| Claude Code settings.local.json | Not gitignoring the file in target repo | Verify `.gitignore` includes `.claude/settings.local.json` (Claude Code convention); warn if not |
-| Claude Code hooks | Registering hook with relative path | Use absolute path resolved at install time via `$(cd "$(dirname ...)" && pwd)` |
-| Claude Code hooks merge | Assuming Claude Code concatenates hooks from settings.json and settings.local.json | This IS correct behavior per official docs -- but the installer must not DUPLICATE hooks by adding to settings.local.json what is already in settings.json |
-| GSD prerequisite | Checking for GSD binary in PATH | GSD is a Claude Code extension, not a PATH binary. Check for `~/.claude/get-shit-done/VERSION` file existence |
-| GSD initialization | Assuming .planning/ means GSD is initialized | Check for `.planning/config.json` specifically; `.planning/` alone might be leftover from a previous project |
-| Target repo .gitignore | Not adding `.ralph/` and `.ralphrc` to .gitignore | These are local runtime files that should never be committed; installer should add to .gitignore if not present |
-| Claude Code plugin system | Building a standalone installer when Claude Code has a native plugin system | Evaluate whether Ralph should be a Claude Code plugin (`plugin.json` + marketplace) rather than a copy-based installer. Plugins get automatic installation, namespacing, and settings merging for free |
+| `ralph-launcher.sh` loop engine | Treating the launcher as a black box and timing only the outer script | Instrument the inner `run_iteration()` function to emit timestamps before and after `claude -p` invocation; parse these from audit log or stdout |
+| `assemble-context.sh` context | Letting context assembly inject the FULL gsd-ralph project context into benchmark prompts | Run benchmarks in a standalone `taskctl` repo where `assemble-context.sh` only finds minimal `.planning/` content; OR bypass context assembly and inject challenge-specific prompts directly |
+| `.planning/STATE.md` completion detection | Assuming STATE.md will be updated by the LLM during benchmark challenges | The taskctl challenge project has no GSD workflow state; completion must be detected by the harness (timeout or eval script), not by STATE.md parsing |
+| `settings.local.json` permissions | Running benchmarks with different permission tiers across modes (Ralph uses `--allowedTools` whitelist; gsd-ralph uses Agent tool permissions; CC uses whatever the user has configured) | Lock down permissions identically across all modes: same tool set, same Bash command restrictions; document exact permission config in benchmark manifest |
+| `.ralph/.circuit_breaker_*` state files | Circuit breaker state files from previous runs affecting subsequent runs | Clear ALL `.ralph/` state files in `bench-reset.sh`: `.circuit_breaker_history`, `.circuit_breaker_state`, `.exit_signals`, `.loop_start_sha`, `progress.json` |
+| Agent tool subagent context | Assuming Agent tool subagents get a clean context window | Agent subagents DO get fresh context, but the parent session accumulates state; for CC+gsd-ralph benchmarks, each challenge must be a fresh parent session, not sequential challenges in one session |
+| `--output-format json` parsing | Using `jq` to parse `claude -p` JSON output without handling the case where the output is not valid JSON (model error, timeout, rate limit) | Wrap JSON parsing in validation: check exit code of `claude -p`, verify output is valid JSON with `jq empty`, handle empty/malformed output gracefully with a "run failed" result |
 
 ## Performance Traps
 
-Patterns that work in testing but fail in real-world usage.
+Patterns that work at small scale but fail as usage grows.
 
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| Installer copies ALL files from gsd-ralph repo (including tests, docs, planning) | Slow install, cluttered target repo, confusion about what files belong to Ralph vs the project | Maintain an explicit file manifest of what to copy; never use `cp -r` on the entire repo | Always -- this is a correctness issue, not just performance |
-| Installer runs jq on large settings.local.json | Slow on repos with many permissions (100+ entries) | This is unlikely to be a problem in practice; jq handles large files well | Probably never -- but test with a realistic large settings file |
-| Version check on every `--ralph` invocation | Adds latency to every command start | Cache version check result; only re-check if source repo mtime changed or once per day | Projects where `--ralph` is invoked frequently (rapid iteration) |
+| Sequential benchmark execution | Full matrix takes 4 modes x 5 challenges x 5 runs x 15 min avg = 25 hours | Parallelize across modes (each mode can run independently); consider running on separate machines to avoid API rate limiting interference | At N > 3 runs per cell; sequential execution becomes the bottleneck |
+| API rate limiting across parallel runs | Multiple simultaneous `claude -p` invocations hit Anthropic rate limits; some runs fail or are throttled, producing artificially high wall-clock times | Serialize runs within a mode, parallelize across modes with staggered start times; log and flag any rate-limit errors in results | When running 2+ modes in parallel on the same API key |
+| Result file accumulation | `benchmarks/results/` grows to hundreds of files; `bench-report.sh` globbing becomes slow; filename parsing becomes fragile | Use a structured directory hierarchy: `results/{mode}/{challenge}/{run-N}.json`; implement a results index file that `bench-report.sh` reads instead of globbing | At > 50 result files; globbing becomes unreliable with special characters in filenames |
+| JSONL log parsing for token counts | Parsing `~/.claude/projects/*/` JSONL files to extract token usage works for one session but scales poorly across hundreds of benchmark sessions | Build a session-to-run mapping at invocation time (record session ID in result JSON); parse only the relevant JSONL file per run, not the entire projects directory | At > 20 benchmark sessions; directory scanning becomes slow |
 
 ## Security Mistakes
 
-Domain-specific security issues for a CLI installer that modifies other repos.
+Domain-specific security issues beyond general web security.
 
 | Mistake | Risk | Prevention |
 |---------|------|------------|
-| Installer runs with elevated permissions unnecessarily | Could modify system files, other repos, or global config unintentionally | Never require sudo; all operations should be within target repo directory; verify target path is within a git repo before modifying |
-| npx-based installer executes remote code | Supply chain attack via compromised npm package; user pipes unknown code to their shell | If using npx: pin exact version, verify package integrity; prefer local script-based installation over npx for a tool this small |
-| curl-pipe-bash installer pattern | Man-in-the-middle attack; partial download executes incomplete script; no integrity verification | Avoid curl-pipe-bash entirely; use git clone + local script instead. If a remote install is needed, download script first, then execute separately |
-| Installer modifies files outside target repo | Could corrupt user's global Claude Code settings (`~/.claude/settings.json`) or GSD installation | Validate that ALL file operations target the repo directory only; use `git rev-parse --show-toplevel` as the root boundary |
-| Installed hook script is world-writable | Other users/processes on shared machines could modify the hook to inject malicious behavior | Set installed scripts to `chmod 755` (owner rwx, others rx); verify permissions after copy |
-| settings.local.json backup contains sensitive env vars | Backup file might be committed to git if .gitignore is not configured | Place backup in `.ralph/` directory (which should be gitignored); or use `.claude/settings.local.json.pre-ralph` and verify it is gitignored |
+| Running benchmarks with `--tier yolo` (unrestricted Bash access) | LLM executes arbitrary commands on the host machine during benchmark; potential for `rm -rf`, network access, credential exfiltration | Use `--tier default` with explicit `--allowedTools` whitelist for all benchmark runs; challenge prompts do not require network access or dangerous commands |
+| Benchmark challenge project containing real credentials or API keys | LLM encounters and potentially logs/outputs credentials during benchmark run | Use only synthetic data in `taskctl` project; `.taskctl.json` sample data must contain no real information; audit CLAUDE.md and README.md for accidental credential inclusion |
+| Storing benchmark results with embedded prompt content | Prompt content in result JSON files may contain project-specific information that should not be shared | Result schema should store prompt hash/ID, not full prompt text; keep prompts in separate challenge definition files |
+| Running untrusted LLM output as part of correctness checks | If `bench-eval.sh` runs code that the LLM modified (e.g., sourcing modified `taskctl.sh`), the LLM could inject malicious code that the eval script executes | Run correctness checks in a sandboxed subshell; never `source` LLM-modified files in the eval script; use `bats` test runner (which has its own process isolation) for behavioral checks |
 
 ## UX Pitfalls
 
-Common user experience mistakes when building CLI installers.
+Common user experience mistakes in this domain.
 
 | Pitfall | User Impact | Better Approach |
 |---------|-------------|-----------------|
-| Silent installation with no output | User does not know what was installed, where, or if it succeeded | Print each file copied and each settings entry added; end with a summary and "next steps" guidance |
-| No dry-run mode | User cannot preview what the installer will do before committing | Implement `--dry-run` that prints all operations without executing them; existing codebase already has dry-run patterns in ralph-launcher.sh |
-| Installer modifies files without asking | User loses trust when their config files change unexpectedly | Show what will be modified, ask for confirmation (unless `--yes` flag); create backups before modifying |
-| Error messages reference installer internals | "jq: error (at .claude/settings.local.json:1): null is not an object" | Translate errors: "settings.local.json contains invalid JSON. Back up your file and re-run." |
-| No verification after installation | User has to manually check if everything was installed correctly | Run a post-install verification: check all files exist, settings entries are present, hook script is executable, GSD is accessible |
-| Upgrade destroys user's settings modifications made after install | User added extra permissions after install; upgrade overwrites them | Upgrade should only update Ralph's own entries (identified by manifest or markers), not re-merge the entire settings block |
-| No guidance on what to do after install | User has Ralph installed but does not know how to use it | Print "Installation complete. Try: /gsd:ralph to execute a phase autonomously" |
+| Report only shows numbers without interpretation | User sees "CC: 85%, Ralph: 72%" but does not know if the difference is statistically significant or within noise | Include confidence intervals and a "is this difference meaningful?" column; use language like "CC and Ralph performed similarly" when differences are within variance |
+| No progress indicator during long benchmark runs | User starts 25-hour benchmark suite and sees no output for hours; unclear if it is running or stuck | Print per-run status: "Running: ralph / fix-bug / run 3/5 ... [elapsed: 4m32s]"; emit a heartbeat every 60 seconds during each run |
+| Report format does not support incremental results | User cannot see partial results until entire matrix completes | Generate report from whatever results exist; support `bench-report.sh --partial` that shows completed cells and blank cells for pending runs |
+| Benchmark failure crashes entire suite | One failed run (API error, timeout, malformed output) stops all subsequent runs | Wrap each run in error handling; log failures to result JSON with `"status": "error"` and continue; report failed runs as "N/A" in comparison table |
 
 ## "Looks Done But Isn't" Checklist
 
 Things that appear complete but are missing critical pieces.
 
-- [ ] **Install copies files:** All scripts are in the target repo -- but are they executable? (`chmod +x` after copy)
-- [ ] **Settings merge works:** Ralph's hooks and permissions are in settings.local.json -- but did it preserve the user's EXISTING entries? Test against non-empty settings files
-- [ ] **Uninstall removes files:** Scripts are deleted -- but are settings.local.json entries also cleaned? And are empty containers (empty hooks object) removed?
-- [ ] **Paths are correct:** Hook scripts are registered in settings.local.json -- but do the paths point to the TARGET repo, not the SOURCE repo? Install into a different directory and test
-- [ ] **Prerequisite detection:** GSD check passes -- but does it verify the RIGHT GSD version? And does it detect jq, git, and bash version?
-- [ ] **Version tracking:** Installer records version -- but can `upgrade` detect when installed version differs from source version? And does it handle downgrades (installing older over newer)?
-- [ ] **gitignore entries:** `.ralph/` and `.ralphrc` are gitignored -- but is `settings.local.json` also gitignored? And the backup file?
-- [ ] **Idempotent install:** Running install twice works -- but does it duplicate entries in settings.local.json? (Two copies of the same hook, two copies of the same permission)
-- [ ] **Cross-machine install:** Works on developer's machine -- but does it work when the source repo is at a different path? When the target repo is on a different filesystem?
+- [ ] **Challenge project (taskctl):** Often missing the `bench/after-delete` tag for Challenge 5 -- verify this tag exists and contains a working delete command with tests
+- [ ] **Correctness checks:** Often tested only against expected solutions -- verify each check FAILS against the unmodified baseline (negative control) AND passes against a manually-created reference solution (positive control)
+- [ ] **Reset script:** Often only does `git checkout` -- verify it also runs `git clean -fdx`, clears untracked files, removes `.ralph/` state files, and verifies checksums match the tag
+- [ ] **Token capture:** Often works for `claude -p` JSON output -- verify it also captures tokens for interactive sessions (CC+GSD) and Agent tool subagent sessions (CC+gsd-ralph)
+- [ ] **Time measurement:** Often captures wall-clock start/end -- verify it also records mode-specific overhead (context assembly time, circuit breaker initialization) separately from LLM working time
+- [ ] **Statistical reporting:** Often reports mean and stddev -- verify it handles N < 3 gracefully, reports median/IQR for robustness, and flags cells where variance exceeds interpretability
+- [ ] **Benchmark isolation:** Often runs in gsd-ralph repo -- verify the challenge project is a standalone git repo with its own `.planning/` minimal content, not inheriting gsd-ralph's project context
+- [ ] **Challenge independence:** Often assumes challenges can run in any order -- verify that Challenge 5 depends on a fixed `bench/after-delete` tag, not on Challenge 2 being run first in the same session
 
 ## Recovery Strategies
 
@@ -282,12 +371,13 @@ When pitfalls occur despite prevention, how to recover.
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| settings.local.json overwritten (Pitfall 1) | HIGH if no backup; LOW if backup exists | Restore from `.claude/settings.local.json.pre-ralph` backup; if no backup, user must recreate from memory or git stash |
-| Hardcoded paths in installed files (Pitfall 2) | LOW | Re-run installer with correct path resolution; or manually edit settings.local.json to fix paths |
-| Orphaned config after failed uninstall (Pitfall 3) | LOW-MEDIUM | Manually remove: ralph entries from settings.local.json, scripts/ copies, .claude/skills/gsd-ralph-autopilot/, .claude/commands/gsd/ralph.md, .ralph/, .ralphrc |
-| Version drift causing bugs (Pitfall 4) | LOW | Re-run installer (upgrade mode) to copy latest files; or manually copy changed files from source |
-| Install into wrong repo structure (Pitfall 5) | LOW | Uninstall, fix prerequisites, re-install |
-| Missing jq causes install failure (Pitfall 6) | LOW | Install jq (`brew install jq`), re-run installer |
+| Training data contamination | LOW | Swap challenge project: create a new taskctl variant with different bug locations and missing features; reuse all harness infrastructure unchanged |
+| Correctness checks reject valid solutions | MEDIUM | Review all "failed" runs manually; update checks to accept the valid alternative; re-score affected runs without re-running them (results JSON has enough data to re-evaluate) |
+| Time caps too tight, many timeouts | LOW | Increase caps based on observed data; re-run only the timed-out runs; merge with existing results |
+| Git state contamination between runs | HIGH | All results from the contaminated sequence are suspect; must re-run from scratch with fixed reset script; no way to know which runs were affected |
+| Token capture missed orchestration overhead | MEDIUM | Parse JSONL logs retroactively if session IDs were recorded; if session IDs were not recorded, re-run with fixed instrumentation |
+| Report draws conclusions from noise | LOW | Re-generate report with adjusted statistical methodology; no re-running needed if raw data is sound |
+| CC+GSD automated without acknowledging methodology difference | MEDIUM | Re-label CC+GSD results as "CC+GSD (auto-approved checkpoints)"; add methodology disclaimer to report; optionally re-run with actual human for N=1 |
 
 ## Pitfall-to-Phase Mapping
 
@@ -295,52 +385,32 @@ How roadmap phases should address these pitfalls.
 
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| settings.local.json destruction (Pitfall 1) | Install/Uninstall core implementation | Test: install into repo with existing settings; verify all pre-existing entries preserved; verify backup created |
-| Hardcoded absolute paths (Pitfall 2) | Install/Uninstall core implementation | Test: install into temp dir at different path than source; verify all paths in settings.local.json point to temp dir |
-| No/broken uninstall (Pitfall 3) | Install/Uninstall core implementation (design together) | Test: install then uninstall; diff target repo against pre-install state; only `.ralph/install-manifest.json` and backup may remain |
-| Version drift (Pitfall 4) | Version management / Upgrade support | Test: install v2.1.0, modify source to v2.1.1, run upgrade; verify changed files updated, unchanged files untouched |
-| Assumed repo structure (Pitfall 5) | Prerequisite detection (first phase) | Test: run installer against empty git repo, non-git directory, repo without .planning/; verify clear error messages for each |
-| Missing jq (Pitfall 6) | Prerequisite detection (first phase) | Test: run installer in environment without jq on PATH; verify helpful error message with install instructions |
-
-## Claude Code Plugin System Consideration
-
-**Important architectural decision that affects all pitfalls above:**
-
-Claude Code now has a native plugin system (`.claude-plugin/plugin.json` manifest, marketplace distribution, automatic hook/settings merging). If gsd-ralph is packaged as a Claude Code plugin rather than a copy-based installer, many of these pitfalls become non-issues:
-
-| Pitfall | Plugin System Mitigation |
-|---------|-------------------------|
-| settings.local.json destruction | Plugins have their own `hooks/hooks.json` and `settings.json`; Claude Code merges them automatically |
-| Hardcoded paths | Plugin paths are resolved by Claude Code's plugin loader relative to the plugin directory |
-| Uninstall | `/plugin uninstall` handles cleanup automatically |
-| Version drift | Marketplace-based plugins can be updated via `/plugin update` |
-| Repo structure assumptions | Plugin installation is managed by Claude Code, not by custom scripts |
-
-**However**, the plugin system has tradeoffs:
-- Skill names are namespaced (`/gsd-ralph:execute-phase` not `/gsd:ralph`)
-- Plugin hooks use `hooks/hooks.json` format, not settings.local.json entries
-- Requires Claude Code 1.0.33+
-- Plugin distribution requires a marketplace (own GitHub repo or Anthropic's official marketplace)
-- The `--ralph` flag integration with GSD commands may not fit the plugin model cleanly
-
-**Recommendation:** Evaluate the plugin system as a FIRST step in the v2.1 roadmap. If it fits, use it. If not, build the copy-based installer with the pitfall mitigations above. The plugin system research should happen before any installer code is written.
+| Apples-to-oranges token comparison (P1) | Harness implementation | Run one challenge across all 4 modes; verify token capture includes orchestration overhead for each |
+| N=3 insufficient for stable statistics (P2) | Challenge design + Reporting | Pilot run of 10 iterations on one challenge; measure baseline CV; calibrate N and variance thresholds |
+| Training data contamination (P3) | Challenge project design | Include canary check; document contamination risk in report methodology section |
+| Time cap confounding correctness (P4) | Challenge design + Harness | Pilot run to calibrate caps at 2-3x observed completion time; implement cap as safety valve, not scoring boundary |
+| Correctness checks rejecting valid solutions (P5) | Challenge design | Create reference solutions for all challenges; verify checks pass reference AND fail baseline; enumerate 3 alternative approaches |
+| Vanity metrics (P6) | Reporting | Apply "decision test" to each metric; suppress metrics that differentiate nothing; report primary metrics only |
+| CC+GSD cannot be automated fairly (P7) | Harness design | Document methodology difference; implement CC+GSD with separate invocation path; group results by methodology |
+| Git state contamination (P8) | Harness implementation (bench-reset.sh) | After reset, verify byte-for-byte match against fresh clone at same tag; include `git clean -fdx` in reset |
+| Measuring harness overhead (P9) | Harness implementation | Instrument inner invocation, not outer wrapper; measure per-mode startup overhead baseline with trivial prompt |
+| Refactoring quality via line-count (P10) | Challenge design | Use multi-signal quality assessment; include manual review for refactoring challenge; drop "diff > 10 lines" requirement |
 
 ## Sources
 
-- [Claude Code settings merge behavior (official docs)](https://code.claude.com/docs/en/settings) -- Confirmed arrays concatenate and deduplicate across scopes; priority order; env object merge behavior. HIGH confidence
-- [Claude Code hooks reference (official docs)](https://code.claude.com/docs/en/hooks) -- PreToolUse hook JSON schema; settings.json hook configuration format; matcher patterns. HIGH confidence
-- [Claude Code plugin system (official docs)](https://code.claude.com/docs/en/plugins) -- Plugin manifest structure; hooks/hooks.json format; settings.json for plugins; marketplace distribution. HIGH confidence
-- [oh-my-bash .bashrc overwrite issue #115](https://github.com/ohmybash/oh-my-bash/issues/115) -- Real-world example of installer destroying user's existing shell config. MEDIUM confidence
-- [oh-my-bash backup overwrite issue #267](https://github.com/ohmybash/oh-my-bash/issues/267) -- Backup file itself getting overwritten on reinstall. MEDIUM confidence
-- [macOS realpath unavailability](https://github.com/facebook/react-native/issues/34146) -- `realpath` not available on macOS by default; `cd "$(dirname ...)" && pwd` pattern required for Bash 3.2 compatibility. HIGH confidence
-- [jq official site](https://jqlang.org/) -- jq has zero runtime dependencies; pre-built macOS ARM64 binaries available since v1.7. HIGH confidence
-- [npm supply chain attacks 2025-2026](https://snyk.io/articles/npm-security-best-practices-shai-hulud-attack/) -- 454K malicious packages in 2025; rationale for avoiding npx-based installers for small tools. MEDIUM confidence
-- [curl-pipe-bash security analysis](https://www.kicksecure.com/wiki/Dev/curl_bash_pipe) -- Risks of piping remote scripts to bash; partial download vulnerability. MEDIUM confidence
-- [Project permissions merging issue #17017](https://github.com/anthropics/claude-code/issues/17017) -- Reported bug where project-level permissions replace global permissions instead of merging. MEDIUM confidence (may be fixed)
-- gsd-ralph `ralph-launcher.sh` lines 342-383 -- Existing `_install_hook()` and `_remove_hook()` implementation proving jq-based merge/unmerge pattern. HIGH confidence
-- gsd-ralph `tests/ralph-launcher.bats` lines 834-904 -- Existing test coverage for hook install/remove lifecycle including preservation of existing settings. HIGH confidence
-- gsd-ralph `PROJECT.md` -- v2.1 requirements, architectural constraints, existing decisions about settings.local.json merge/unmerge. HIGH confidence
+- [SWE-bench Deep Dive: Unmasking the Limitations of a Popular Benchmark](https://runloop.ai/blog/swe-bench-deep-dive-unmasking-the-limitations-of-a-popular-benchmark) -- Solution leakage, weak test coverage, false positive rates
+- [Why SWE-bench Verified no longer measures frontier coding capabilities](https://openai.com/index/why-we-no-longer-evaluate-swe-bench-verified/) -- Benchmark saturation and contamination
+- [The SWE-Bench Illusion: When State-of-the-Art LLMs Remember Instead of Reason](https://arxiv.org/html/2506.12286v3) -- Memorization vs reasoning in benchmarks
+- [What are popular AI coding benchmarks actually measuring?](https://blog.nilenso.com/blog/2025/09/25/swe-benchmarks/) -- Gap between benchmark performance and real-world capability
+- [Why Most LLM Benchmarks Are Misleading](https://dasroot.net/posts/2026/02/llm-benchmark-misleading-accurate-evaluation/) -- Data leakage, overfitting, hallucination in specialized domains
+- [What we learned running the industry's first AI code review benchmark](https://devinterrupted.substack.com/p/what-we-learned-running-the-industrys) -- Orchestration debt, reproducibility, signal-to-noise ratio
+- [The importance of Agent Harness in 2026](https://www.philschmid.de/agent-harness-2026) -- Durability, the bitter lesson, harness architecture
+- [LLMs Are Not Deterministic](https://dev.to/marcosomma/llms-are-not-deterministic-and-making-them-reliable-is-expensive-in-both-the-bad-way-and-the-good-5bo4) -- Fundamental non-determinism in LLMs
+- [AI benchmarks hampered by bad science](https://www.theregister.com/2025/11/07/measuring_ai_models_hampered_by/) -- Only 16% of benchmarks use rigorous scientific methods
+- [Run Claude Code programmatically](https://code.claude.com/docs/en/headless) -- Official Claude Code CLI documentation for headless mode
+- [Measuring the Impact of Early-2025 AI on Experienced Open-Source Developer Productivity](https://metr.org/blog/2025-07-10-early-2025-ai-experienced-os-dev-study/) -- Contradictory evidence about AI agent capabilities
+- [Terminal-Bench: Benchmarking Agents on Hard, Realistic Tasks in Command Line Interfaces](https://arxiv.org/html/2601.11868v1) -- CLI-specific benchmark challenges and pitfalls
 
 ---
-*Pitfalls research for: Adding one-command installer to existing Bash CLI tool that copies files into other repos*
-*Researched: 2026-03-10*
+*Pitfalls research for: AI coding benchmark suite (gsd-ralph v2.2)*
+*Researched: 2026-03-11*

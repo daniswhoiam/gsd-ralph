@@ -1,201 +1,200 @@
 # Project Research Summary
 
-**Project:** gsd-ralph v2.1 Easy Install
-**Domain:** CLI tool distribution/installation for Claude Code extension
-**Researched:** 2026-03-10
+**Project:** gsd-ralph v2.2 Benchmarking Suite
+**Domain:** Automated benchmarking harness comparing 4 Claude Code execution modes on coding tasks
+**Researched:** 2026-03-11
 **Confidence:** HIGH
 
 ## Executive Summary
 
-gsd-ralph v2.1 needs to solve one problem: getting ~40 Bash files from the gsd-ralph repo into any GSD project with a single command. The four research streams agree on the core installer mechanics -- prerequisite detection, idempotent file copy, non-destructive settings merge, install manifest for clean uninstall -- but disagree sharply on the distribution mechanism. The Stack researcher recommends the Claude Code plugin system as primary distribution. The Architecture researcher argues plugins break GSD integration due to command namespacing (`/gsd-ralph:ralph` instead of `/gsd:ralph`) and because plugin files live in a read-only cache rather than in the project tree where ralph-launcher.sh expects them. The Features researcher favors a bash install script as the v2.1 mechanism with plugins deferred to v2.1.x. The Pitfalls researcher recommends evaluating the plugin system first before committing to either approach.
+The v2.2 milestone adds a benchmarking suite to gsd-ralph that compares four execution modes — vanilla Claude Code (CC), CC with GSD planning context (CC+GSD), CC with Ralph's external loop engine (CC+Ralph), and CC with Agent-based gsd-ralph (CC+gsd-ralph) — on a purpose-built Bash CLI challenge project called `taskctl`. The benchmark's unique angle is that it holds the model constant and varies only the scaffolding, a comparison nobody in the existing benchmark landscape makes. This means differences in correctness, speed, and token usage directly measure the cost and benefit of each scaffolding approach, answering the question the entire gsd-ralph project is built around: does structured AI execution scaffolding produce better outcomes?
 
-**The recommendation: Build a bash installer script as the v2.1 distribution mechanism. Defer plugin packaging to v2.2+.** The namespacing conflict is the deciding factor. gsd-ralph's command MUST be `/gsd:ralph` to integrate with the GSD command namespace -- this is a hard requirement from the existing v2.0 architecture and user mental model. Claude Code plugins namespace their commands under the plugin name, producing `/gsd-ralph:ralph` instead. Additionally, the dynamic hook injection pattern (install hook at ralph start, remove at ralph exit via trap) does not fit the plugin model where hooks are static and always active. These are not theoretical concerns; they are architectural incompatibilities confirmed by both the Architecture and Pitfalls researchers against official Claude Code plugin documentation. The bash installer approach has zero new dependencies, works with the existing Bash 3.2 requirement, and follows patterns proven by the existing `_install_hook`/`_remove_hook` code.
+The stack requires zero new dependencies. Every capability needed — timing, statistical aggregation, JSON metrics, markdown/CSV report generation, and challenge evaluation — is available through the existing Bash + jq + Bats + ShellCheck stack already in the repo. The architecture is a clean five-component pipeline: challenge project (taskctl), reset harness, mode-specific invocation layer, correctness evaluation, and report generator. The harness lives entirely in `benchmarks/` and never modifies existing gsd-ralph scripts, making the production scripts the subjects under test rather than participants in the test infrastructure.
 
-The primary risks are: (1) destroying user's existing `settings.local.json` content during install, (2) hardcoded absolute paths that break when scripts are copied to a different repo, and (3) version drift between source and installed copies. All three have proven mitigation patterns from the existing codebase. The biggest implementation challenge is making the existing scripts location-independent (supporting both `scripts/` in the dev repo and `scripts/ralph/` in target repos) -- this refactor must happen before the installer can be built.
+The most significant risks are methodological, not technical. LLM non-determinism at N=3 produces uninterpretable statistics; the CC+GSD interactive mode cannot be fairly automated alongside three autonomous modes; token counts are not directly comparable across modes with different context architectures; and correctness checks frequently reject valid alternative solutions. All four risks have concrete mitigations identified in research. Addressing them during the challenge design and harness phases — before any benchmark data is collected — avoids wasting expensive benchmark runs on invalid data.
 
 ## Key Findings
 
 ### Recommended Stack
 
-The v2.1 stack adds nothing to the existing v2.0 runtime. gsd-ralph remains pure Bash with jq for JSON manipulation. The installer itself is a self-contained Bash script that downloads a GitHub release tarball and copies files to the target project. No npm package, no Node.js dependency, no build step. See [STACK.md](./STACK.md) for full evaluation of three distribution approaches.
+See `.planning/research/STACK.md` for full details.
+
+The benchmarking suite adds zero new runtime dependencies. jq 1.8.1 (already required) serves as the statistics engine: it natively computes mean, population stddev, and variance flagging, and generates all three output formats (JSON, markdown, CSV). Claude Code CLI's `--output-format json` flag provides `duration_ms`, `num_turns`, `total_cost_usd`, and `usage.input_tokens`/`usage.output_tokens` directly. Git tags (`bench/baseline`, `bench/after-delete`) manage challenge state in place of Docker or other isolation approaches. The deliberate choice to stay within the existing stack keeps the harness consistent with gsd-ralph conventions and eliminates developer environment setup.
 
 **Core technologies:**
-- **Bash 3.2+**: Installer and runtime -- macOS system bash compatibility required
-- **jq 1.5+**: JSON manipulation for config merge -- already a v2.0 runtime dependency
-- **curl**: Release tarball download -- install-time only, universally available
-- **GitHub Releases**: Distribution via tagged tarballs -- no registry, no marketplace, no npm
-
-**What NOT to add:**
-- npm/npx package (gsd-ralph has zero Node.js code; npm adds conceptual mismatch)
-- Claude Code plugin system (namespacing conflict, static hooks incompatible with dynamic injection)
-- Homebrew formula (overkill for a Claude Code-specific tool)
-- curl-pipe-bash pattern (security concerns; download-then-execute is safer)
+- Bash 3.2: Harness scripts — matches gsd-ralph's language, consistent patterns with existing scripts
+- jq 1.8.1: Statistics engine + report generation — `sqrt`, `group_by`, `@csv` cover all needed math without external tools
+- Claude Code CLI 2.1.72+: Benchmark execution + `--output-format json` metrics capture per run
+- Bats 1.13.0 (vendored): Challenge project tests + correctness evaluation runner, already in `tests/bats/`
+- Git 2.20+: Challenge state management via tags and harness-managed worktrees for run isolation
+- ShellCheck 0.11.0: Code quality metric (warning delta) for the refactoring challenge, already installed
 
 ### Expected Features
 
-See [FEATURES.md](./FEATURES.md) for full feature landscape, dependency graph, and competitor analysis.
+See `.planning/research/FEATURES.md` for full details.
+
+The benchmark's unique differentiation is measuring scaffolding impact on the same model, specifically: token efficiency (correctness per token), pass^k consistency (do ALL k runs succeed, not just one), and quality-adjusted speed. These go beyond what any existing benchmark tracks because no existing benchmark holds model constant while varying execution mode.
 
 **Must have (table stakes):**
-- Single-command install (`bash install-ralph.sh` or download + local execute)
-- Prerequisite detection (claude, GSD, jq, git, bash >= 3.2) with actionable fix instructions
-- Idempotent re-runs (skip identical files, warn on user-modified files)
-- Non-destructive config merge (jq-based addition of ralph section to `.planning/config.json`)
-- Post-install verification (file existence, executable permissions, config validation)
-- Install manifest (`.ralph/.installed-files`) for tracking what was installed
-- Uninstall command (`install-ralph.sh --uninstall`) reading from manifest
-- Clear colored output with next-step guidance
+- `taskctl` challenge project at `bench/baseline` git tag — foundation; nothing else works without it
+- Deterministic environment reset (`bench-reset.sh`) — without it, results are scientifically invalid
+- Automated correctness evaluation (`bench-eval.sh`) with binary pass/fail checks — subjective scoring is unacceptable
+- Structured JSON result capture per run — machine-readable, comparable, re-analyzable
+- Multi-run statistical aggregation (`bench-report.sh`) — N=1 results are meaningless for non-deterministic models
+- Wall-clock time measurement — universal efficiency signal
+- Token efficiency metric (correctness/tokens) — the headline number showing scaffolding value
+- Time caps per challenge — prevents runaway autonomous sessions from consuming unbounded API resources
 
-**Should have (differentiators):**
-- Upgrade-in-place (`--upgrade` flag replacing managed files, preserving user config)
-- Dry-run mode (`--dry-run` previewing all operations)
-- GSD integration detection (warn if `.planning/` missing, error if not a git repo)
-- Version-pinned installation (`--version X.Y.Z` from tagged releases)
+**Should have (competitive differentiators):**
+- Pass^k reliability metric — consistency across all k runs matters more than best-case for production workflows
+- Tool call analysis — reveals HOW modes differ, not just WHETHER they differ
+- Quality-adjusted speed composite — `(correctness * regression) / wall_clock` penalizes both slowness and breakage
+- ShellCheck quality delta — objective code quality signal for the refactoring challenge specifically
+- Reproducible run identity — `run_id`, model version, git SHA in every result for longitudinal comparison
 
-**Defer (v2.2+):**
-- Claude Code plugin packaging (revisit when/if namespacing constraints change)
-- Marketplace submission (requires plugin packaging first)
-- Auto-update mechanism (explicit upgrade is safer for autonomous execution tool)
-- Multi-repo batch installer
+**Defer to v1.x / v2+:**
+- Additional challenge projects (other languages, larger codebases)
+- Cross-version benchmarking (gsd-ralph v2.2 vs v2.3 comparison)
+- Longitudinal tracking dashboard
+- CI/CD automated scheduling (cost-prohibitive for routine runs at 4 modes x 5 challenges x N runs)
+- Community-contributed challenges
 
 ### Architecture Approach
 
-The installer copies files from a GitHub release tarball into the target project tree, namespaced under `scripts/ralph/` to avoid collisions. Scripts must be refactored to use a `RALPH_SCRIPTS_DIR` variable instead of hardcoded paths, enabling them to work in both the dev repo (`scripts/`) and installed repos (`scripts/ralph/`). The installer does NOT touch `settings.local.json` at install time -- the existing runtime hook injection pattern (install at ralph start, remove at exit) is preserved. The installer only merges the `ralph` config section into `.planning/config.json`. See [ARCHITECTURE.md](./ARCHITECTURE.md) for full component analysis and data flow diagrams.
+See `.planning/research/ARCHITECTURE.md` for full details.
+
+The harness uses five architectural patterns: a mode abstraction layer (each mode is one file in `harness/lib/modes/` with an identical function signature), declarative challenge definitions (JSON files, not Bash variables), harness-managed git worktrees for run isolation (not Claude's `--worktree` flag, which targets the wrong repo), defensive metric extraction with `// 0` jq fallbacks, and GSD scaffolding generation for Ralph/gsd-ralph modes. The challenge project is a standalone `taskctl` Bash CLI with planted defects, partial test coverage, and known-good git tags. Nothing in the existing gsd-ralph codebase is modified.
 
 **Major components:**
-1. **install-ralph.sh** -- Single-file installer handling prerequisites, download, copy, config merge, verification, and uninstall
-2. **RALPH_SCRIPTS_DIR refactor** -- Path variable in all scripts replacing hardcoded `scripts/` references, enabling dual-location operation
-3. **Install manifest** -- `.ralph/.installed-files` tracking every file for clean uninstall
-4. **Config merge** -- jq-based addition of `ralph` section to `.planning/config.json` (additive only, never overwrites)
+1. `benchmarks/taskctl/` — Challenge project (standalone Bash CLI with planted bug in `done.sh`, missing tests, messy `format.sh`); tagged at `bench/baseline` and `bench/after-delete`
+2. `benchmarks/harness/bench-reset.sh` — Creates isolated git worktree per run, validates checksums, clears `.ralph/` state, runs `git clean -fdx`
+3. `benchmarks/harness/bench-run.sh` — Orchestrates: reset, scaffold, pre-metrics, invoke mode, post-metrics, eval, write result JSON
+4. `benchmarks/harness/lib/modes/*.sh` — CC, GSD, Ralph, gsd-ralph invocation logic behind identical function contracts
+5. `benchmarks/harness/bench-eval.sh` + `lib/checks/*.sh` — Per-challenge correctness evaluation returning structured pass/fail JSON
+6. `benchmarks/harness/bench-report.sh` — Aggregates result JSONs, computes statistics, generates markdown/CSV/JSON report
+7. `benchmarks/challenges/*.json` — Declarative challenge definitions (prompt, starting tag, time cap, check script reference)
 
 ### Critical Pitfalls
 
-See [PITFALLS.md](./PITFALLS.md) for all 6 pitfalls with detailed prevention strategies and recovery procedures.
+See `.planning/research/PITFALLS.md` for full details.
 
-1. **settings.local.json destruction** -- Use jq per-key array concatenation (not `*` deep merge which replaces arrays). However, the stronger approach is to NOT modify settings.local.json at install time at all, leaving hook management to the launcher at runtime. This is the recommended approach.
+1. **Apples-to-oranges token comparison across modes** — Each mode has a different context architecture. CC+Ralph pays re-encoding costs every iteration; CC+gsd-ralph's orchestration tokens accumulate in the parent session; CC+GSD has no `--output-format json`. Mitigation: define "total token budget" as ALL tokens across all invocations per run, use JSONL session files as ground truth, report overhead vs task tokens separately.
 
-2. **Hardcoded absolute paths** -- All installed paths must be relative to TARGET repo root, never source repo. Use `RALPH_SCRIPTS_DIR` variable. Test by installing into a directory at a different path than the source. Avoid `realpath` and `readlink -f` (not available on macOS without coreutils).
+2. **N=3 insufficient for stable LLM statistics** — With binary pass/fail checks worth 20-25% each, one check flipping produces a 20-25% correctness swing. At N=3, stddev becomes meaningless. Mitigation: increase to N=5 minimum; report median + IQR instead of mean + stddev; define a "reliability rate" (% of runs achieving >= 80% correctness) as the primary metric.
 
-3. **Broken or missing uninstall** -- Design uninstall BEFORE install. Write manifest during install; read manifest during uninstall. Test the full cycle: install, verify, uninstall, diff against pre-install state.
+3. **CC+GSD mode cannot be fairly automated** — Auto-approving checkpoints removes the human judgment that defines CC+GSD's value proposition. Mitigation: run CC+GSD as a human-in-the-loop mode with N=1-2, document it as a separate methodology, group autonomous modes (CC, CC+Ralph, CC+gsd-ralph) separately in the report.
 
-4. **Version drift** -- Embed version marker in installed files and `.ralph/.version`. Provide explicit `--upgrade` command. Do NOT auto-update (breaks reproducibility for autonomous execution).
+4. **Correctness checks rejecting valid alternative solutions** — Checks written around one expected approach fail valid implementations. Mitigation: write behavioral checks (does the feature work?) not structural checks (does this specific file exist?); create reference solutions; verify checks fail baseline AND pass reference solutions before running any benchmark.
 
-5. **Assumed repo structure** -- Check prerequisites before any file operations. Use `mkdir -p` for all directories. Handle: empty git repo, no `.planning/`, no `.claude/`, existing files at target paths.
+5. **Git state contamination between runs** — `git checkout <tag>` alone does not clean untracked files or git reflog. An LLM that runs `git log` during a benchmark can see prior run commits. Mitigation: `git clean -fdx` + clear `.ralph/` state files + harness-managed worktrees per run + checksum verification.
 
-## Distribution Mechanism: Resolving the Researcher Disagreement
-
-The four researchers disagreed on distribution. Here is the resolution:
-
-| Researcher | Recommendation | Key Argument |
-|-----------|---------------|-------------|
-| Stack | Claude Code plugin (primary) + npx (secondary) | Plugin system is THE standard for Claude Code extensions in 2026; 9,000+ plugins use it |
-| Architecture | Bash installer (reject plugins) | Plugin namespacing breaks `/gsd:ralph` command; plugin cache breaks project-root path references |
-| Features | Bash install script (v2.1), plugin (v2.1.x) | Pragmatic: build bash script first, wrap as plugin later |
-| Pitfalls | Evaluate plugins first, then decide | Plugin system mitigates many pitfalls automatically (uninstall, version management, settings merge) |
-
-**Resolution: Bash installer for v2.1. The Architecture researcher is correct on the technical constraints.**
-
-The plugin namespacing issue is not a configuration option -- it is how the plugin system works. A command at `commands/gsd/ralph.md` inside a plugin becomes `/gsd-ralph:gsd:ralph` or a similar namespaced variant, not `/gsd:ralph`. This breaks the core user experience of "same GSD commands, just add `--ralph`." The Stack researcher's research is high quality on HOW the plugin system works but does not address the namespacing conflict with GSD's command structure.
-
-The Pitfalls researcher's suggestion to evaluate plugins first is reasonable, but the Architecture researcher has already done that evaluation and identified concrete incompatibilities. No further evaluation is needed for v2.1.
-
-The Features researcher's phased approach (bash first, plugin later) is the closest to correct, but "later" should mean "when Claude Code plugin namespacing supports nested namespaces or custom command paths" -- not a fixed version number.
+6. **Measuring harness overhead instead of LLM performance** — CC+Ralph has 15-45 seconds of startup overhead (context assembly, circuit breaker init) that inflates its wall-clock time vs CC mode. Mitigation: instrument the inner `claude -p` invocation not the outer script wrapper; measure per-mode startup overhead baseline separately; run benchmarks in standalone `taskctl` repo not gsd-ralph's full repo.
 
 ## Implications for Roadmap
 
-Based on research, suggested phase structure:
+Architecture research explicitly recommends a five-phase build order. Feature research confirms challenge project is the foundation dependency. Pitfalls research adds cross-cutting requirements (pilot runs, behavioral checks, reset verification) that belong inside specific phases.
 
-### Phase 1: Location-Independent Scripts
+### Phase 1: Challenge Project (taskctl)
 
-**Rationale:** Every subsequent phase depends on scripts being able to run from `scripts/ralph/` in a target repo, not just `scripts/` in the dev repo. This is a refactor of existing code, not new functionality. PITFALLS.md Pitfall 2 (hardcoded paths) makes this the highest-priority prerequisite.
-**Delivers:** All existing scripts use `RALPH_SCRIPTS_DIR` variable; `.claude/commands/gsd/ralph.md` uses configurable path; all 315 existing tests still pass plus new tests for path override.
-**Addresses:** Prerequisite for file copy/install core (FEATURES.md dependency graph)
-**Avoids:** Hardcoded absolute paths pitfall (PITFALLS.md Pitfall 2)
+**Rationale:** Everything else depends on having a real, testable challenge project at a known git state. This is the most foundational dependency in the entire feature graph. No harness can be built or tested without a challenge project to run against.
+**Delivers:** `benchmarks/taskctl/` with planted bug in `done.sh` (off-by-one on task ID), 7 passing Bats tests (add + list), messy `format.sh` as refactoring target, sample `.taskctl.json` data, `bench/baseline` git tag, CLAUDE.md and README.md.
+**Addresses:** FEATURES.md P1 table-stakes foundation; Pitfall 3 (training data contamination) — design replaceability from day one (harness must not hardcode taskctl-specific paths); Pitfall 10 (refactoring quality) — design `format.sh` as a genuine, meaningful refactoring target.
+**Avoids:** Hardcoding harness scripts to taskctl-specific paths (PITFALLS.md technical debt pattern: "never — abstract eval checks behind challenge-specific config files from day one").
+**Research flag:** No further research needed. Standard Bash CLI with Bats tests; patterns well-established in existing repo.
 
-### Phase 2: Core Installer (Install + Uninstall)
+### Phase 2: Correctness Checks + Challenge Definitions
 
-**Rationale:** The installer is the primary deliverable of v2.1. Install and uninstall must be designed together (Pitfalls research insists on this -- Pitfall 3). The manifest format must be defined first, then install writes to it and uninstall reads from it.
-**Delivers:** `install-ralph.sh` with prerequisite detection, tarball download, file copy to `scripts/ralph/`, config merge, install manifest, `--uninstall` flag, idempotency, and post-install verification with colored output.
-**Addresses:** All P1 features from FEATURES.md (single-command install, prerequisite detection, idempotent re-runs, non-destructive config merge, .ralphrc generation, install manifest, uninstall, clear output)
-**Avoids:** settings.local.json destruction (Pitfall 1), assumed repo structure (Pitfall 5), missing jq (Pitfall 6), broken uninstall (Pitfall 3)
+**Rationale:** Evaluation must exist and be validated before automated runs. Running the harness against unchecked evaluation logic wastes expensive benchmark compute. This phase creates reference solutions, verifies negative controls (checks fail at baseline), positive controls (checks pass reference solutions), and creates the `bench/after-delete` tag for Challenge 5 — eliminating the chicken-and-egg dependency before Phase 3.
+**Delivers:** `harness/lib/checks/*.sh` for all 5 challenges with behavioral (not structural) checks; `harness/bench-eval.sh` dispatcher; `challenges/*.json` declarative definitions; `bench/after-delete` tag (manual Challenge 2 completion); reference solutions for all 5 challenges.
+**Addresses:** Pitfall 5 (correctness checks rejecting valid solutions) — behavioral checks, reference solutions, enumerate 3+ alternative valid approaches per challenge; Pitfall 10 (refactoring quality via line-count proxies) — multi-signal quality assessment for Challenge 4, drop "diff > 10 lines" requirement; FEATURES.md challenge design best practices (unambiguous criteria, negative test cases).
+**Avoids:** Structural checks (file existence) vs behavioral checks (feature works); scheduling Challenge 5's `bench/after-delete` dependency as a runtime concern.
+**Research flag:** No further research needed. Bats assertion patterns are well-understood; reference FEATURES.md challenge design best practices directly.
 
-### Phase 3: Upgrade and Polish
+### Phase 3: Harness Core + CC Mode
 
-**Rationale:** Once install/uninstall works, add upgrade support and UX improvements. Version tracking enables upgrade detection. These are P2 features that depend on the core installer being stable.
-**Delivers:** `--upgrade` flag, `--dry-run` mode, version tracking in `.ralph/.version`, `--force` overwrite, GSD integration detection warnings.
-**Addresses:** P2 features from FEATURES.md (upgrade-in-place, dry-run mode, version pinning)
-**Avoids:** Version drift pitfall (Pitfall 4)
+**Rationale:** Build the minimum viable end-to-end pipeline with the simplest mode (direct `claude -p`) to validate the full architecture before adding complexity. If the pipeline has structural issues, fix them here with low API cost before multiplying by 4x modes.
+**Delivers:** `bench-reset.sh` (git worktree + `git clean -fdx` + `.ralph/` state cleanup + checksum verification); `bench-run.sh` orchestrator; `harness/lib/common.sh`; `harness/lib/metrics.sh` with defensive jq extraction; `harness/lib/modes/cc.sh`; first valid result JSON files.
+**Addresses:** Pitfall 8 (git state contamination) — full reset protocol including worktree isolation built in from the start; Pitfall 9 (measuring harness overhead) — instrument inner `claude -p` invocation, not outer wrapper; table-stakes features: bench-reset, JSON capture, time caps as safety valves.
+**Avoids:** Using Claude's `--worktree` flag (ARCHITECTURE.md anti-pattern 2 — targets gsd-ralph repo not taskctl); relying on JSONL as primary metric source (ARCHITECTURE.md anti-pattern 4 — fragile across CLI versions).
+**Research flag:** Claude Code JSON output field names have evolved across versions. ARCHITECTURE.md flags `usage.input_tokens`/`usage.output_tokens` as MEDIUM confidence. Implement defensive jq extraction (`// 0` fallbacks) from the start and validate against the current CLI version (2.1.72) before Phase 5.
 
-### Phase 4: End-to-End Testing
+### Phase 4: Remaining Modes (GSD, Ralph, gsd-ralph)
 
-**Rationale:** The installer must be tested against realistic scenarios that differ from the dev environment. This is where path bugs and structure assumptions surface. Earlier phases have unit-level tests; this phase tests the integrated flow.
-**Delivers:** Test suite covering: fresh GSD project, project with existing `.claude/` config, non-GSD repo (error path), re-install idempotency, install-then-uninstall cycle, install-then-upgrade cycle, end-to-end `/gsd:ralph execute-phase N --dry-run` after install.
-**Addresses:** Post-install verification (FEATURES.md), cross-machine compatibility
-**Avoids:** All pitfalls -- this phase is the verification layer
+**Rationale:** Build the three additional modes in complexity order — GSD (adds context file assembly, no scaffolding), Ralph (adds GSD scaffolding + launcher integration), gsd-ralph (most complex: commands + skills + Agent tool). Each is incremental on the validated harness from Phase 3. Sub-ordering within Phase 4 is important: don't attempt gsd-ralph before Ralph is working.
+**Delivers:** `harness/lib/modes/gsd.sh`, `ralph.sh`, `gsd-ralph.sh`; GSD scaffolding templates (minimal STATE.md, config.json, PLAN.md) for Ralph modes; methodology documentation for CC+GSD as human-in-the-loop mode.
+**Addresses:** Pitfall 1 (asymmetric token comparison) — each mode script captures ALL tokens for that mode's invocation pattern, including orchestration overhead; Pitfall 7 (CC+GSD automation) — implement CC+GSD with explicit human-in-the-loop path and separate methodology documentation; FEATURES.md autonomy ratio measurement.
+**Avoids:** Modifying `ralph-launcher.sh` for benchmarking (ARCHITECTURE.md anti-pattern 1 — the launcher is the thing being benchmarked); running benchmarks inside gsd-ralph's repo (PITFALLS.md technical debt — context assembly inflates Ralph/gsd-ralph token counts).
+**Research flag:** The CC+gsd-ralph mode invocation (wrapping `/gsd:ralph` via Agent tool in headless `claude -p`) has MEDIUM confidence. The exact `--allowedTools` list and command discovery behavior need a validation pilot run before committing to the full design. Run one challenge with gsd-ralph mode early in Phase 4 before building the remaining two mode scripts.
+
+### Phase 5: Report Generator + Full Benchmark Runs
+
+**Rationale:** Report generation is the capstone. Running all 4 modes x 5 challenges x N runs is the longest step (potentially 20+ hours of API compute). Run pilot runs first to calibrate time caps, check variance thresholds, and validate per-mode token capture before committing to the full matrix. Do not skip pilots — PITFALLS.md rates "skipping pilot runs" as never acceptable.
+**Delivers:** `bench-report.sh` with median/IQR aggregation, markdown comparison table, CSV output, and high-variance flagging; pilot run results (1-2 runs per challenge to calibrate time caps and N); full N=5 result matrix (100 result JSON files); `REPORT.md` comparison report with methodology notes.
+**Addresses:** Pitfall 2 (N=3 insufficient) — use N=5, report median + IQR not mean + stddev; Pitfall 6 (vanity metrics) — apply "decision test" to each metric, suppress autonomy ratio (always 1.0 for autonomous modes), suppress commit count and raw lines-changed; FEATURES.md P2 features: quality-adjusted speed composite, pass^k reliability.
+**Avoids:** Drawing conclusions from high-variance data; reporting decimal precision on ordinal correctness scores (which have discrete values 0/25/50/75/100%); including CC+GSD in the same statistical table as autonomous modes without explicit methodology disclaimer.
+**Research flag:** Statistical methodology for small-N LLM benchmarks is nuanced. Review PITFALLS.md sections on median/IQR and reliability rate before finalizing report format. Calibrate the "high variance" threshold from pilot data rather than using the PRD's fixed 30%-of-mean threshold.
 
 ### Phase Ordering Rationale
 
-- **Phase 1 before Phase 2:** Scripts must be location-independent before they can be installed elsewhere. Building the installer first would mean testing against broken scripts.
-- **Phase 2 as a single phase (install + uninstall together):** The Pitfalls researcher strongly recommends designing uninstall first, which forces defining the manifest format. Splitting install and uninstall into separate phases risks shipping install without uninstall.
-- **Phase 3 after Phase 2:** Upgrade requires a working installer and version tracking. Dry-run wraps existing install logic.
-- **Phase 4 last:** Integration tests require all components to exist. This validates the full pipeline.
+- **Phases 1-2 are pure design/build phases** requiring zero benchmark runs and zero API costs. Getting challenge design and evaluation logic right before running anything avoids wasting compute on invalid data.
+- **Phase 3 validates architecture with minimal investment** — one mode, a few trial runs. If the pipeline is broken (reset doesn't clean properly, JSON parsing fails, result schema is wrong), fix it at 1x cost not 4x.
+- **Phase 4 builds modes in complexity order** — GSD (flag addition), Ralph (scaffolding + launcher), gsd-ralph (Agent tool orchestration). Each is testable independently.
+- **Phase 5 runs the full matrix only after all infrastructure is validated** — prevents the expensive "discover the reset is broken after 40 runs" scenario that PITFALLS.md rates as HIGH recovery cost.
+- **The `bench/after-delete` tag is created in Phase 2**, not Phase 5, eliminating the chicken-and-egg dependency identified in ARCHITECTURE.md where Challenge 5 requires Challenge 2 to have been completed.
 
 ### Research Flags
 
-Phases likely needing deeper research during planning:
-- **Phase 2:** The tarball download mechanism needs specific GitHub API/URL patterns confirmed. The config merge jq logic should be prototyped against edge cases (empty file, malformed JSON, existing ralph section). The lib/ directory installation path needs a design decision (see Gaps below).
+Phases likely needing deeper research or validation during planning:
+- **Phase 4 (CC+gsd-ralph mode):** The exact invocation pattern for `/gsd:ralph` via Agent tool in headless `claude -p` needs a validation pilot. ARCHITECTURE.md notes medium confidence on Agent tool + headless behavior with `--allowedTools`.
+- **Phase 5 (Statistical thresholds):** Calibrate the "high variance" threshold and N via pilot runs before setting in stone. PITFALLS.md recommends measuring baseline coefficient of variation before committing to thresholds.
 
 Phases with standard patterns (skip research-phase):
-- **Phase 1:** Standard Bash refactoring -- replace hardcoded paths with variables. Well-understood pattern, existing test suite validates.
-- **Phase 3:** `--dry-run` and `--upgrade` are standard CLI patterns. gsd-ralph already has dry-run in ralph-launcher.sh as a reference.
-- **Phase 4:** Standard test authoring using bats-core (already in use with 315 tests).
+- **Phase 1 (taskctl):** Standard Bash CLI with Bats tests. Well-documented patterns already in the repo.
+- **Phase 2 (correctness checks):** Bats assertion patterns are well-understood. Reference FEATURES.md challenge design best practices directly.
+- **Phase 3 (harness core + CC mode):** `claude -p --output-format json` with defensive jq extraction is well-documented in STACK.md and ARCHITECTURE.md.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | Official Claude Code plugin docs verified; decision to use bash installer is grounded in concrete namespacing constraints confirmed against plugin documentation |
-| Features | HIGH | Feature landscape well-mapped with competitor analysis (GSD npx installer, ralph-loop-setup plugin, flow-next plugin); MVP scope is clear; dependency graph is sound |
-| Architecture | HIGH | Installer flow is straightforward; existing `_install_hook`/`_remove_hook` patterns prove the merge approach; namespaced directory layout (`scripts/ralph/`) avoids collisions |
-| Pitfalls | HIGH | Pitfalls grounded in real codebase analysis (ralph-launcher.sh lines 342-383), real-world installer post-mortems (oh-my-bash issues), and official Claude Code settings merge documentation |
+| Stack | HIGH | All tools verified on target system (macOS 26.3.1); jq statistics tested locally; Claude Code CLI JSON fields cross-referenced against official docs and community sources |
+| Features | MEDIUM-HIGH | Table stakes derived from SWE-bench/Aider/HumanEval analysis; differentiators are novel (no direct comparables); MVP scope is well-reasoned but actual signal differentiation depends on real run data |
+| Architecture | HIGH | Existing codebase inspected; Claude Code JSON output verified against official docs; build order confirmed against FEATURES.md dependency graph; anti-patterns identified from real integration constraints |
+| Pitfalls | HIGH | Grounded in post-mortems from SWE-bench, Aider, and METR; gsd-ralph codebase analyzed for mode-specific integration gotchas; statistical methodology from peer-reviewed sources |
 
 **Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **lib/ directory installation path**: The Features researcher lists `lib/**/*.sh` (18+ files across lib/, lib/commands/, lib/merge/, lib/cleanup/) as managed files, but the Architecture researcher's target layout only shows `scripts/ralph/`. Need to decide during Phase 2 planning whether lib/ files install to `scripts/ralph/lib/`, remain at `lib/` in the target, or get flattened into a different structure.
-- **GitHub release tarball URL format**: The exact URL pattern for downloading tagged releases (`https://github.com/USER/REPO/archive/refs/tags/vX.Y.Z.tar.gz`) is standard but should be confirmed during Phase 2 planning.
-- **RALPH_SCRIPTS_DIR impact scope**: Phase 1 needs to audit every script-to-script and script-to-lib reference in the codebase. The Architecture researcher identified `ralph-launcher.sh` and `ralph.md` but there may be additional references in lib/ files that source each other.
-- **`.ralphrc` and `.ralph/` gitignore handling**: Both the Pitfalls and Architecture researchers flag that these should be added to `.gitignore` if not present. This is a minor installer feature but needs a design decision on whether to auto-modify `.gitignore`.
-- **Plugin system re-evaluation trigger**: The plugin system is deferred, not rejected permanently. If Claude Code adds support for custom command namespaces or namespace aliasing in a future version, the plugin approach should be reconsidered. No action needed now, but worth noting for v2.2+ planning.
+- **Claude Code `--output-format json` field evolution:** The `usage.input_tokens` / `usage.output_tokens` field names have evolved across CLI versions. ARCHITECTURE.md flags this as MEDIUM confidence. Mitigation: defensive jq extraction from Phase 3 onward; validate against current CLI version (2.1.72) before Phase 5.
+- **CC+gsd-ralph headless invocation:** How `/gsd:ralph` behaves when invoked via `claude -p` in headless mode with the Agent tool is not fully documented. A Phase 4 pilot run is required before committing to the mode's invocation design.
+- **N and variance calibration:** PITFALLS.md strongly recommends N=5 minimum and pilot-based variance threshold calibration. The PRD specifies N=3. Resolve this gap in Phase 5 planning — use pilot runs to justify the final N before committing to the full matrix.
+- **CC+GSD methodology decision:** Whether CC+GSD results appear in the main comparison table or a separate section is an open design question. Research recommends separate methodology grouping; the PRD treats it as a parallel mode. Decide before Phase 4 implementation to avoid rework in the report template.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- [Claude Code Plugin System docs](https://code.claude.com/docs/en/plugins) -- Plugin structure, manifest, namespacing behavior
-- [Claude Code Plugin Marketplace docs](https://code.claude.com/docs/en/plugin-marketplaces) -- Distribution options, marketplace.json
-- [Claude Code Discover Plugins docs](https://code.claude.com/docs/en/discover-plugins) -- Installation scopes, team config
-- [Claude Code Plugins Reference](https://code.claude.com/docs/en/plugins-reference) -- `CLAUDE_PLUGIN_ROOT`, hooks format, caching
-- [Claude Code Skills docs](https://code.claude.com/docs/en/skills) -- Skill discovery, SKILL.md format
-- [Claude Code Hooks Reference](https://code.claude.com/docs/en/hooks) -- PreToolUse hook schema, settings merge behavior
-- [Claude Code Settings docs](https://code.claude.com/docs/en/settings) -- Array concatenation/deduplication across scopes
-- [npm package.json bin field](https://docs.npmjs.com/cli/v11/configuring-npm/package-json/) -- npx CLI pattern (evaluated, not recommended)
-- gsd-ralph `ralph-launcher.sh` `_install_hook`/`_remove_hook` (lines 342-383) -- Proven jq merge/unmerge pattern
-- gsd-ralph test suite (315 tests across 6 suites) -- Existing coverage baseline
+- [Claude Code Headless Mode docs](https://code.claude.com/docs/en/headless) — `--output-format json` fields, `--max-turns`, `--no-session-persistence`
+- [Claude Code CLI Reference](https://code.claude.com/docs/en/cli-reference) — all flags including `--allowedTools`, `--append-system-prompt-file`
+- [jq 1.8 Manual](https://jqlang.github.io/jq/manual/) — `sqrt`, `group_by`, `@csv`, `round` built-ins
+- [Anthropic: Demystifying Evals for AI Agents](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents) — environment isolation, challenge design, pass@k vs pass^k
+- [Anthropic: Measuring Agent Autonomy](https://www.anthropic.com/research/measuring-agent-autonomy) — autonomy ratio, intervention tracking
+- Local system verification — all tools tested on macOS 26.3.1; jq statistics, Claude Code CLI JSON output, Bats vendored libraries
+- Existing gsd-ralph codebase — `ralph-launcher.sh`, `assemble-context.sh`, `validate-config.sh`, `tests/test_helper/common.bash`
 
 ### Secondary (MEDIUM confidence)
-- [GSD get-shit-done-cc npm package](https://www.npmjs.com/package/get-shit-done-cc) -- npx installer reference pattern
-- [ralph-loop-setup plugin](https://github.com/MarioGiancini/ralph-loop-setup) -- Plugin-based distribution reference
-- [flow-next plugin](https://github.com/gmickel/gmickel-claude-marketplace) -- Plugin marketplace reference
-- [oh-my-bash installer issues #115, #267](https://github.com/ohmybash/oh-my-bash/issues/115) -- Real-world installer pitfalls
-- [macOS realpath unavailability](https://github.com/facebook/react-native/issues/34146) -- Bash 3.2 path resolution constraints
-- [Idempotent Bash scripts (Fatih Arslan)](https://arslan.io/2019/07/03/how-to-write-idempotent-bash-scripts/) -- Guard clause patterns
-- [Shopify CLI error handling](https://shopify.github.io/cli/cli/error_handling.html) -- Error UX principles
+- [Aider Polyglot Leaderboard](https://aider.chat/docs/leaderboards/) — cost-per-task, two-attempt methodology
+- [SWE-bench Verified](https://epoch.ai/benchmarks/swe-bench-verified) — benchmark design, environment methodology
+- [HumanEval / BigCodeBench](https://huggingface.co/blog/leaderboard-bigcodebench) — pass@k methodology, calibrated scoring
+- [Claude Code CLI JSON output fields](https://introl.com/blog/claude-code-cli-comprehensive-guide-2025) — community-documented field names consistent with official docs
+- [Runloop: SWE-bench Deep Dive](https://runloop.ai/blog/swe-bench-deep-dive-unmasking-the-limitations-of-a-popular-benchmark) — solution leakage, false positive rates
+- [NAACL 2025: LLM Evaluation Should Not Ignore Non-Determinism](https://aclanthology.org/2025.naacl-long.211.pdf) — statistical methodology for small-sample LLM benchmarks
+- [METR: Measuring the Impact of Early-2025 AI](https://metr.org/blog/2025-07-10-early-2025-ai-experienced-os-dev-study/) — contradictory evidence about AI agent capabilities in real coding tasks
 
-### Tertiary (LOW confidence)
-- [Anthropic Official Marketplace](https://github.com/anthropics/claude-plugins-official) -- 9.7k stars; namespacing behavior inferred from docs, not directly tested against gsd-ralph
-- [npm supply chain attacks analysis](https://snyk.io/articles/npm-security-best-practices-shai-hulud-attack/) -- Security rationale for avoiding npx distribution
-- [curl-pipe-bash security analysis](https://www.kicksecure.com/wiki/Dev/curl_bash_pipe) -- Partial download vulnerability documentation
+### Tertiary (LOW confidence, used for context)
+- [SWE-bench Illusion paper](https://arxiv.org/html/2506.12286v3) — memorization vs reasoning findings (needs validation against current models)
+- [LLM Non-Determinism at temperature=0](https://arxiv.org/html/2408.04667v5) — statistical validity concerns at N=3
 
 ---
-*Research completed: 2026-03-10*
+*Research completed: 2026-03-11*
 *Ready for roadmap: yes*

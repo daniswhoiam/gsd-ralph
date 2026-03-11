@@ -1,498 +1,726 @@
-# Architecture Research
+# Architecture: Benchmarking Suite Integration
 
-**Domain:** Installer for gsd-ralph autopilot (v2.1 Easy Install)
-**Researched:** 2026-03-10
-**Confidence:** HIGH (official Claude Code docs verified, existing codebase inspected, GSD installer pattern confirmed)
+**Domain:** Automated benchmarking harness for AI execution mode comparison
+**Researched:** 2026-03-11
+**Confidence:** HIGH (existing codebase inspected, Claude Code JSON output verified against official docs, PRD fully analyzed)
 
-## The Installation Challenge
+## The Integration Challenge
 
-gsd-ralph v2.0 lives in its own repo and works in that repo. To use it in another project, a user must manually copy scripts, skills, commands, hooks, and config -- knowing exactly what goes where. v2.1 must automate this with a single command, without breaking the target repo's existing Claude Code configuration.
+The benchmarking suite must invoke Claude Code across four distinct execution modes, capture identical metrics from each, and evaluate results against the same correctness checks -- all without modifying the core gsd-ralph scripts. Each mode has fundamentally different invocation mechanics:
 
-Key constraints:
-1. gsd-ralph is pure Bash (no npm package, no build step)
-2. The target repo likely already has `.claude/settings.local.json` with user-specific permissions
-3. Claude Code discovers skills/commands from `.claude/` in the project root
-4. Hook scripts need executable paths that work from the target repo's root
-5. GSD must already be installed (prerequisite, not something we install)
+1. **CC** -- Direct `claude -p` with a freeform prompt. No GSD artifacts.
+2. **CC + GSD** -- `claude -p` with GSD context appended. Interactive GSD workflow, but run headless.
+3. **CC + Ralph** -- `ralph-launcher.sh` driving a `claude -p` loop with STATE.md progress detection.
+4. **CC + gsd-ralph** -- `claude -p` invoking `/gsd:ralph` which uses Agent tool internally.
 
-## System Overview: Installation Flow
+The harness lives entirely in `benchmarks/` and depends on the existing gsd-ralph infrastructure only for modes 3 and 4. Modes 1 and 2 invoke Claude Code directly without any gsd-ralph components.
+
+## System Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                     Source: gsd-ralph repo                          │
-│                                                                     │
-│  scripts/                    .claude/skills/gsd-ralph-autopilot/    │
-│  ├── ralph-launcher.sh       └── SKILL.md                          │
-│  ├── assemble-context.sh                                            │
-│  ├── validate-config.sh     .claude/commands/gsd/                   │
-│  └── ralph-hook.sh          └── ralph.md                            │
-│                                                                     │
-│  bin/ralph-stop             templates/ralphrc.template               │
-└──────────────────────────────┬──────────────────────────────────────┘
-                               │
-                    install-ralph.sh
-                               │
-                               ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                     Target: user's project repo                     │
-│                                                                     │
-│  scripts/ralph/                .claude/skills/gsd-ralph-autopilot/  │
-│  ├── ralph-launcher.sh         └── SKILL.md                        │
-│  ├── assemble-context.sh                                            │
-│  ├── validate-config.sh       .claude/commands/gsd/                 │
-│  ├── ralph-hook.sh            └── ralph.md                          │
-│  └── ralph-stop                                                     │
-│                               .claude/settings.local.json           │
-│  .planning/config.json        (hooks merged, not overwritten)       │
-│  (ralph section added)                                              │
-└─────────────────────────────────────────────────────────────────────┘
+benchmarks/
+├── taskctl/                     # Challenge project (Bash CLI)
+│   ├── src/
+│   │   ├── taskctl.sh           # Entry point
+│   │   ├── commands/
+│   │   │   ├── add.sh           # Working
+│   │   │   ├── list.sh          # Working (ugly output)
+│   │   │   └── done.sh          # Planted bug (off-by-one)
+│   │   ├── storage.sh           # Working, no tests
+│   │   └── format.sh            # Messy, needs refactor
+│   ├── tests/
+│   │   ├── test_add.bats        # 4 passing
+│   │   └── test_list.bats       # 3 passing
+│   ├── .taskctl.json            # Sample data
+│   ├── CLAUDE.md                # Challenge project instructions
+│   └── README.md
+│
+├── harness/                     # Automation scripts
+│   ├── bench-reset.sh           # Reset to challenge starting state
+│   ├── bench-run.sh             # Orchestrate a single benchmark run
+│   ├── bench-eval.sh            # Run correctness checks
+│   ├── bench-report.sh          # Aggregate results into report
+│   └── lib/
+│       ├── common.sh            # Shared constants, logging, jq helpers
+│       ├── metrics.sh           # Metric extraction from JSON output
+│       ├── modes/
+│       │   ├── cc.sh            # CC mode invocation
+│       │   ├── gsd.sh           # CC+GSD mode invocation
+│       │   ├── ralph.sh         # CC+Ralph mode invocation
+│       │   └── gsd-ralph.sh     # CC+gsd-ralph mode invocation
+│       └── checks/
+│           ├── fix-bug.sh       # Challenge 1 correctness checks
+│           ├── add-feature.sh   # Challenge 2 correctness checks
+│           ├── add-tests.sh     # Challenge 3 correctness checks
+│           ├── refactor.sh      # Challenge 4 correctness checks
+│           └── multi-file.sh    # Challenge 5 correctness checks
+│
+├── challenges/                  # Challenge definitions (declarative)
+│   ├── fix-bug.json
+│   ├── add-feature.json
+│   ├── add-tests.json
+│   ├── refactor.json
+│   └── multi-file.json
+│
+├── results/                     # Raw result JSON files (gitignored)
+│   └── {mode}-{challenge}-{timestamp}.json
+│
+├── REPORT.md                    # Generated comparison report
+└── BENCHMARK-MILESTONE.md       # PRD (existing)
 ```
 
-## Decision 1: Distribution Mechanism
+## Component Boundaries
 
-### Recommendation: Bash installer script fetched via curl from GitHub
+| Component | Responsibility | New vs Existing | Depends On |
+|-----------|---------------|-----------------|------------|
+| `benchmarks/taskctl/` | Challenge project with planted defects and partial test coverage | **NEW** | Nothing -- standalone Bash CLI |
+| `benchmarks/harness/bench-reset.sh` | Git tag checkout, state validation, temp cleanup | **NEW** | `taskctl/` (validates starting state) |
+| `benchmarks/harness/bench-run.sh` | Orchestrate: reset, invoke mode, capture metrics, run eval | **NEW** | `bench-reset.sh`, mode scripts, `bench-eval.sh`, `metrics.sh` |
+| `benchmarks/harness/bench-eval.sh` | Run challenge-specific correctness checks | **NEW** | Challenge check scripts |
+| `benchmarks/harness/bench-report.sh` | Read result JSONs, aggregate stats, produce markdown table | **NEW** | `results/*.json` |
+| `benchmarks/harness/lib/common.sh` | Logging, path constants, jq helpers, time formatting | **NEW** | `jq` |
+| `benchmarks/harness/lib/metrics.sh` | Parse `claude -p` JSON output, extract tokens, tool calls, duration | **NEW** | `jq`, Claude Code JSON output format |
+| `benchmarks/harness/lib/modes/*.sh` | Mode-specific invocation logic | **NEW** | `cc.sh`: Claude Code; `ralph.sh`: `ralph-launcher.sh` |
+| `benchmarks/harness/lib/checks/*.sh` | Per-challenge correctness assertions | **NEW** | `taskctl/` test infrastructure (Bats) |
+| `benchmarks/challenges/*.json` | Declarative challenge definitions (prompt, tag, time cap, check script) | **NEW** | Nothing |
 
-**Why not npm/npx:**
-- gsd-ralph is pure Bash. Wrapping it in an npm package adds a Node.js runtime dependency for zero benefit.
-- GSD itself uses `npx get-shit-done-cc` because it includes Node.js tooling (`gsd-tools.cjs`). gsd-ralph has no Node code.
+**Nothing in the existing codebase is modified.** The benchmarks are a pure addition. Mode scripts reference existing ralph-launcher.sh and GSD patterns but do not change them.
 
-**Why not a Claude Code plugin:**
-- Plugins namespace their skills (e.g., `/gsd-ralph:ralph` instead of `/gsd:ralph`). gsd-ralph's command is `gsd:ralph` -- it belongs in the GSD namespace, not a plugin namespace.
-- Plugin hooks live in `hooks/hooks.json` inside the plugin directory. gsd-ralph's hook (`ralph-hook.sh`) is installed/removed dynamically during launcher execution via `_install_hook`/`_remove_hook`, not as a persistent plugin hook.
-- Plugin skills are read-only copies in a cache. gsd-ralph's launcher references `$PROJECT_ROOT/scripts/ralph-hook.sh` with absolute paths -- it needs the scripts to be in a known, stable location in the project tree.
-- The plugin system is designed for self-contained extensions. gsd-ralph is an integration layer that modifies `.planning/config.json` and reads GSD state files -- it's deeply coupled to the project's file structure.
+## Integration Point 1: Mode Invocation
 
-**Why not git submodule:**
-- Adds `.gitmodules` complexity to every target repo.
-- Submodule paths don't match where files need to live (scripts in `scripts/ralph/`, skills in `.claude/skills/`).
-- Updates require `git submodule update --remote` which many developers forget.
+Each mode script in `harness/lib/modes/` encapsulates how to invoke that specific execution mode. All four produce the same output contract: a JSON file on stdout with the Claude Code session output, which `metrics.sh` parses.
 
-**The curl pattern works because:**
-- Zero dependencies beyond `bash`, `curl`, and `jq` (which gsd-ralph already requires).
-- Single command: `curl -fsSL https://raw.githubusercontent.com/.../install-ralph.sh | bash`
-- The installer is a self-contained Bash script that copies files, merges config, and validates prerequisites.
-- Follows established CLI tool installation patterns (Homebrew, rustup, nvm).
-- Version pinning via git tags: `curl ... /v2.1.0/install-ralph.sh | bash`
-
-**Confidence:** HIGH -- based on the constraints (pure Bash, GSD namespace coupling, dynamic hook install), no other distribution mechanism fits.
-
-## Decision 2: Source File Acquisition
-
-### Recommendation: GitHub release tarball extraction
-
-The installer script should:
-1. Download a tagged release tarball from GitHub (not clone the entire repo)
-2. Extract only the files needed for installation
-3. Clean up the tarball after extraction
+### Mode: CC (vanilla Claude Code)
 
 ```bash
-# Installer fetches the release tarball
-TARBALL_URL="https://github.com/USER/gsd-ralph/archive/refs/tags/v${VERSION}.tar.gz"
-curl -fsSL "$TARBALL_URL" | tar xz -C "$TMPDIR" --strip-components=1
+# harness/lib/modes/cc.sh
+# Simplest mode: direct claude -p with just the challenge prompt
+invoke_cc() {
+    local prompt="$1"
+    local workdir="$2"
+    local max_turns="$3"
+    local time_cap="$4"
+
+    cd "$workdir"
+    timeout "${time_cap}s" \
+        claude -p "$prompt" \
+        --output-format json \
+        --max-turns "$max_turns" \
+        --allowedTools "Write,Read,Edit,Grep,Glob,Bash(*)" \
+        --no-session-persistence \
+        2>/dev/null
+}
 ```
 
-**Why tarball over git clone:**
-- Faster (no .git history, no submodules)
-- Smaller download (tarball is just source files)
-- No git dependency for the install step itself
-- Clean: no leftover `.git` in temp directory
+**Key decisions:**
+- `--no-session-persistence` prevents session files from polluting `~/.claude/` during benchmark runs.
+- `--allowedTools` matches the same set Ralph uses (from `DEFAULT_ALLOWED_TOOLS` in ralph-launcher.sh) for fair comparison.
+- `timeout` enforces the challenge time cap at the OS level.
+- No `--worktree` -- the harness manages git state via `bench-reset.sh`.
 
-**Alternative considered: embed files in the installer script itself.** This would make the installer fully self-contained (no network fetch after initial curl) but makes the script enormous and hard to maintain. Reject.
-
-## Decision 3: Target Directory Layout
-
-### What gets installed where
-
-| Source File | Target Location | Rationale |
-|-------------|----------------|-----------|
-| `scripts/ralph-launcher.sh` | `scripts/ralph/ralph-launcher.sh` | Namespaced under `ralph/` to avoid collisions with user's own scripts |
-| `scripts/assemble-context.sh` | `scripts/ralph/assemble-context.sh` | Same namespace |
-| `scripts/validate-config.sh` | `scripts/ralph/validate-config.sh` | Same namespace |
-| `scripts/ralph-hook.sh` | `scripts/ralph/ralph-hook.sh` | Same namespace |
-| `bin/ralph-stop` | `scripts/ralph/ralph-stop` | Flatten into scripts/ralph/ -- no separate bin/ in target |
-| `.claude/skills/gsd-ralph-autopilot/SKILL.md` | `.claude/skills/gsd-ralph-autopilot/SKILL.md` | Claude Code discovers skills from `.claude/skills/` -- must be here |
-| `.claude/commands/gsd/ralph.md` | `.claude/commands/gsd/ralph.md` | Claude Code discovers commands from `.claude/commands/` -- must be here |
-
-### Critical: Path References Inside Scripts
-
-The launcher currently uses `PROJECT_ROOT`-relative paths:
+### Mode: CC + GSD (GSD planning context)
 
 ```bash
-CONTEXT_SCRIPT="$PROJECT_ROOT/scripts/assemble-context.sh"
-VALIDATE_SCRIPT="$PROJECT_ROOT/scripts/validate-config.sh"
+# harness/lib/modes/gsd.sh
+# Claude Code with GSD context appended, but no Ralph loop
+invoke_gsd() {
+    local prompt="$1"
+    local workdir="$2"
+    local max_turns="$3"
+    local time_cap="$4"
+    local context_file="$5"  # Pre-assembled GSD context
+
+    cd "$workdir"
+    timeout "${time_cap}s" \
+        claude -p "$prompt" \
+        --output-format json \
+        --max-turns "$max_turns" \
+        --append-system-prompt-file "$context_file" \
+        --allowedTools "Write,Read,Edit,Grep,Glob,Bash(*)" \
+        --no-session-persistence \
+        2>/dev/null
+}
 ```
 
-These must change to `$PROJECT_ROOT/scripts/ralph/` in the installed versions. The installer should **not** sed-replace paths at install time. Instead, the source scripts should use a `RALPH_SCRIPTS_DIR` variable:
+**Key decisions:**
+- The GSD context file is pre-assembled by the harness before invocation (using a simplified version of `assemble-context.sh` or a static challenge-specific context).
+- This mode runs a single `claude -p` invocation, not a loop. It simulates what a human would do: invoke Claude Code with GSD project structure visible.
+- The CLAUDE.md in the `taskctl/` project should reference GSD conventions so Claude discovers the planning structure.
+
+### Mode: CC + Ralph (standalone launcher loop)
 
 ```bash
-RALPH_SCRIPTS_DIR="${RALPH_SCRIPTS_DIR:-$PROJECT_ROOT/scripts/ralph}"
-CONTEXT_SCRIPT="$RALPH_SCRIPTS_DIR/assemble-context.sh"
-VALIDATE_SCRIPT="$RALPH_SCRIPTS_DIR/validate-config.sh"
+# harness/lib/modes/ralph.sh
+# Ralph launcher loop -- multiple iterations until done or time cap
+invoke_ralph() {
+    local prompt="$1"
+    local workdir="$2"
+    local max_turns="$3"
+    local time_cap="$4"
+
+    cd "$workdir"
+
+    # Ralph uses its own timeout (circuit breaker), but we also wrap with
+    # OS timeout as a safety net
+    local timeout_minutes=$(( time_cap / 60 + 1 ))
+
+    # Set ralph-specific config for this run
+    export RALPH_SCRIPTS_DIR="$GSD_RALPH_ROOT/scripts"
+
+    # Capture all output (ralph-launcher prints iteration summaries to
+    # stderr, claude -p JSON to stdout). We need the final JSON from
+    # the last iteration.
+    timeout "${time_cap}s" \
+        bash "$GSD_RALPH_ROOT/scripts/ralph-launcher.sh" \
+        "execute-phase 1" \
+        --tier default \
+        2>"$BENCH_TMPDIR/ralph-stderr.log"
+}
 ```
 
-This way the scripts work both in the gsd-ralph development repo (by setting `RALPH_SCRIPTS_DIR`) and in target repos (where the default `scripts/ralph/` is correct).
+**Key decisions:**
+- Ralph mode requires a GSD project structure with STATE.md, ROADMAP.md, and phase plans. The harness must scaffold minimal GSD artifacts into the `taskctl/` working copy before invoking Ralph.
+- The launcher's `--output-format json` flag (built into `build_claude_command`) means each iteration outputs JSON. The loop engine prints iteration summaries to stderr.
+- Ralph's circuit breaker (`TIMEOUT_MINUTES`) is set to match the challenge time cap.
+- `RALPH_SCRIPTS_DIR` is exported to point back to the gsd-ralph repo's scripts directory. This is the established pattern for location independence.
 
-### The command file path update
-
-The command file `.claude/commands/gsd/ralph.md` currently says:
-
+**GSD scaffolding needed for Ralph mode:**
 ```
-bash scripts/ralph-launcher.sh $ARGUMENTS
+taskctl/                         # Working copy (from bench-reset)
+├── .planning/
+│   ├── STATE.md                 # "Phase: 1, Status: Executing"
+│   ├── config.json              # ralph section with time cap
+│   └── phases/
+│       └── 01-benchmark/
+│           └── PLAN.md          # Contains the challenge prompt as a task
+├── .claude/
+│   └── skills/
+│       └── gsd-ralph-autopilot/
+│           └── SKILL.md         # Copied from gsd-ralph repo
+└── src/, tests/, etc.           # The actual taskctl code
 ```
 
-The installed version must say:
-
-```
-bash scripts/ralph/ralph-launcher.sh $ARGUMENTS
-```
-
-The installer handles this substitution, or the source command file uses a path that works in both contexts.
-
-## Decision 4: Settings Merge Strategy
-
-### Recommendation: Deep merge with conflict detection, same pattern as existing `_install_hook`
-
-The existing `_install_hook()` in `ralph-launcher.sh` already demonstrates the correct pattern for merging into `settings.local.json`:
+### Mode: CC + gsd-ralph (Agent-based)
 
 ```bash
-# Read existing settings or start with empty object
-local existing="{}"
-if [ -f "$settings_file" ]; then
-    existing=$(cat "$settings_file")
+# harness/lib/modes/gsd-ralph.sh
+# Agent-based Ralph inside a Claude Code session
+invoke_gsd_ralph() {
+    local prompt="$1"
+    local workdir="$2"
+    local max_turns="$3"
+    local time_cap="$4"
+
+    cd "$workdir"
+
+    # This mode uses /gsd:ralph which invokes Agent tool internally.
+    # We simulate it by prompting Claude to use the Agent tool with
+    # gsd-ralph behavior.
+    local wrapped_prompt="Use the /gsd:ralph command to: ${prompt}"
+
+    timeout "${time_cap}s" \
+        claude -p "$wrapped_prompt" \
+        --output-format json \
+        --max-turns "$max_turns" \
+        --allowedTools "Write,Read,Edit,Grep,Glob,Bash(*),Agent" \
+        --no-session-persistence \
+        2>/dev/null
+}
+```
+
+**Key decisions:**
+- The gsd-ralph mode requires the command file at `.claude/commands/gsd/ralph.md` in the working directory so Claude discovers `/gsd:ralph`.
+- This mode also needs GSD scaffolding (STATE.md, config.json, phase plans) because the Agent-based Ralph reads the same GSD state.
+- Agent tool must be in `--allowedTools` for the subagent invocation to work.
+- The SKILL.md must be present at `.claude/skills/gsd-ralph-autopilot/SKILL.md` for Claude to load autopilot behavior rules.
+
+## Integration Point 2: Challenge Definitions
+
+Challenges are defined as JSON files for machine-readability. The harness reads these to know what git tag to reset to, what prompt to use, and what time cap to enforce.
+
+```json
+{
+    "name": "fix-bug",
+    "display_name": "Fix the Bug",
+    "starting_tag": "bench/baseline",
+    "prompt": "The `taskctl done 3` command marks the wrong task as done. Find the bug and fix it.",
+    "time_cap_seconds": 600,
+    "max_turns": 30,
+    "check_script": "fix-bug.sh",
+    "measures": ["diagnostic_reasoning", "targeted_fix", "regression_avoidance"]
+}
+```
+
+**Why JSON instead of Bash:**
+- Challenge definitions are data, not logic. JSON is easier to read and validate.
+- The harness scripts consume these with `jq`, which is already a project dependency.
+- Adding a new challenge is declarative: create a JSON file and a check script.
+- `bench-report.sh` can read challenge metadata for report headers without sourcing Bash.
+
+**Challenge 5 exception:** The `multi-file` challenge uses `bench/after-delete` as its starting tag, which requires Challenge 2 to have been completed and tagged first. This is a one-time setup step, not a runtime dependency between benchmark runs.
+
+## Integration Point 3: Correctness Evaluation
+
+Each check script in `harness/lib/checks/` receives the path to the working directory and outputs structured pass/fail JSON. The checks are challenge-specific but follow a common contract.
+
+### Check Script Contract
+
+```bash
+# Input: $1 = working directory (taskctl project root after Claude's changes)
+# Output: JSON to stdout
+# Exit code: 0 always (failures reported in JSON, not exit code)
+
+# Example output:
+{
+    "challenge": "fix-bug",
+    "checks": [
+        {"name": "done_marks_correct_task", "passed": true, "detail": "taskctl done 3 marks task 3"},
+        {"name": "existing_tests_pass", "passed": true, "detail": "7/7 tests pass"},
+        {"name": "new_test_for_fix", "passed": false, "detail": "No new test found for done command"}
+    ],
+    "correctness_score": 67,
+    "regression_score": 100,
+    "tests_added": 0
+}
+```
+
+### How Checks Work Per Challenge
+
+**Challenge 1 (fix-bug):**
+1. Set up test data: create `.taskctl.json` with known tasks
+2. Run `taskctl done 3` and verify task 3 (not 2 or 4) is marked done
+3. Run all existing Bats tests, count passes/failures
+4. Check git log for new test files or modified test files covering `done`
+
+**Challenge 2 (add-feature):**
+1. Run `taskctl delete 1` with test data, verify task 1 removed from storage
+2. Run `taskctl delete 999`, verify error output
+3. Check for `test_delete.bats` with at least 2 tests
+4. Run all Bats tests (existing + new)
+
+**Challenge 3 (add-tests):**
+1. Check for `test_storage.bats` file existence
+2. Count test functions in the file (at least 5)
+3. Run the tests, verify all pass
+4. Verify `storage.sh` is unmodified (compare against `bench/baseline` version)
+
+**Challenge 4 (refactor):**
+1. Run all existing Bats tests, verify zero regressions
+2. Diff `format.sh` against `bench/baseline` version, verify > 10 lines changed
+3. Count ShellCheck warnings before and after
+4. Verify no new exported functions (behavior preservation)
+
+**Challenge 5 (multi-file):**
+1. Run `taskctl add --priority high "X"`, verify priority stored
+2. Run `taskctl add "Y"`, verify default priority is `low`
+3. Run `taskctl list --sort priority`, verify ordering
+4. Check for at least 3 new tests for priority features
+5. Run all tests, verify existing tests still pass
+6. Count files changed (must be >= 3)
+
+### ShellCheck Integration
+
+ShellCheck provides machine-readable JSON output for code quality measurement:
+
+```bash
+# Count warnings before (from bench/baseline)
+shellcheck -f json src/*.sh src/commands/*.sh 2>/dev/null | jq 'length'
+
+# Count warnings after Claude's changes
+shellcheck -f json src/*.sh src/commands/*.sh 2>/dev/null | jq 'length'
+
+# Delta = after - before
+```
+
+ShellCheck is an optional dependency for the benchmarks. If not installed, quality metrics are reported as `null` in results.
+
+## Integration Point 4: Metrics Capture
+
+### Claude Code JSON Output Fields
+
+When invoked with `--output-format json`, `claude -p` returns:
+
+```json
+{
+    "type": "result",
+    "result": "I have completed the tasks...",
+    "session_id": "550e8400-e29b-41d4-a716-446655440000",
+    "cost_usd": 0.042,
+    "duration_ms": 3200,
+    "num_turns": 15,
+    "usage": {
+        "input_tokens": 45000,
+        "output_tokens": 12000
+    }
+}
+```
+
+**Confidence:** MEDIUM -- The `usage` field with `input_tokens`/`output_tokens` is documented in the official headless docs and consistent with the session JSONL structure (`~/.claude/projects/.../*.jsonl`), but the exact top-level JSON fields have evolved across Claude Code versions. The harness should defensively check for field existence with `jq -r '.usage.input_tokens // "unknown"'`.
+
+**Fields available from JSON output:**
+| PRD Metric | JSON Field | Extraction |
+|-----------|-----------|------------|
+| Wall-clock time | Harness timestamps (more reliable than `duration_ms`) | `$(date +%s)` before/after |
+| Total tokens (input) | `.usage.input_tokens` | `jq -r '.usage.input_tokens // 0'` |
+| Total tokens (output) | `.usage.output_tokens` | `jq -r '.usage.output_tokens // 0'` |
+| Tool calls count | Not in JSON output | Parse session JSONL or use `--output-format stream-json` |
+| Iterations (Ralph only) | Harness counter / ralph stderr log | Parse "Iter N" lines from stderr |
+| Human interventions | Always 0 for headless modes | Hardcoded |
+| Cost | `.cost_usd` | `jq -r '.cost_usd // 0'` |
+| Num turns | `.num_turns` | `jq -r '.num_turns // 0'` |
+
+### Tool Call Counting Strategy
+
+Tool calls are NOT present in the `--output-format json` response. Two options:
+
+**Option A (recommended): Parse session JSONL files.**
+Claude Code writes session transcripts to `~/.claude/projects/<encoded-path>/sessions/<session-id>.jsonl`. Each line is a JSON object. Tool use events have `"type": "tool_use"` in content blocks. The `session_id` from the JSON output identifies which JSONL file to parse.
+
+```bash
+# Extract tool call count from session JSONL
+session_id=$(jq -r '.session_id' "$result_json")
+encoded_path=$(echo "$workdir" | sed 's|[^a-zA-Z0-9]|-|g')
+jsonl_file="$HOME/.claude/projects/${encoded_path}/sessions/${session_id}.jsonl"
+
+if [ -f "$jsonl_file" ]; then
+    tool_calls=$(grep -c '"type":"tool_use"' "$jsonl_file" || echo 0)
 fi
-
-# Merge hook config into existing settings
-echo "$existing" | jq --arg cmd "$hook_script" '
-    .hooks.PreToolUse = (.hooks.PreToolUse // []) + [{...}]
-' > "$settings_file"
 ```
 
-**For the installer, the same principle applies but is NOT needed for hooks.** The launcher already handles hook install/uninstall at runtime. The installer does NOT need to modify `settings.local.json` for hooks.
+**Option B: Use `num_turns` as proxy.** Each turn typically involves one or more tool calls. `num_turns` is available directly in the JSON output. Less precise but simpler. Given that the benchmark compares modes (not absolute tool call efficiency), `num_turns` may be sufficient.
 
-What the installer DOES need to handle:
+**Recommendation:** Start with `num_turns` as the metric (Option B). Add JSONL parsing (Option A) in a later phase if more granular tool call data is needed. The JSONL path encoding has changed across Claude Code versions and is fragile to rely on.
 
-1. **`.planning/config.json`**: Add `ralph` section if missing
-2. **`.claude/settings.json`** (project, committable): Optionally add permission rules for ralph scripts (e.g., `Bash(bash scripts/ralph/*:*)`)
+### Ralph-Specific Metrics
 
-### Config.json merge
+For the `ralph` mode, the launcher prints iteration summaries to stderr:
+```
+Ralph: Iter 1 done (2m 15s) | Total: 2m 15s | phase:1|plan:1|status:Executing | exit=0
+Ralph: Iter 2 done (1m 30s) | Total: 3m 45s | phase:1|plan:1|status:Complete | exit=0
+```
 
+The harness captures stderr to a log file and parses iteration count:
 ```bash
-# Add ralph section to .planning/config.json if it doesn't exist
-if [ -f "$CONFIG_FILE" ]; then
-    if ! jq -e '.ralph' "$CONFIG_FILE" >/dev/null 2>&1; then
-        jq '. + {"ralph": {"enabled": true, "max_turns": 50, "permission_tier": "default", "timeout_minutes": 30}}' \
-            "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
-    else
-        echo "ralph config already exists in $CONFIG_FILE, skipping"
-    fi
-fi
+iterations=$(grep -c "^Ralph: Iter" "$stderr_log")
 ```
 
-### Settings.json: Do NOT auto-modify
+For `gsd-ralph` mode (Agent-based), iteration count is not applicable (single invocation with subagent).
 
-The installer should NOT modify `.claude/settings.json` or `.claude/settings.local.json`. Reasons:
-- `settings.local.json` is user-specific and gitignored -- the installer should not assume what permissions a user wants
-- `settings.json` is project-shared -- adding permissions there affects all collaborators
-- The launcher already handles hook installation dynamically at runtime
-- Permission rules are specific to the user's trust level
-
-Instead, the installer should **print guidance** about what permissions to add if desired:
+## Data Flow: End-to-End Benchmark Run
 
 ```
-To allow Ralph scripts without prompting, add to .claude/settings.json:
-  "Bash(bash scripts/ralph/*:*)"
+bench-run.sh cc fix-bug
+│
+├─[1] Read challenge definition
+│     jq '.starting_tag' challenges/fix-bug.json
+│     → "bench/baseline"
+│
+├─[2] Reset working copy
+│     bench-reset.sh fix-bug
+│     ├── git checkout bench/baseline (in taskctl/)
+│     ├── Verify file checksums
+│     └── Return 0 (ready) or 1 (contaminated)
+│
+├─[3] Prepare mode-specific scaffolding
+│     For CC mode: nothing extra
+│     For GSD mode: assemble context file
+│     For Ralph mode: scaffold .planning/, .claude/ into taskctl/
+│     For gsd-ralph mode: scaffold .planning/, .claude/, commands
+│
+├─[4] Capture pre-run metrics
+│     ├── shellcheck_before=$(shellcheck -f json src/*.sh | jq 'length')
+│     ├── test_count_before=$(count existing tests)
+│     └── start_epoch=$(date +%s)
+│
+├─[5] Invoke mode
+│     source harness/lib/modes/cc.sh
+│     json_output=$(invoke_cc "$prompt" "$workdir" "$max_turns" "$time_cap")
+│     exit_code=$?
+│
+├─[6] Capture post-run metrics
+│     ├── end_epoch=$(date +%s)
+│     ├── wall_clock=$((end_epoch - start_epoch))
+│     ├── tokens_in=$(echo "$json_output" | jq '.usage.input_tokens // 0')
+│     ├── tokens_out=$(echo "$json_output" | jq '.usage.output_tokens // 0')
+│     ├── num_turns=$(echo "$json_output" | jq '.num_turns // 0')
+│     └── cost=$(echo "$json_output" | jq '.cost_usd // 0')
+│
+├─[7] Run correctness evaluation
+│     eval_output=$(bench-eval.sh fix-bug "$workdir")
+│     ├── correctness_score=$(echo "$eval_output" | jq '.correctness_score')
+│     ├── regression_score=$(echo "$eval_output" | jq '.regression_score')
+│     └── tests_added=$(echo "$eval_output" | jq '.tests_added')
+│
+├─[8] Capture code quality
+│     ├── shellcheck_after=$(shellcheck -f json src/*.sh | jq 'length')
+│     ├── shellcheck_delta=$((shellcheck_after - shellcheck_before))
+│     ├── commits=$(git -C "$workdir" log --oneline bench/baseline..HEAD | wc -l)
+│     └── conventional=$(check commit message format)
+│
+├─[9] Assemble result JSON
+│     jq -n --arg mode "cc" --arg challenge "fix-bug" ... > result.json
+│
+└─[10] Write result file
+      mv result.json results/cc-fix-bug-$(date +%s).json
 ```
 
-## Decision 5: Prerequisite Detection
-
-### Required prerequisites
-
-| Prerequisite | Detection | Why Required |
-|-------------|-----------|-------------|
-| `bash` >= 3.2 | `bash --version` | All scripts are Bash |
-| `jq` | `command -v jq` | Config parsing, hook JSON |
-| `curl` | `command -v curl` | Fetching release tarball (install only) |
-| `git` | `command -v git` | `git rev-parse --show-toplevel` in scripts |
-| Claude Code | `command -v claude` | The runtime that executes everything |
-| GSD | Check for `.claude/commands/gsd/` or `~/.claude/get-shit-done/` | gsd-ralph is a GSD integration layer |
-
-### GSD detection strategy
-
-GSD can be installed globally (`~/.claude/get-shit-done/`) or locally (`.claude/` in the project). The installer should check both:
-
-```bash
-gsd_found=false
-if [ -d "$HOME/.claude/get-shit-done" ]; then
-    gsd_found=true
-elif [ -f ".claude/commands/gsd/new-project.md" ] || \
-     ls .claude/commands/gsd/*.md >/dev/null 2>&1; then
-    gsd_found=true
-fi
-```
-
-If GSD is not found, the installer should warn (not fail) -- the user may install GSD after Ralph.
-
-### Version detection is secondary
-
-Claude Code and GSD don't have stable version APIs that are easy to parse. The installer should check for presence, not version. Version-specific issues should be documented, not enforced.
-
-## Decision 6: Installer Script Structure
-
-### Recommended structure
+## Data Flow: Report Generation
 
 ```
-install-ralph.sh (single file, self-contained logic)
-├── Prerequisite checks
-├── Source acquisition (download + extract tarball)
-├── File installation (copy to target locations)
-├── Config merge (.planning/config.json ralph section)
-├── Path fixup (command file script path)
-├── Post-install validation (check files exist, are executable)
-└── Next-steps guidance (permissions, usage)
-```
-
-### Uninstall support
-
-The installer should also support `--uninstall`:
-
-```bash
-install-ralph.sh --uninstall
-```
-
-This removes:
-- `scripts/ralph/` directory
-- `.claude/skills/gsd-ralph-autopilot/`
-- `.claude/commands/gsd/ralph.md`
-- `ralph` key from `.planning/config.json`
-
-It does NOT remove `.ralph/` (runtime state, audit logs -- user may want to keep).
-
-### Idempotency
-
-The installer must be safe to run multiple times:
-- Check if files already exist before copying
-- Use `--force` flag to overwrite existing files
-- Default behavior: skip existing files with a warning
-
-## Component Responsibilities
-
-| Component | Responsibility | New vs Existing |
-|-----------|---------------|-----------------|
-| `install-ralph.sh` | Download, validate prereqs, copy files, merge config | **NEW** |
-| `scripts/ralph/ralph-launcher.sh` | Core launcher (existing, with `RALPH_SCRIPTS_DIR` support) | **MODIFIED** (path variable) |
-| `scripts/ralph/assemble-context.sh` | Context assembly (unchanged logic) | **COPIED** |
-| `scripts/ralph/validate-config.sh` | Config validation (unchanged logic) | **COPIED** |
-| `scripts/ralph/ralph-hook.sh` | PreToolUse hook (unchanged logic) | **COPIED** |
-| `scripts/ralph/ralph-stop` | Graceful stop (unchanged logic) | **COPIED** |
-| `.claude/skills/.../SKILL.md` | Autopilot behavior rules | **COPIED** |
-| `.claude/commands/gsd/ralph.md` | `/gsd:ralph` command entry point | **MODIFIED** (script path) |
-
-## Data Flow: Install
-
-```
-User runs:
-  curl -fsSL https://.../install-ralph.sh | bash
-      │
-      ▼
-  [1] Check prerequisites (bash, jq, git, claude, GSD)
-      │
-      ▼
-  [2] Detect project root (git rev-parse --show-toplevel)
-      │
-      ▼
-  [3] Download release tarball to temp dir
-      │
-      ▼
-  [4] Create target directories:
-      scripts/ralph/
-      .claude/skills/gsd-ralph-autopilot/
-      .claude/commands/gsd/
-      │
-      ▼
-  [5] Copy files from tarball to target locations
-      Set executable permissions on scripts
-      │
-      ▼
-  [6] Merge ralph config into .planning/config.json
-      (add ralph section if missing, skip if present)
-      │
-      ▼
-  [7] Post-install validation:
-      - All files exist and are executable
-      - config.json has ralph section
-      - SKILL.md is in place
-      │
-      ▼
-  [8] Print success + next steps:
-      - How to run: /gsd:ralph execute-phase N
-      - Permission guidance
-      - How to uninstall
-```
-
-## Data Flow: Runtime (unchanged from v2.0)
-
-```
-User: /gsd:ralph execute-phase 3
-      │
-      ▼
-  Claude Code reads .claude/commands/gsd/ralph.md
-      │
-      ▼
-  bash scripts/ralph/ralph-launcher.sh execute-phase 3
-      │
-      ├──▶ source scripts/ralph/validate-config.sh
-      ├──▶ read .planning/config.json (ralph section)
-      ├──▶ _install_hook() → merge into .claude/settings.local.json
-      ├──▶ bash scripts/ralph/assemble-context.sh → temp file
-      ├──▶ build_claude_command() → claude -p "..." flags
-      ├──▶ loop: execute iterations until phase complete
-      └──▶ _cleanup() → _remove_hook(), audit summary
+bench-report.sh --format markdown
+│
+├─[1] Discover result files
+│     ls results/*.json
+│
+├─[2] Group by mode x challenge
+│     jq '{mode, challenge}' each file
+│
+├─[3] Aggregate per group (mean, stddev)
+│     For each group with N >= 3 results:
+│     ├── mean_wall_clock, stddev_wall_clock
+│     ├── mean_correctness, stddev_correctness
+│     ├── mean_tokens, stddev_tokens
+│     └── Flag if stddev > 30% of mean
+│
+├─[4] Compute derived metrics
+│     ├── token_efficiency = correctness / total_tokens * 1000
+│     ├── time_efficiency = correctness / wall_clock
+│     └── quality_adjusted_speed = (correctness * regression) / wall_clock
+│
+└─[5] Generate REPORT.md
+      ├── Summary table (all modes x all challenges)
+      ├── Per-challenge detail sections
+      ├── Statistical notes (high variance flags)
+      └── Raw data reference (results/ directory)
 ```
 
 ## Architectural Patterns
 
-### Pattern 1: Namespaced Installation Directory
+### Pattern 1: Mode Abstraction Layer
 
-**What:** All Ralph scripts install to `scripts/ralph/` in the target repo, not directly to `scripts/`.
-**When:** Always -- this is the installed layout.
-**Trade-offs:**
-- Pro: No collision with user's existing `scripts/` files
-- Pro: Easy to identify Ralph files for uninstall
-- Pro: Simple glob for permission rules: `Bash(bash scripts/ralph/*:*)`
-- Con: Existing gsd-ralph dev repo uses `scripts/` directly -- requires path indirection
+**What:** Each execution mode is encapsulated in a single Bash file under `harness/lib/modes/`. All mode scripts export a single function (`invoke_<mode>`) with an identical signature.
 
-### Pattern 2: Runtime Hook Injection (existing, preserved)
+**Why:** The harness (`bench-run.sh`) does not contain mode-specific logic. Adding a fifth mode means adding one file, not modifying the orchestrator.
 
-**What:** The launcher installs the PreToolUse hook into `settings.local.json` at start and removes it at exit (via trap).
-**When:** Every Ralph execution.
-**Trade-offs:**
-- Pro: Hook only active during Ralph runs -- no interference with normal usage
-- Pro: Clean uninstall -- trap guarantees removal even on error
-- Con: If the process is killed with SIGKILL, the hook persists until next run
-- This pattern is carried over from v2.0. The installer does NOT change this behavior.
+**Contract:**
+```bash
+# All mode scripts must implement:
+invoke_<mode>(prompt, workdir, max_turns, time_cap_seconds)
+# Returns: JSON on stdout (from claude -p --output-format json)
+# Side effects: modifies files in workdir (Claude's changes)
+```
 
-### Pattern 3: Config Section Merge (additive only)
+### Pattern 2: Declarative Challenge Definitions
 
-**What:** The installer adds a `ralph` section to `.planning/config.json` only if one doesn't exist.
-**When:** During installation.
-**Trade-offs:**
-- Pro: Never overwrites user's existing Ralph config
-- Pro: Idempotent -- safe to run multiple times
-- Con: If defaults change between versions, existing installs keep old defaults
+**What:** Challenge parameters live in JSON files, not Bash variables or function arguments. The harness reads `challenges/<name>.json` to get prompt, git tag, time cap, and check script reference.
 
-### Pattern 4: Self-Referencing Path Variable
+**Why:** Separates data from logic. A challenge definition can be validated with `jq`, displayed in reports, and extended with new fields without touching harness code.
 
-**What:** Scripts use `RALPH_SCRIPTS_DIR` to locate sibling scripts instead of hardcoded paths.
-**When:** In all ralph scripts that reference other ralph scripts.
-**Trade-offs:**
-- Pro: Works in both dev repo (`scripts/`) and installed location (`scripts/ralph/`)
-- Pro: Users could install to a custom location by setting the env var
-- Con: One more variable to understand
+### Pattern 3: Working Copy Isolation via Git Tags
+
+**What:** Each benchmark run starts with `git checkout <tag>` in the `taskctl/` directory. The harness never modifies the `taskctl/` source tree permanently -- all runs start from a tagged state.
+
+**Why:** Reproducibility. Every run of `cc fix-bug` starts from the identical file state. No leftover changes from previous runs can contaminate results.
+
+**Implementation detail:** The harness does NOT use `--worktree` (Claude's git worktree flag). Instead, it operates on a clean checkout of the `taskctl/` directory. This is because:
+- Git worktrees created by `claude -p --worktree` are at `<repo>/.claude/worktrees/<name>`, which is inside the gsd-ralph repo, not the taskctl project.
+- The harness needs full control over the working directory lifecycle (create, validate, destroy).
+- A simpler approach: `git checkout <tag>` in the taskctl directory, or `git worktree add` managed by the harness itself.
+
+**Recommended: harness-managed worktree per run.**
+```bash
+# bench-reset.sh creates an isolated worktree for each run
+worktree_path="$BENCH_TMPDIR/run-${mode}-${challenge}-${timestamp}"
+git -C "$TASKCTL_ROOT" worktree add "$worktree_path" "$starting_tag" --detach
+```
+
+This lets the harness run multiple challenges concurrently without conflicts, and cleanup is simply `git worktree remove`.
+
+### Pattern 4: Defensive Metric Extraction
+
+**What:** All jq extractions use `// 0` or `// "unknown"` fallbacks. Never assume a JSON field exists.
+
+**Why:** Claude Code's JSON output structure has evolved. Fields may be added, renamed, or nested differently across versions. The harness must produce results even if some metrics are unavailable.
+
+```bash
+# Safe extraction pattern
+tokens_in=$(echo "$json" | jq -r '.usage.input_tokens // .input_tokens // 0')
+```
+
+### Pattern 5: GSD Scaffolding for Ralph Modes
+
+**What:** Modes 3 (Ralph) and 4 (gsd-ralph) require GSD project structure. The harness generates minimal GSD artifacts (STATE.md, config.json, PLAN.md) that frame the challenge prompt within GSD conventions.
+
+**Why:** Ralph mode reads STATE.md for progress detection. Without GSD scaffolding, the launcher would fail at startup. The scaffolding is minimal -- just enough to satisfy the launcher's prerequisites.
+
+**The scaffolding is challenge-specific.** Each challenge has its own PLAN.md content that wraps the challenge prompt in GSD task format:
+
+```markdown
+# Phase 1: Benchmark Challenge
+
+## Tasks
+
+### Task 1: [Challenge prompt here]
+- [ ] [The actual challenge prompt from challenges/<name>.json]
+
+## Success Criteria
+- All correctness checks pass
+```
 
 ## Anti-Patterns
 
-### Anti-Pattern 1: Modifying settings.local.json at Install Time
+### Anti-Pattern 1: Modifying ralph-launcher.sh for Benchmarking
 
-**What people do:** Pre-configure hooks and permissions in settings.local.json during installation.
-**Why it's wrong:** `settings.local.json` is user-specific and gitignored. The launcher already handles hook injection at runtime. Installing persistent hooks means they're active even when Ralph isn't running, which could interfere with normal Claude Code usage (e.g., denying AskUserQuestion when the user is actually present).
-**Do this instead:** Let the launcher manage hooks dynamically. Print permission guidance for users to add voluntarily.
+**What goes wrong:** Adding benchmark-specific flags or metric hooks to the production launcher.
+**Why it's wrong:** The launcher is the thing being benchmarked. Modifying it to support benchmarking changes its behavior, invalidating the results.
+**Do this instead:** The harness wraps the launcher externally. It captures stdout/stderr, measures wall clock time from outside, and parses JSON output after the fact.
 
-### Anti-Pattern 2: Installing as a Claude Code Plugin
+### Anti-Pattern 2: Using Claude Code's Worktree Flag for Isolation
 
-**What people do:** Package gsd-ralph as a plugin for easy `/plugin install`.
-**Why it's wrong:** Plugin skills are namespaced (`/gsd-ralph:ralph` instead of `/gsd:ralph`), breaking the GSD integration. Plugin files are cached copies that can't reference project-root paths. The dynamic hook install/uninstall pattern doesn't fit plugin hooks, which are static.
-**Do this instead:** Use a standalone installer that places files directly in the project tree.
+**What goes wrong:** Passing `--worktree` to `claude -p` inside the harness.
+**Why it's wrong:** Claude's worktree is relative to the CWD's git repo, not the challenge project. If running from the gsd-ralph repo, the worktree is created at `gsd-ralph/.claude/worktrees/<name>`, not inside `taskctl/`. Additionally, the harness needs to control the worktree lifecycle for pre/post metric capture.
+**Do this instead:** Use harness-managed `git worktree add` with the taskctl repo as the source.
 
-### Anti-Pattern 3: Git Submodule for Distribution
+### Anti-Pattern 3: Sharing Working Directory Across Runs
 
-**What people do:** Add gsd-ralph as a git submodule for easy updates.
-**Why it's wrong:** Submodule paths don't match where Claude Code discovers files. A submodule at `vendor/gsd-ralph/.claude/skills/` is NOT discoverable -- skills must be at `.claude/skills/` in the project root. You'd need symlinks, which add fragility.
-**Do this instead:** Copy files to their canonical locations during install. Use `--force` for updates.
+**What goes wrong:** Running `bench-run.sh cc fix-bug` twice without resetting between runs.
+**Why it's wrong:** The second run starts from Claude's modified state, not the baseline. Results are not comparable.
+**Do this instead:** `bench-run.sh` always calls `bench-reset.sh` first. The reset step is mandatory, not optional.
 
-### Anti-Pattern 4: Sed-Replacing Paths at Install Time
+### Anti-Pattern 4: Relying on Session JSONL for Primary Metrics
 
-**What people do:** Copy scripts verbatim, then use `sed` to replace hardcoded paths.
-**Why it's wrong:** Fragile. If the path string appears in comments, log messages, or error strings, sed breaks them. If the format changes, the sed pattern breaks silently.
-**Do this instead:** Use an environment variable (`RALPH_SCRIPTS_DIR`) that scripts read at runtime. No string replacement needed.
+**What goes wrong:** Parsing `~/.claude/projects/<path>/sessions/<id>.jsonl` for token counts.
+**Why it's wrong:** The encoded path format has changed across Claude Code versions. The JSONL structure is internal and undocumented. Files may not exist if `--no-session-persistence` is used.
+**Do this instead:** Use the `--output-format json` response for primary metrics (tokens, turns, cost). Reserve JSONL parsing as an optional secondary source.
 
-## Integration Points
+## Git Tag Management
 
-### Claude Code Discovery
+The challenge project requires two git tags:
 
-| Component | Discovery Mechanism | Location Requirement | Notes |
-|-----------|---------------------|---------------------|-------|
-| Skills | Automatic from `.claude/skills/<name>/SKILL.md` | Must be at project root `.claude/skills/` | Claude loads description into context; full content on invocation |
-| Commands | Automatic from `.claude/commands/<path>.md` | Must be at project root `.claude/commands/` | File at `gsd/ralph.md` becomes `/gsd:ralph` |
-| Hooks | Configured in settings JSON files | Referenced by absolute or relative path in settings | Launcher handles dynamically -- NOT installed statically |
+| Tag | State | Created When |
+|-----|-------|-------------|
+| `bench/baseline` | taskctl with planted bug, ugly format, missing tests | After initial taskctl build |
+| `bench/after-delete` | taskctl with `delete` command added (Challenge 2 complete) | After manually completing Challenge 2 |
 
-**Confidence:** HIGH -- verified against official Claude Code docs (code.claude.com/docs/en/skills, code.claude.com/docs/en/hooks).
+**Creating `bench/after-delete`:** This is a chicken-and-egg problem. Challenge 5 starts from a state where Challenge 2 is already done. The tag must be created manually (or by running Challenge 2 once and tagging the result). This is a one-time setup step documented in the harness README.
 
-### GSD Integration
+**Tag scope:** Tags are on the gsd-ralph repo (since taskctl lives inside it), not a separate repo. The harness uses `git checkout <tag> -- benchmarks/taskctl/` to reset only the challenge project, not the entire gsd-ralph repo.
 
-| Integration Point | How It Works | What Installer Does |
-|-------------------|-------------|-------------------|
-| `.planning/config.json` | Ralph reads `ralph` section for settings | Adds section if missing |
-| `.planning/STATE.md` | Launcher reads to detect progress | Nothing -- exists from GSD |
-| `.planning/phases/` | Context assembly reads plan files | Nothing -- exists from GSD |
-| GSD commands | User invokes `/gsd:execute-phase N --ralph` | Installs the command file that handles `--ralph` |
+Wait -- this is wrong. `git checkout <tag> -- benchmarks/taskctl/` would check out the taskctl directory at that tag's state. But if the benchmarks are still being built when the tag is created, the tag won't have the final harness code.
 
-### Existing File Boundaries
+**Corrected approach:** The `bench/baseline` and `bench/after-delete` tags capture the state of `benchmarks/taskctl/` only. The harness operates on a temporary copy:
 
-| File | Owned By | Installer Touches? |
-|------|----------|-------------------|
-| `.claude/settings.json` | Project team | NO -- print guidance only |
-| `.claude/settings.local.json` | Individual user | NO -- launcher handles at runtime |
-| `.planning/config.json` | GSD + ralph | YES -- adds ralph section |
-| `.planning/STATE.md` | GSD | NO |
-| `.planning/ROADMAP.md` | GSD | NO |
-| `.gitignore` | Project | MAYBE -- add `.ralph/` if not present |
+```bash
+# bench-reset.sh
+workdir=$(mktemp -d)
+git show "bench/baseline:benchmarks/taskctl" | ... # Doesn't work for directories
+
+# Better: use git archive
+git archive "$starting_tag" -- benchmarks/taskctl/ | tar x -C "$workdir" --strip-components=2
+```
+
+**Recommended approach:** Use `git worktree add` from the main repo at the specified tag, then operate within the `benchmarks/taskctl/` subdirectory of that worktree. This preserves the full git state while isolating the working copy.
+
+```bash
+# bench-reset.sh
+run_worktree="$BENCH_TMPDIR/run-${run_id}"
+git worktree add "$run_worktree" "$starting_tag" --detach 2>/dev/null
+workdir="$run_worktree/benchmarks/taskctl"
+# Validate
+if [ ! -f "$workdir/src/taskctl.sh" ]; then
+    echo "ERROR: taskctl not found at tag $starting_tag" >&2
+    return 1
+fi
+```
 
 ## Build Order (Suggested Phase Structure)
 
-### Phase 1: Make scripts location-independent
+### Phase 1: Challenge Project (`taskctl`)
 
-**Prerequisite for everything else.** Modify existing scripts to use `RALPH_SCRIPTS_DIR` instead of hardcoded paths. This is a refactor of existing code, not new functionality. Must pass all existing tests.
+Build the Bash CLI tool with all its planted defects and partial tests. Tag as `bench/baseline`. This is the foundation that everything else tests against.
 
-**Components modified:**
-- `scripts/ralph-launcher.sh` (path references)
-- `scripts/assemble-context.sh` (if it references siblings)
-- `.claude/commands/gsd/ralph.md` (script path)
+**Deliverables:**
+- Complete `taskctl` source (src/, commands/, storage, format)
+- Bats tests for add and list
+- Planted bug in done.sh (off-by-one on task ID)
+- Sample data file
+- `bench/baseline` git tag
+- CLAUDE.md and README.md for the project
 
-**Tests:** All 315 existing tests must still pass. Add tests for `RALPH_SCRIPTS_DIR` override.
+**Dependencies:** None. This is a standalone Bash CLI.
 
-### Phase 2: Core installer script
+**Why first:** Everything else depends on having a real challenge project to benchmark against. The checks, harness, and modes all operate on taskctl.
 
-Write `install-ralph.sh` with:
-- Prerequisite detection
-- Tarball download and extraction
-- File copy to target locations
-- Config merge
-- Post-install validation
-- `--uninstall` support
-- Idempotency (skip existing, `--force` to overwrite)
+### Phase 2: Correctness Checks + Evaluation Script
 
-**Dependencies:** Phase 1 (scripts must be location-independent before they can be installed elsewhere)
+Build `bench-eval.sh` and all five check scripts in `harness/lib/checks/`. These must work before the harness can produce meaningful results.
 
-### Phase 3: Testing and polish
+**Deliverables:**
+- `harness/lib/checks/fix-bug.sh` through `multi-file.sh`
+- `harness/bench-eval.sh` (dispatcher)
+- Challenge definition JSON files in `challenges/`
+- `harness/lib/common.sh` (shared utilities)
 
-- Test install into a fresh GSD project
-- Test install into a project with existing `.claude/` configuration
-- Test uninstall
-- Test idempotent re-install
-- Test `--force` upgrade
-- End-to-end: install then run `/gsd:ralph execute-phase N --dry-run`
+**Dependencies:** Phase 1 (needs taskctl to validate checks against)
 
-**Dependencies:** Phase 2
+**Why second:** Correctness checks are the foundation of trustworthy results. You need to manually verify that the checks pass/fail correctly before automating runs. Run checks against the baseline (should produce expected failures) and against a hand-fixed version (should pass).
+
+**Includes `bench/after-delete` tag creation:** Manually complete Challenge 2 (add delete command) on a branch, tag it, and verify Challenge 5's checks work against that state.
+
+### Phase 3: Harness Core + CC Mode
+
+Build `bench-reset.sh`, `bench-run.sh`, `harness/lib/metrics.sh`, and the CC mode script. This is the minimum viable harness -- one mode producing real results.
+
+**Deliverables:**
+- `harness/bench-reset.sh` (git worktree management, state validation)
+- `harness/bench-run.sh` (orchestrator)
+- `harness/lib/metrics.sh` (JSON output parsing)
+- `harness/lib/modes/cc.sh`
+- Result JSON files in `results/`
+
+**Dependencies:** Phase 2 (needs eval + checks)
+
+**Why third:** The CC mode is the simplest invocation (direct `claude -p`). Getting end-to-end flow working with one mode validates the entire harness architecture before adding more complex modes.
+
+### Phase 4: Remaining Modes (GSD, Ralph, gsd-ralph)
+
+Add the three remaining mode scripts. Each builds on the harness infrastructure from Phase 3.
+
+**Deliverables:**
+- `harness/lib/modes/gsd.sh` (GSD context assembly)
+- `harness/lib/modes/ralph.sh` (launcher integration + GSD scaffolding)
+- `harness/lib/modes/gsd-ralph.sh` (Agent-based + GSD/command scaffolding)
+- GSD scaffolding templates for Ralph modes
+
+**Dependencies:** Phase 3 (needs working harness)
+
+**Sub-ordering within Phase 4:**
+1. `gsd.sh` first -- adds context file assembly, no GSD scaffolding needed
+2. `ralph.sh` second -- adds GSD scaffolding and launcher integration
+3. `gsd-ralph.sh` third -- most complex, needs commands + skills + scaffolding
+
+### Phase 5: Report Generator + Full Benchmark Runs
+
+Build `bench-report.sh`, run all 4 modes x 5 challenges x 3 repetitions, and generate the comparison report.
+
+**Deliverables:**
+- `harness/bench-report.sh` (aggregation, markdown generation)
+- At least 60 result JSON files (4 modes x 5 challenges x 3 runs)
+- `REPORT.md` (generated comparison report)
+- Statistical validity checks (stddev flags)
+
+**Dependencies:** Phase 4 (needs all modes)
+
+**Why last:** The report is the capstone. Running all benchmarks is the longest step (60 runs x ~10-20 min each = ~10-20 hours of compute). Report generation is fast; data collection is slow.
 
 ## Sources
 
-- [Claude Code Skills Documentation](https://code.claude.com/docs/en/skills) -- skill discovery, frontmatter, locations
-- [Claude Code Hooks Reference](https://code.claude.com/docs/en/hooks) -- hook configuration, settings file locations, PreToolUse format
-- [Claude Code Plugins](https://code.claude.com/docs/en/plugins) -- plugin structure, why it doesn't fit
-- [Claude Code Plugin Discovery](https://code.claude.com/docs/en/discover-plugins) -- marketplace installation, scoping
-- [GSD Installation (npm)](https://github.com/gsd-build/get-shit-done) -- npx installer pattern reference
-- Existing gsd-ralph codebase -- `ralph-launcher.sh` `_install_hook`/`_remove_hook` patterns, `ARCHITECTURE.md`
+- [Claude Code Headless Mode / Agent SDK CLI](https://code.claude.com/docs/en/headless) -- `--output-format json` fields, `--no-session-persistence`, `--max-turns`
+- [Claude Code CLI Reference](https://code.claude.com/docs/en/cli-reference) -- all flags including `--allowedTools`, `--worktree`, `--append-system-prompt-file`
+- [Claude Code Session File Format](https://kentgigger.com/posts/claude-code-conversation-history) -- JSONL structure, token usage per turn
+- [ShellCheck Integration](https://github.com/koalaman/shellcheck/blob/master/shellcheck.1.md) -- `-f json` for machine-readable output
+- Existing gsd-ralph codebase: `ralph-launcher.sh` (loop engine, `build_claude_command`, `--output-format json`), `assemble-context.sh`, `ralph-hook.sh`, `test_helper/ralph-helpers.bash` (mock patterns)
 
 ---
-*Architecture research for: gsd-ralph v2.1 Easy Install*
-*Researched: 2026-03-10*
+*Architecture research for: gsd-ralph v2.2 Execution Mode Benchmarking Suite*
+*Researched: 2026-03-11*
