@@ -35,7 +35,7 @@ Requirements for Execution Mode Benchmarking Suite milestone. Each maps to roadm
 
 ### Metrics & Reporting
 
-- [x] **METR-01**: Wall-clock time, token counts (input + output), and correctness score captured per run
+- [x] **METR-01**: Wall-clock time, turn count, cost (USD), and correctness score captured per run (token counts unavailable from `--output-format json`; `num_turns` and `total_cost_usd` serve as efficiency proxies)
 - [ ] **METR-02**: Token efficiency metric computed as correctness / total_tokens * 1000
 - [ ] **METR-03**: Pass^k reliability metric tracks whether ALL k runs achieve >= 80% correctness
 - [ ] **METR-04**: Quality-adjusted speed computed as (correctness * regression_score) / wall_clock_seconds
