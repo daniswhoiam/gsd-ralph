@@ -44,6 +44,17 @@ create_run_worktree() {
     # Clean any untracked files for safety
     git -C "$worktree_path" clean -fdx 2>/dev/null
 
+    # Verify worktree HEAD matches expected starting tag commit (HARN-01 checksum)
+    local expected_sha actual_sha
+    expected_sha=$(git -C "$BENCH_REPO_ROOT" rev-parse "$starting_tag" 2>/dev/null)
+    actual_sha=$(git -C "$worktree_path" rev-parse HEAD 2>/dev/null)
+    if [[ "$expected_sha" != "$actual_sha" ]]; then
+        log_error "Worktree commit mismatch: expected ${expected_sha:-unknown} (tag: $starting_tag) but got ${actual_sha:-unknown}"
+        git -C "$BENCH_REPO_ROOT" worktree remove --force "$worktree_path" 2>/dev/null || true
+        return 1
+    fi
+    log_info "Worktree verified at commit ${actual_sha:0:8} (tag: $starting_tag)"
+
     # Initialize submodules (needed for Bats helpers per Phase 21 lessons)
     git -C "$worktree_path" submodule update --init --recursive >/dev/null 2>&1 || true
 
